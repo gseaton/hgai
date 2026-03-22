@@ -228,10 +228,10 @@ async def seed(server: str, username: str, password: str):
                 "label": "Three Stooges Original Lineup",
                 "flavor": "hub",
                 "members": [
-                    {"node_id": "three-stooges", "role": "group", "seq": 0},
-                    {"node_id": "moe-howard",     "role": "member", "seq": 1, "order": 1},
-                    {"node_id": "larry-fine",     "role": "member", "seq": 2, "order": 2},
-                    {"node_id": "curly-howard",   "role": "member", "seq": 3, "order": 3},
+                    {"node_id": "three-stooges", "seq": 0},
+                    {"node_id": "moe-howard",    "seq": 1},
+                    {"node_id": "larry-fine",    "seq": 2},
+                    {"node_id": "curly-howard",  "seq": 3},
                 ],
                 "attributes": {
                     "era": "classic",
@@ -249,10 +249,10 @@ async def seed(server: str, username: str, password: str):
                 "label": "Three Stooges Shemp Era",
                 "flavor": "hub",
                 "members": [
-                    {"node_id": "three-stooges", "role": "group",  "seq": 0},
-                    {"node_id": "moe-howard",    "role": "member", "seq": 1, "order": 1},
-                    {"node_id": "larry-fine",    "role": "member", "seq": 2, "order": 2},
-                    {"node_id": "shemp-howard",  "role": "member", "seq": 3, "order": 3},
+                    {"node_id": "three-stooges", "seq": 0},
+                    {"node_id": "moe-howard",    "seq": 1},
+                    {"node_id": "larry-fine",    "seq": 2},
+                    {"node_id": "shemp-howard",  "seq": 3},
                 ],
                 "attributes": {
                     "era": "shemp",
@@ -270,10 +270,10 @@ async def seed(server: str, username: str, password: str):
                 "label": "Three Stooges Comeback Era",
                 "flavor": "hub",
                 "members": [
-                    {"node_id": "three-stooges",   "role": "group",  "seq": 0},
-                    {"node_id": "moe-howard",       "role": "member", "seq": 1, "order": 1},
-                    {"node_id": "larry-fine",       "role": "member", "seq": 2, "order": 2},
-                    {"node_id": "curly-joe-derita", "role": "member", "seq": 3, "order": 3},
+                    {"node_id": "three-stooges",   "seq": 0},
+                    {"node_id": "moe-howard",       "seq": 1},
+                    {"node_id": "larry-fine",       "seq": 2},
+                    {"node_id": "curly-joe-derita", "seq": 3},
                 ],
                 "attributes": {
                     "era": "comeback",
@@ -291,9 +291,9 @@ async def seed(server: str, username: str, password: str):
                 "label": "Horwitz Brothers",
                 "flavor": "symmetric",
                 "members": [
-                    {"node_id": "moe-howard",   "role": "sibling", "seq": 1},
-                    {"node_id": "shemp-howard", "role": "sibling", "seq": 2},
-                    {"node_id": "curly-howard", "role": "sibling", "seq": 3},
+                    {"node_id": "moe-howard",   "seq": 1},
+                    {"node_id": "shemp-howard", "seq": 2},
+                    {"node_id": "curly-howard", "seq": 3},
                 ],
                 "attributes": {
                     "family": "Horwitz",

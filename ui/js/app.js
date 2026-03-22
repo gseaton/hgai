@@ -682,8 +682,6 @@ function addMemberRow(member = null) {
   div.innerHTML = `
     <input type="number" class="form-control form-control-sm member-seq" placeholder="seq" value="${member?.seq ?? idx}" min="0"/>
     <input type="text" class="form-control form-control-sm member-node-id" placeholder="node-id" value="${member?.node_id||''}"/>
-    <input type="text" class="form-control form-control-sm member-role" placeholder="role" value="${member?.role||''}"/>
-    <input type="number" class="form-control form-control-sm member-order" placeholder="order" value="${member?.order||''}" min="1"/>
     <button type="button" class="btn btn-sm btn-outline-danger" onclick="this.parentElement.remove()"><i class="bi bi-x"></i></button>`;
   list.appendChild(div);
 }
@@ -772,10 +770,7 @@ document.getElementById('btn-save-edge').addEventListener('click', async () => {
   const memberRows = document.getElementById('edge-members-list').querySelectorAll('.member-row');
   const members = Array.from(memberRows).map((row, i) => ({
     node_id: row.querySelector('.member-node-id').value.trim(),
-    role: row.querySelector('.member-role').value.trim() || null,
     seq: parseInt(row.querySelector('.member-seq').value) || i,
-    order: parseInt(row.querySelector('.member-order').value) || null,
-    tags: [], status: 'active', attributes: {}, version: 1,
   })).filter(m => m.node_id);
 
   const vFrom = document.getElementById('edge-valid-from').value;

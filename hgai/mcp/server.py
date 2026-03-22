@@ -266,7 +266,7 @@ async def hgai_hyperedge_list(
         "total": total,
         "edges": [{"id": e.id, "relation": e.relation, "flavor": e.flavor,
                    "member_count": len(e.members), "tags": e.tags,
-                   "members": [{"node_id": m.node_id, "role": m.role} for m in e.members]}
+                   "members": [{"node_id": m.node_id, "seq": m.seq} for m in e.members]}
                   for e in edges]
     }, indent=2, default=str)
 
@@ -301,7 +301,7 @@ async def hgai_hyperedge_create(
     Args:
         graph_id: Target hypergraph identifier
         relation: Semantic relation type (e.g., 'has-member', 'sibling', 'broader')
-        members_json: JSON array of members: [{"node_id": "id", "role": "role", "seq": 0}, ...]
+        members_json: JSON array of members: [{"node_id": "id", "seq": 0}, ...]
         edge_id: Optional human-readable edge ID (hyperkey auto-generated if omitted)
         label: Optional display label
         flavor: Relationship pattern: 'hub', 'symmetric', 'direct', 'transitive', 'inverse-transitive'
@@ -309,8 +309,8 @@ async def hgai_hyperedge_create(
         tags: Comma-separated tags
 
     Example members_json:
-        '[{"node_id": "three-stooges", "role": "group", "seq": 0},
-          {"node_id": "moe-howard", "role": "member", "seq": 1}]'
+        '[{"node_id": "three-stooges", "seq": 0},
+          {"node_id": "moe-howard", "seq": 1}]'
     """
     from hgai.models.hyperedge import HyperedgeCreate, EdgeFlavor, EdgeMember
     try:

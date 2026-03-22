@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from hgai.models.common import Status, TimestampedModel
 
@@ -19,17 +19,13 @@ class EdgeFlavor(str, Enum):
     inverse_transitive = "inverse-transitive"  # Inverse transitive chain
 
 
-class EdgeMember(TimestampedModel):
+class EdgeMember(BaseModel):
     """A member node in a hyperedge."""
 
     node_id: str = Field(..., description="Hypernode ID")
-    role: Optional[str] = Field(default=None, description="Role of this node in the edge")
     seq: int = Field(default=0, description="Sequence position within the edge")
-    order: Optional[int] = Field(default=None, description="Display order (node order matters for flavor)")
 
-    # Allow extra attributes on membership
     class Config:
-        extra = "allow"
         populate_by_name = True
 
 

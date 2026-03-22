@@ -200,10 +200,8 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
   background: #f9fafb; border: 1px solid #e5e7eb;
   border-radius: 8px; padding: 8px; margin-bottom: 6px;
 }
-.member-row .member-seq { width: 40px; flex-shrink: 0; }
-.member-row .member-node-id { flex: 2; }
-.member-row .member-role { flex: 1; }
-.member-row .member-order { width: 70px; flex-shrink: 0; }
+.member-row .member-seq { width: 60px; flex-shrink: 0; }
+.member-row .member-node-id { flex: 1; }
 
 /* ── Query Editor ──────────────────────────────────────────────────────────── */
 .CodeMirror {

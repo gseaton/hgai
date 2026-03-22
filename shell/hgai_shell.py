@@ -159,9 +159,10 @@ class HgaiClient:
 COMMANDS = [
     "connect", "disconnect", "whoami", "server",
     "use", "ls", "get", "create", "update", "delete",
+    "delete-node", "delete-edge",
     "query", "validate",
     "import", "export",
-    "help", "exit", "quit",
+    "cls", "help", "exit", "quit",
 ]
 
 HELP_TEXT = {
@@ -192,9 +193,11 @@ HELP_TEXT = {
         update edge <id>       Update a hyperedge (interactive YAML)"""),
     "delete": textwrap.dedent("""\
         delete graph <id>      Delete a hypergraph (and all its nodes/edges)
-        delete node <id>       Delete a hypernode
-        delete edge <id>       Delete a hyperedge
+        delete node <id>       Delete a hypernode (active graph)
+        delete edge <id>       Delete a hyperedge (active graph)
         delete account <user>  Delete an account (admin)"""),
+    "delete-node": "delete-node <id>  —  Delete a hypernode from the active graph (alias: dn)",
+    "delete-edge": "delete-edge <id>  —  Delete a hyperedge from the active graph (alias: de)",
     "query": textwrap.dedent("""\
         query                  Run HQL query (enter YAML, end with a line containing just '---')
         query -f <file>        Run HQL query from a YAML file"""),
@@ -312,11 +315,16 @@ class HgaiShell:
             "create": self.cmd_create,
             "update": self.cmd_update,
             "delete": self.cmd_delete,
+            "delete-node": self.cmd_delete_node,
+            "delete-edge": self.cmd_delete_edge,
+            "dn": self.cmd_delete_node,
+            "de": self.cmd_delete_edge,
             "query": self.cmd_query,
             "validate": self.cmd_validate,
             "import": self.cmd_import,
             "export": self.cmd_export,
             "help": self.cmd_help,
+            "cls": lambda a: self.cmd_cls(),
             "exit": lambda a: self._exit(),
             "quit": lambda a: self._exit(),
             "?": lambda a: self.cmd_help([]),
@@ -485,10 +493,8 @@ class HgaiShell:
                 flavor: hub
                 members:
                   - node_id: node-1
-                    role: subject
                     seq: 0
                   - node_id: node-2
-                    role: object
                     seq: 1
                 attributes: {}
                 tags: []""")
@@ -573,6 +579,32 @@ class HgaiShell:
             error(f"Unknown entity: '{what}'"); return
 
         success(f"Deleted: {eid}")
+
+    def cmd_delete_node(self, args):
+        self._require_graph()
+        if not args:
+            error("Usage: delete-node <id>")
+            return
+        nid = args[0]
+        confirm = input(f"  Delete hypernode '{nid}' from '{self.active_graph}'? [y/N] ").strip().lower()
+        if confirm != 'y':
+            info("Cancelled")
+            return
+        self.client.delete_node(self.active_graph, nid)
+        success(f"Hypernode '{nid}' deleted from '{self.active_graph}'")
+
+    def cmd_delete_edge(self, args):
+        self._require_graph()
+        if not args:
+            error("Usage: delete-edge <id>")
+            return
+        eid = args[0]
+        confirm = input(f"  Delete hyperedge '{eid}' from '{self.active_graph}'? [y/N] ").strip().lower()
+        if confirm != 'y':
+            info("Cancelled")
+            return
+        self.client.delete_edge(self.active_graph, eid)
+        success(f"Hyperedge '{eid}' deleted from '{self.active_graph}'")
 
     def cmd_query(self, args):
         self._require_connection()
@@ -679,6 +711,9 @@ class HgaiShell:
             success(f"Exported '{gid}' to: {outfile}")
         else:
             self._print_json(data)
+
+    def cmd_cls(self):
+        os.system('cls' if os.name == 'nt' else 'clear')
 
     def cmd_help(self, args):
         if args and args[0] in HELP_TEXT:
