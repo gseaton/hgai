@@ -143,9 +143,13 @@ class HgaiClient:
     def update_edge(self, gid, eid, data): return self._request("PUT", f"/graphs/{gid}/edges/{eid}", body=data)
     def delete_edge(self, gid, eid): return self._request("DELETE", f"/graphs/{gid}/edges/{eid}")
 
-    # Query
+    # Query (HQL)
     def query(self, hql: str, use_cache=True): return self._request("POST", "/query", body={"hql": hql, "use_cache": use_cache})
     def validate_query(self, hql: str): return self._request("POST", "/query/validate", body={"hql": hql})
+
+    # Query (SHQL)
+    def shql_query(self, shql: str, use_cache=True): return self._request("POST", "/shql/query", body={"shql": shql, "use_cache": use_cache})
+    def shql_validate(self, shql: str): return self._request("POST", "/shql/validate", body={"shql": shql})
 
     # Accounts
     def list_accounts(self, **kw): return self._request("GET", "/accounts", params=kw)
@@ -161,6 +165,7 @@ COMMANDS = [
     "use", "ls", "get", "create", "update", "delete",
     "delete-node", "delete-edge",
     "query", "validate",
+    "shql", "shql-validate",
     "import", "export",
     "cls", "help", "exit", "quit",
 ]
@@ -202,6 +207,15 @@ HELP_TEXT = {
         query                  Run HQL query (enter YAML, end with a line containing just '---')
         query -f <file>        Run HQL query from a YAML file"""),
     "validate": "validate  —  Validate an HQL query (same input as 'query')",
+    "shql": textwrap.dedent("""\
+        shql                   Run SHQL query (enter YAML, end with a line containing just '---')
+        shql -f <file>         Run SHQL query from a YAML file
+        shql --no-cache        Run SHQL query bypassing the cache
+        Alias: sq"""),
+    "shql-validate": textwrap.dedent("""\
+        shql-validate          Validate an SHQL query (same input as 'shql')
+        shql-validate -f <file>  Validate an SHQL query from a file
+        Alias: sv"""),
     "import": "import -f <file> [-g <graph-id>]  —  Import nodes/edges from YAML file",
     "export": "export [-o <file>] [-g <graph-id>]  —  Export active graph to YAML",
     "help": "help [command]  —  Show help for a command or list all commands",
@@ -321,6 +335,10 @@ class HgaiShell:
             "de": self.cmd_delete_edge,
             "query": self.cmd_query,
             "validate": self.cmd_validate,
+            "shql": self.cmd_shql,
+            "shql-validate": self.cmd_shql_validate,
+            "sq": self.cmd_shql,
+            "sv": self.cmd_shql_validate,
             "import": self.cmd_import,
             "export": self.cmd_export,
             "help": self.cmd_help,
@@ -664,6 +682,71 @@ class HgaiShell:
                     print(f"    - {e}")
         except Exception as e:
             error(f"Validation failed: {e}")
+
+    def cmd_shql(self, args):
+        self._require_connection()
+        use_cache = "--no-cache" not in args
+
+        if "-f" in args:
+            idx = args.index("-f")
+            filepath = args[idx + 1] if idx + 1 < len(args) else None
+            if not filepath:
+                error("Usage: shql -f <file>"); return
+            with open(filepath) as f:
+                shql = f.read()
+        else:
+            print("\n  Enter SHQL query (YAML format, end with line containing just ---):")
+            if not self.active_graph:
+                dim("  Hint: Use 'use <graph-id>' to set a default graph, or specify 'from' in your query")
+            shql = self._read_multiline()
+
+        if not shql.strip():
+            return
+
+        # Detect accidental HQL queries entered in the SHQL command
+        stripped = shql.lstrip()
+        if stripped.startswith("hql:") or stripped.startswith("{\"hql\""):
+            error("This looks like an HQL query (top-level key is 'hql:').")
+            info("Use the 'query' command for HQL, or rewrite with 'shql:' as the top-level key.")
+            return
+
+        # Auto-inject active graph as 'from' if not already present
+        if self.active_graph and "from:" not in shql:
+            shql = f"shql:\n  from: {self.active_graph}\n" + "\n".join("  " + l for l in shql.split("\n"))
+
+        try:
+            result = self.client.shql_query(shql, use_cache=use_cache)
+            count = result.get("count", 0)
+            alias = result.get("alias", "result")
+            cached = result.get("meta", {}).get("cached", False)
+            info(f"SHQL '{alias}': {count} results" + (" (cached)" if cached else ""))
+            self._print_json(result)
+        except Exception as e:
+            error(f"SHQL query failed: {e}")
+
+    def cmd_shql_validate(self, args):
+        self._require_connection()
+        if "-f" in args:
+            idx = args.index("-f")
+            filepath = args[idx + 1] if idx + 1 < len(args) else None
+            if not filepath:
+                error("Usage: shql-validate -f <file>"); return
+            with open(filepath) as f:
+                shql = f.read()
+        else:
+            print("\n  Enter SHQL query to validate (end with ---):")
+            shql = self._read_multiline()
+
+        try:
+            result = self.client.shql_validate(shql)
+            if result.get("valid"):
+                success("SHQL is valid")
+            else:
+                error("Validation errors:")
+                for e in result.get("errors", []):
+                    print(f"    - {e}")
+        except Exception as e:
+            error(f"SHQL validation failed: {e}")
 
     def cmd_import(self, args):
         self._require_connection()

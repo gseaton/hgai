@@ -354,7 +354,10 @@ uvicorn hgai.main:app --reload
 - Web UI: http://localhost:8000/ui/ — login: admin / pwd357                                                                                                                                                                                                                                                       
 - API docs: http://localhost:8000/api/docs                                                                                                                                                                                                                                                                      
 - MCP server: http://localhost:8000/mcp/                                                                                                                                                                                                                                                                          
-- Shell: python shell/hgai_shell.py                      
+- Shell:                      
+  - $ python shell/hgai_shell.py
+  - $ python shell/hgai_shell.py --server http://localhost:8000 --user admin
+  - $ python shell/hgai_shell.py --server http://myserver:8000 -u myuser -p mypassword
 
 ### Component Layers
 
