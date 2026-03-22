@@ -19,6 +19,7 @@
 - [MCP Server](#mcp-server)
 - [hgai Shell](#hgai-shell)
 - [Web UI](#web-ui)
+- [Inferencing](#inferencing)
 - [Module Development](#module-development)
 - [Administration](#administration)
 
@@ -468,6 +469,83 @@ The web UI is served at `http://localhost:8000/ui/` and provides:
 - **Hyperedges** — full CRUD with member management
 - **Query** — interactive HQL query editor with results visualization
 - **Admin** — account management, server info (admin role only)
+
+---
+
+## Inferencing
+
+HypergraphAI's inference engine (`hgai/core/inference.py`) derives implicit knowledge from the relationships explicitly stored in the hypergraph. Inferencing operates at query time and does not mutate stored data — inferred results are returned alongside real results, annotated with `_inferred: true`.
+
+### SKOS Semantic Inferencing
+
+HypergraphAI implements the [SKOS (Simple Knowledge Organization System)](https://www.w3.org/TR/skos-reference/) vocabulary for hierarchical and associative concept relationships. SKOS links are stored directly on hypernodes:
+
+| Field | Meaning |
+|---|---|
+| `skos_broader` | This node is a narrower concept of the listed nodes (parent concepts) |
+| `skos_narrower` | This node is a broader concept of the listed nodes (child concepts) |
+| `skos_related` | This node is associatively related to the listed nodes |
+
+**Transitive closure** is computed via breadth-first traversal up to a configurable depth (default: 10 hops). This means if `Dog` → `broader` → `Animal` → `broader` → `LivingThing`, then querying the broader closure of `Dog` returns both `Animal` and `LivingThing`.
+
+Example hypernode with SKOS links:
+```json
+{
+  "id": "dog",
+  "label": "Dog",
+  "type": "Concept",
+  "skos_broader": ["animal"],
+  "skos_narrower": ["labrador", "poodle"],
+  "skos_related": ["cat"]
+}
+```
+
+When SKOS inference is applied to a result set, each item gains an `_inferred` field:
+```json
+{
+  "id": "dog",
+  "_inferred": {
+    "broader_closure": ["animal", "living-thing", "organism"],
+    "narrower_closure": ["labrador", "poodle", "guide-dog"]
+  }
+}
+```
+
+### Inverse Edge Inferencing
+
+When a `RelationType` hypernode defines an `inverse` attribute, HypergraphAI can generate the logical inverse of any hyperedge that uses that relation — without storing it explicitly.
+
+For example, if the `has-member` relation node has `attributes.inverse = "member-of"`, then an edge asserting `three-stooges has-member moe-howard` automatically implies an inferred edge asserting `moe-howard member-of three-stooges`.
+
+Inverse edges are returned with `_inferred: true` and `_source_edge` pointing back to the original.
+
+### Transitive Relation Checking
+
+The engine supports checking whether a transitive relation path exists between any two nodes across a set of hypergraphs. This is a reachability query: given a `start_id`, an `end_id`, and a `relation`, it performs a breadth-first walk through all hyperedges of that relation type to determine if the two nodes are transitively connected.
+
+This supports `transitive` and `inverse-transitive` edge flavors in HQL queries.
+
+### Edge Flavors and Inferencing
+
+Hyperedge `flavor` declares the inferencing semantics the relationship supports:
+
+| Flavor | Semantics |
+|---|---|
+| `hub` | One-to-many (no transitive inference) |
+| `symmetric` | All members are equivalent; A→B implies B→A |
+| `direct` | Directed from first member to last (no transitivity) |
+| `transitive` | A→B and B→C implies A→C (transitive closure) |
+| `inverse-transitive` | Transitive closure in reverse direction |
+
+### Roadmap
+
+The following inferencing capabilities are planned for future releases:
+
+- **HQL `infer:` clause** — explicit inference directives inside HQL queries (e.g., `infer: skos_broader`, `infer: transitive`)
+- **Rule-based inferencing** — user-defined inference rules stored as hypernodes of type `InferenceRule`, evaluated at query time
+- **Cross-graph inferencing** — SKOS closure and transitive walks spanning multiple hypergraphs in a logical composition or mesh
+- **Materialized inference cache** — optional pre-computation of common transitive closures, stored in `query_cache` and invalidated on edge mutations
+- **OWL-lite property chains** — support for `owl:propertyChainAxiom`-style inference, where a chain of relations implies a derived relation
 
 ---
 

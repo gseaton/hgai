@@ -40,7 +40,7 @@ db.hypernodes.createIndex({ "hypergraph_id": 1 }, { name: "idx_nodes_graph" });
 db.hypernodes.createIndex({ "type": 1 }, { name: "idx_nodes_type" });
 db.hypernodes.createIndex({ "status": 1 }, { name: "idx_nodes_status" });
 db.hypernodes.createIndex({ "tags": 1 }, { name: "idx_nodes_tags" });
-db.hypernodes.createIndex({ "label": "text" }, { name: "idx_nodes_label_text" });
+db.hypernodes.createIndex({ "label": 1 }, { name: "idx_nodes_label" });
 db.hypernodes.createIndex({ "valid_from": 1 }, { name: "idx_nodes_valid_from" });
 db.hypernodes.createIndex({ "valid_to": 1 }, { name: "idx_nodes_valid_to" });
 db.hypernodes.createIndex({ "system_created": -1 }, { name: "idx_nodes_created" });

@@ -174,7 +174,7 @@ async def list_hypernodes(
     if tags:
         query["tags"] = {"$all": tags}
     if search:
-        query["$text"] = {"$search": search}
+        query["label"] = {"$regex": search, "$options": "i"}
     if pit:
         query["$and"] = [
             {"$or": [{"valid_from": None}, {"valid_from": {"$lte": pit}}]},
