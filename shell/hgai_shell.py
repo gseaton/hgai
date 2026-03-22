@@ -12,6 +12,7 @@ Usage:
 """
 
 import argparse
+import datetime
 import json
 import os
 import sys
@@ -65,6 +66,22 @@ def info(msg): cprint(f"  {msg}", C.CYAN)
 def dim(msg): cprint(f"  {msg}", C.DIM)
 
 
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
+def _json_safe(obj: Any) -> Any:
+    """Recursively convert date/datetime objects to ISO strings so the result
+    is safe to pass as a JSON request body."""
+    if isinstance(obj, datetime.datetime):
+        return obj.isoformat()
+    if isinstance(obj, datetime.date):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
 # ─── API Client ───────────────────────────────────────────────────────────────
 class HgaiClient:
     def __init__(self, base_url: str, token: str = None):
@@ -85,7 +102,7 @@ class HgaiClient:
         resp = self._client.request(
             method, url,
             headers=self._headers(),
-            json=body,
+            json=_json_safe(body) if body is not None else None,
             params={k: v for k, v in (params or {}).items() if v is not None},
         )
         if resp.status_code == 401:
@@ -96,6 +113,16 @@ class HgaiClient:
             raise KeyError(resp.json().get('detail', 'Not found'))
         if resp.status_code == 409:
             raise ValueError(resp.json().get('detail', 'Conflict'))
+        if resp.status_code == 422:
+            detail = resp.json().get('detail', [])
+            if isinstance(detail, list):
+                msgs = "; ".join(
+                    f"{' -> '.join(str(p) for p in e.get('loc', []))}: {e.get('msg', '')}"
+                    for e in detail
+                )
+            else:
+                msgs = str(detail)
+            raise ValueError(f"Validation error: {msgs}")
         if resp.status_code == 204:
             return None
         resp.raise_for_status()
@@ -204,13 +231,16 @@ HELP_TEXT = {
     "delete-node": "delete-node <id>  —  Delete a hypernode from the active graph (alias: dn)",
     "delete-edge": "delete-edge <id>  —  Delete a hyperedge from the active graph (alias: de)",
     "query": textwrap.dedent("""\
-        query                  Run HQL query (enter YAML, end with a line containing just '---')
-        query -f <file>        Run HQL query from a YAML file"""),
+        query                        Run HQL query (enter YAML, end with a line containing just '---')
+        query -f <file>              Run HQL query from a YAML file
+        query -o <file>              Write results to file instead of console
+        query --no-cache             Bypass the query cache"""),
     "validate": "validate  —  Validate an HQL query (same input as 'query')",
     "shql": textwrap.dedent("""\
-        shql                   Run SHQL query (enter YAML, end with a line containing just '---')
-        shql -f <file>         Run SHQL query from a YAML file
-        shql --no-cache        Run SHQL query bypassing the cache
+        shql                         Run SHQL query (enter YAML, end with a line containing just '---')
+        shql -f <file>               Run SHQL query from a YAML file
+        shql -o <file>               Write results to file instead of console
+        shql --no-cache              Bypass the query cache
         Alias: sq"""),
     "shql-validate": textwrap.dedent("""\
         shql-validate          Validate an SHQL query (same input as 'shql')
@@ -243,6 +273,25 @@ class HgaiShell:
         if self.active_graph:
             parts.append(f"{C.GREEN}[{self.active_graph}]{C.RESET}")
         return ("  ".join(parts) + " " if parts else "") + f"{C.BOLD}{C.WHITE}hgai>{C.RESET} "
+
+    def _parse_outfile(self, args: List[str]) -> Optional[str]:
+        """Return the value of -o <file> from args, or None if not present."""
+        if "-o" in args:
+            idx = args.index("-o")
+            return args[idx + 1] if idx + 1 < len(args) else None
+        return None
+
+    def _write_result(self, result: Any, outfile: Optional[str]):
+        """Write query result to outfile (YAML/JSON) or print to console."""
+        if outfile:
+            with open(outfile, "w") as f:
+                if HAS_YAML:
+                    yaml.dump(result, f, default_flow_style=False, allow_unicode=True)
+                else:
+                    json.dump(result, f, indent=2, default=str)
+            success(f"Results written to: {outfile}")
+        else:
+            self._print_json(result)
 
     def _read_multiline(self, prompt="  > ", end_marker="---") -> str:
         """Read multi-line input until end_marker line."""
@@ -626,7 +675,8 @@ class HgaiShell:
 
     def cmd_query(self, args):
         self._require_connection()
-        use_cache = True
+        use_cache = "--no-cache" not in args
+        outfile = self._parse_outfile(args)
 
         if "-f" in args:
             idx = args.index("-f")
@@ -641,15 +691,15 @@ class HgaiShell:
                 dim("  Hint: Use 'use <graph-id>' to set a default graph, or specify 'from' in your query")
             hql = self._read_multiline()
 
-        if "--no-cache" in args:
-            use_cache = False
-
         if not hql.strip():
             return
 
-        # Add default graph if not specified and active_graph is set
-        if self.active_graph and "from:" not in hql:
-            hql = f"hql:\n  from: {self.active_graph}\n" + "\n".join("  " + l for l in hql.split("\n"))
+        # Wrap with hql: top-level key if the user omitted it
+        if not hql.lstrip().startswith("hql:"):
+            if self.active_graph and "from:" not in hql:
+                hql = f"hql:\n  from: {self.active_graph}\n" + "\n".join("  " + l for l in hql.split("\n"))
+            else:
+                hql = "hql:\n" + "\n".join("  " + l for l in hql.split("\n"))
 
         try:
             result = self.client.query(hql, use_cache=use_cache)
@@ -657,7 +707,7 @@ class HgaiShell:
             alias = result.get("alias", "result")
             cached = result.get("meta", {}).get("cached", False)
             info(f"Query '{alias}': {count} results" + (" (cached)" if cached else ""))
-            self._print_json(result)
+            self._write_result(result, outfile)
         except Exception as e:
             error(f"Query failed: {e}")
 
@@ -686,6 +736,7 @@ class HgaiShell:
     def cmd_shql(self, args):
         self._require_connection()
         use_cache = "--no-cache" not in args
+        outfile = self._parse_outfile(args)
 
         if "-f" in args:
             idx = args.index("-f")
@@ -710,9 +761,12 @@ class HgaiShell:
             info("Use the 'query' command for HQL, or rewrite with 'shql:' as the top-level key.")
             return
 
-        # Auto-inject active graph as 'from' if not already present
-        if self.active_graph and "from:" not in shql:
-            shql = f"shql:\n  from: {self.active_graph}\n" + "\n".join("  " + l for l in shql.split("\n"))
+        # Wrap with shql: top-level key if the user omitted it
+        if not shql.lstrip().startswith("shql:"):
+            if self.active_graph and "from:" not in shql:
+                shql = f"shql:\n  from: {self.active_graph}\n" + "\n".join("  " + l for l in shql.split("\n"))
+            else:
+                shql = "shql:\n" + "\n".join("  " + l for l in shql.split("\n"))
 
         try:
             result = self.client.shql_query(shql, use_cache=use_cache)
@@ -720,7 +774,7 @@ class HgaiShell:
             alias = result.get("alias", "result")
             cached = result.get("meta", {}).get("cached", False)
             info(f"SHQL '{alias}': {count} results" + (" (cached)" if cached else ""))
-            self._print_json(result)
+            self._write_result(result, outfile)
         except Exception as e:
             error(f"SHQL query failed: {e}")
 
