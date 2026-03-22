@@ -1,0 +1,298 @@
+edges:
+- attributes: {}
+  created_by: admin
+  description: null
+  flavor: hub
+  hypergraph_id: hg-alpha
+  hyperkey: 31db6cd78c877aae3a00ca0cf32ef0eb
+  id: stooge-siblings
+  label: Stooge Siblings
+  members:
+  - node_id: person:shemp
+    seq: 0
+  - node_id: person:curly
+    seq: 1
+  - node_id: person:moe
+    seq: 2
+  relation: siblings
+  relation_node_id: null
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-22T16:53:04.883000'
+  system_updated: '2026-03-22T16:53:04.883000'
+  tags: []
+  valid_from: null
+  valid_to: null
+  version: 1
+- attributes: {}
+  created_by: admin
+  description: null
+  flavor: hub
+  hypergraph_id: hg-alpha
+  hyperkey: 097828c60c64b39fc0e0ad83f2f0bea7
+  id: three-stooges-curly-joe
+  label: Three Stooges - Curly Joe Era
+  members:
+  - node_id: group:three-stooges
+    seq: 0
+  - node_id: person:moe
+    seq: 1
+  - node_id: person:larry
+    seq: 2
+  - node_id: person:curly-joe
+    seq: 3
+  relation: has-member
+  relation_node_id: null
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-22T00:14:20.948000'
+  system_updated: '2026-03-22T01:05:15.843000'
+  tags:
+  - stooges
+  valid_from: '1940-01-01T16:01:00'
+  valid_to: '1950-01-01T15:59:00'
+  version: 3
+- attributes: {}
+  created_by: admin
+  description: null
+  flavor: hub
+  hypergraph_id: hg-alpha
+  hyperkey: 07c0d720610f3a51000e7ec958cf372d
+  id: three-stooges-curly
+  label: null
+  members:
+  - node_id: group:three-stooges
+    seq: 0
+  - node_id: person:moe
+    seq: 1
+  - node_id: person:larry
+    seq: 2
+  - node_id: person:curly
+    seq: 3
+  relation: has-member
+  relation_node_id: null
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-22T00:13:10.415000'
+  system_updated: '2026-03-22T01:05:25.388000'
+  tags:
+  - stooges
+  valid_from: '1930-01-01T16:01:00'
+  valid_to: '1940-01-01T15:59:00'
+  version: 3
+- attributes: {}
+  created_by: admin
+  description: null
+  flavor: hub
+  hypergraph_id: hg-alpha
+  hyperkey: 4bc328829b2c3c2391de8ec0a34ef2cf
+  id: three-stooges-original
+  label: Original Three Stooges
+  members:
+  - node_id: group:three-stooges
+    seq: 0
+  - node_id: person:moe
+    seq: 1
+  - node_id: person:larry
+    seq: 2
+  - node_id: person:shemp
+    seq: 3
+  relation: has-member
+  relation_node_id: null
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-22T00:12:05.140000'
+  system_updated: '2026-03-22T16:56:59.550000'
+  tags:
+  - original
+  - stooges
+  valid_from: '1920-01-02T00:01:00'
+  valid_to: '1930-01-01T23:59:00'
+  version: 4
+graph:
+  attributes:
+    hobbies:
+    - golf
+    - darts
+  composition: []
+  created_by: admin
+  description: First hypergraph
+  edge_count: 4
+  id: hg-alpha
+  label: Alpha Hg
+  node_count: 8
+  remote_refs: []
+  status: active
+  system_created: '2026-03-21T23:43:25.334000'
+  system_updated: '2026-03-21T23:43:25.334000'
+  tags:
+  - alpha
+  - hg
+  type: instantiated
+  version: 1
+hgai_export: '1.0'
+nodes:
+- attributes:
+    first_name: Joe
+    last_name: Besser
+  created_by: admin
+  description: Joe Besser Stooge
+  hypergraph_id: hg-alpha
+  id: person:stooge-joe
+  label: Joe
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-22T16:17:51.949000'
+  system_updated: '2026-03-22T16:17:51.949000'
+  tags:
+  - stooge
+  type: Person
+  valid_from: null
+  valid_to: null
+  version: 1
+- attributes: {}
+  created_by: admin
+  description: null
+  hypergraph_id: hg-alpha
+  id: group:three-stooges
+  label: The Three Stooges
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-22T00:00:23.136000'
+  system_updated: '2026-03-22T00:00:23.136000'
+  tags: []
+  type: Group
+  valid_from: null
+  valid_to: null
+  version: 1
+- attributes:
+    first_name: Joe
+    last_name: DeRita
+  created_by: admin
+  description: null
+  hypergraph_id: hg-alpha
+  id: person:curly-joe
+  label: Curly Joe
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-21T23:59:28.611000'
+  system_updated: '2026-03-22T16:16:51'
+  tags: []
+  type: Person
+  valid_from: null
+  valid_to: null
+  version: 2
+- attributes:
+    first_name: Curly
+    last_name: Howard
+  created_by: admin
+  description: null
+  hypergraph_id: hg-alpha
+  id: person:curly
+  label: Curly
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-21T23:59:08.779000'
+  system_updated: '2026-03-22T16:18:36.575000'
+  tags: []
+  type: Person
+  valid_from: null
+  valid_to: null
+  version: 2
+- attributes:
+    first_name: Shemp
+    last_name: Howard
+  created_by: admin
+  description: Shemp Howard, my favorite stooge.
+  hypergraph_id: hg-alpha
+  id: person:shemp
+  label: Shemp
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-21T23:58:44.814000'
+  system_updated: '2026-03-22T18:22:45.225000'
+  tags: []
+  type: Person
+  valid_from: null
+  valid_to: null
+  version: 3
+- attributes:
+    first_name: Larry
+    last_name: Fine
+  created_by: admin
+  description: null
+  hypergraph_id: hg-alpha
+  id: person:larry
+  label: Larry
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-21T23:58:25.978000'
+  system_updated: '2026-03-22T16:19:49.837000'
+  tags: []
+  type: Person
+  valid_from: null
+  valid_to: null
+  version: 2
+- attributes:
+    first_name: Moe
+    last_name: Howard
+  created_by: admin
+  description: null
+  hypergraph_id: hg-alpha
+  id: person:moe
+  label: Moe
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-21T23:58:04.253000'
+  system_updated: '2026-03-22T16:20:07.973000'
+  tags:
+  - person:moe
+  type: Person
+  valid_from: null
+  valid_to: null
+  version: 2
+- attributes:
+    answer: 42
+    enabled: true
+    first_name: John
+    last_name: Doe
+    tau: 6.28
+  created_by: admin
+  description: 'John Doe : Person'
+  hypergraph_id: hg-alpha
+  id: person:jdoe
+  label: John Doe
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-21T23:54:05.364000'
+  system_updated: '2026-03-22T16:20:18.465000'
+  tags:
+  - person:jdoe
+  type: Person
+  valid_from: null
+  valid_to: null
+  version: 2
