@@ -1,0 +1,59 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: hgai-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: pwd357
+      MONGO_INITDB_DATABASE: hgai
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--username", "admin", "--password", "pwd357", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  hgai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hgai-server
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      HGAI_MONGO_URI: mongodb://admin:pwd357@mongo:27017/hgai?authSource=admin
+      HGAI_MONGO_DB: hgai
+      HGAI_SECRET_KEY: ${HGAI_SECRET_KEY:-change-me-in-production-set-env-var}
+      HGAI_TOKEN_EXPIRE_MINUTES: ${HGAI_TOKEN_EXPIRE_MINUTES:-480}
+      HGAI_HOST: 0.0.0.0
+      HGAI_PORT: 8000
+      HGAI_LOG_LEVEL: ${HGAI_LOG_LEVEL:-info}
+      HGAI_SERVER_ID: ${HGAI_SERVER_ID:-hgai-docker}
+      HGAI_SERVER_NAME: ${HGAI_SERVER_NAME:-HypergraphAI Docker}
+      HGAI_CACHE_ENABLED: ${HGAI_CACHE_ENABLED:-true}
+      HGAI_CACHE_TTL_SECONDS: ${HGAI_CACHE_TTL_SECONDS:-300}
+      HGAI_ADMIN_USERNAME: ${HGAI_ADMIN_USERNAME:-admin}
+      HGAI_ADMIN_PASSWORD: ${HGAI_ADMIN_PASSWORD:-pwd357}
+      HGAI_ADMIN_EMAIL: ${HGAI_ADMIN_EMAIL:-admin@hgai.local}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./scripts:/app/scripts:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  mongo_data:
+    driver: local

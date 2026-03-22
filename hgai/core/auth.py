@@ -1,0 +1,139 @@
+"""Authentication and RBAC for HypergraphAI."""
+
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+
+from hgai.config import get_settings
+from hgai.db.mongodb import col_accounts
+from hgai.models.account import AccountInDB, TokenData
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
+
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
+
+
+def create_access_token(username: str, roles: List[str]) -> tuple[str, int]:
+    settings = get_settings()
+    expire_minutes = settings.token_expire_minutes
+    expire = datetime.now(timezone.utc) + timedelta(minutes=expire_minutes)
+    payload = {
+        "sub": username,
+        "roles": roles,
+        "exp": expire,
+        "iat": datetime.now(timezone.utc),
+    }
+    token = jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+    return token, expire_minutes * 60
+
+
+async def get_account_by_username(username: str) -> Optional[AccountInDB]:
+    doc = await col_accounts().find_one({"username": username})
+    if not doc:
+        return None
+    doc.pop("_id", None)
+    return AccountInDB(**doc)
+
+
+async def authenticate_account(username: str, password: str) -> Optional[AccountInDB]:
+    account = await get_account_by_username(username)
+    if not account:
+        return None
+    if not verify_password(password, account.password_hash):
+        return None
+    if account.status != "active":
+        return None
+    return account
+
+
+async def get_current_account(token: str = Depends(oauth2_scheme)) -> AccountInDB:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    settings = get_settings()
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+        roles: List[str] = payload.get("roles", [])
+        token_data = TokenData(username=username, roles=roles)
+    except JWTError:
+        raise credentials_exception
+
+    account = await get_account_by_username(token_data.username)
+    if account is None or account.status != "active":
+        raise credentials_exception
+    return account
+
+
+async def require_admin(account: AccountInDB = Depends(get_current_account)) -> AccountInDB:
+    if "admin" not in account.roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required"
+        )
+    return account
+
+
+def can_access_graph(account: AccountInDB, graph_id: str) -> bool:
+    """Check if account can access a specific graph."""
+    if "admin" in account.roles:
+        return True
+    perms = account.permissions
+    if "*" in perms.graphs or graph_id in perms.graphs:
+        return True
+    return False
+
+
+def can_perform(account: AccountInDB, operation: str) -> bool:
+    """Check if account can perform a specific operation."""
+    if "admin" in account.roles:
+        return True
+    return operation in account.permissions.operations
+
+
+async def bootstrap_admin(username: str, password: str, email: str) -> bool:
+    """Create admin account if it does not exist. Returns True if created."""
+    existing = await col_accounts().find_one({"username": username})
+    if existing:
+        return False
+
+    from hgai.models.common import now_utc
+    from hgai.models.account import AccountPermissions, Role
+
+    now = now_utc()
+    doc = {
+        "username": username,
+        "email": email,
+        "password_hash": hash_password(password),
+        "roles": ["admin"],
+        "permissions": {
+            "graphs": ["*"],
+            "operations": ["read", "write", "delete", "admin", "query", "export", "import"]
+        },
+        "tags": ["system", "admin"],
+        "status": "active",
+        "system_created": now,
+        "system_updated": now,
+        "created_by": "system",
+        "version": 1,
+        "last_login": None,
+        "description": "System administrator account",
+        "attributes": {}
+    }
+    await col_accounts().insert_one(doc)
+    return True

@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>HypergraphAI</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/theme/dracula.css"/>
+  <link rel="stylesheet" href="/ui/css/hgai.css"/>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════ LOGIN SCREEN ═══ -->
+<div id="screen-login" class="screen-full d-flex align-items-center justify-content-center">
+  <div class="login-card">
+    <div class="text-center mb-4">
+      <div class="hgai-logo-mark mb-3">h<sub>AI</sub></div>
+      <h2 class="fw-bold">HypergraphAI</h2>
+      <p class="text-muted">Semantic Hypergraph Knowledge Platform</p>
+    </div>
+    <form id="form-login" autocomplete="on">
+      <div class="mb-3">
+        <label class="form-label">Username</label>
+        <input type="text" id="login-username" class="form-control" placeholder="admin" autocomplete="username" required/>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Password</label>
+        <input type="password" id="login-password" class="form-control" placeholder="••••••••" autocomplete="current-password" required/>
+      </div>
+      <div id="login-error" class="alert alert-danger d-none py-2"></div>
+      <button type="submit" class="btn btn-primary w-100 btn-lg">
+        <span id="login-spinner" class="spinner-border spinner-border-sm d-none me-2"></span>
+        Sign In
+      </button>
+    </form>
+    <div class="text-center mt-4 text-muted small">
+      <a href="/api/docs" target="_blank" class="text-muted">API Docs</a> &bull;
+      <a href="/api/redoc" target="_blank" class="text-muted">ReDoc</a>
+    </div>
+  </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════ APP SHELL ═ -->
+<div id="app-shell" class="d-none">
+
+  <!-- Sidebar -->
+  <nav id="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-mark">h<sub>AI</sub></span>
+      <span class="brand-name">HypergraphAI</span>
+    </div>
+
+    <div class="sidebar-section-label">Knowledge</div>
+    <a class="sidebar-link" data-screen="dashboard" href="#"><i class="bi bi-grid-1x2-fill"></i> Dashboard</a>
+    <a class="sidebar-link" data-screen="graphs" href="#"><i class="bi bi-diagram-3-fill"></i> Hypergraphs</a>
+    <a class="sidebar-link" data-screen="nodes" href="#"><i class="bi bi-circle-fill"></i> Hypernodes</a>
+    <a class="sidebar-link" data-screen="edges" href="#"><i class="bi bi-share-fill"></i> Hyperedges</a>
+    <a class="sidebar-link" data-screen="query" href="#"><i class="bi bi-terminal-fill"></i> Query (HQL)</a>
+
+    <div class="sidebar-section-label admin-only">Administration</div>
+    <a class="sidebar-link admin-only" data-screen="accounts" href="#"><i class="bi bi-people-fill"></i> Accounts</a>
+    <a class="sidebar-link admin-only" data-screen="meshes" href="#"><i class="bi bi-hdd-network-fill"></i> Meshes</a>
+    <a class="sidebar-link admin-only" data-screen="system" href="#"><i class="bi bi-gear-fill"></i> System</a>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <i class="bi bi-person-circle"></i>
+        <span id="sidebar-username">—</span>
+      </div>
+      <a href="#" id="btn-logout" class="sidebar-link"><i class="bi bi-box-arrow-left"></i> Sign Out</a>
+    </div>
+  </nav>
+
+  <!-- Main content -->
+  <div id="main-content">
+    <!-- Topbar -->
+    <div id="topbar">
+      <button id="btn-sidebar-toggle" class="btn btn-sm btn-outline-secondary me-3">
+        <i class="bi bi-list"></i>
+      </button>
+      <div id="topbar-breadcrumb">
+        <span id="topbar-screen-title">Dashboard</span>
+      </div>
+      <div class="ms-auto d-flex align-items-center gap-2">
+        <select id="active-graph-select" class="form-select form-select-sm" style="max-width:200px;">
+          <option value="">— Select Graph —</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Screens container -->
+    <div id="screens">
+
+      <!-- ─── DASHBOARD ───────────────────────────────────────────────── -->
+      <div id="screen-dashboard" class="screen">
+        <div class="screen-header">
+          <h4><i class="bi bi-grid-1x2-fill text-primary me-2"></i>Dashboard</h4>
+        </div>
+        <div class="row g-3 mb-4">
+          <div class="col-md-3">
+            <div class="stat-card">
+              <div class="stat-icon text-primary"><i class="bi bi-diagram-3-fill"></i></div>
+              <div class="stat-value" id="stat-graphs">—</div>
+              <div class="stat-label">Hypergraphs</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="stat-card">
+              <div class="stat-icon text-success"><i class="bi bi-circle-fill"></i></div>
+              <div class="stat-value" id="stat-nodes">—</div>
+              <div class="stat-label">Hypernodes</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="stat-card">
+              <div class="stat-icon text-info"><i class="bi bi-share-fill"></i></div>
+              <div class="stat-value" id="stat-edges">—</div>
+              <div class="stat-label">Hyperedges</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="stat-card">
+              <div class="stat-icon text-warning"><i class="bi bi-person-fill"></i></div>
+              <div class="stat-value" id="stat-accounts">—</div>
+              <div class="stat-label">Accounts</div>
+            </div>
+          </div>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header fw-semibold">Active Hypergraphs</div>
+              <div class="card-body p-0">
+                <div id="dash-graphs-list" class="list-group list-group-flush"></div>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header fw-semibold">Server Info</div>
+              <div class="card-body">
+                <table class="table table-sm mb-0" id="dash-server-info"></table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── HYPERGRAPHS ─────────────────────────────────────────────── -->
+      <div id="screen-graphs" class="screen d-none">
+        <div class="screen-header">
+          <h4><i class="bi bi-diagram-3-fill text-primary me-2"></i>Hypergraphs</h4>
+          <button class="btn btn-primary btn-sm" id="btn-create-graph">
+            <i class="bi bi-plus-lg me-1"></i>New Hypergraph
+          </button>
+        </div>
+        <div class="card">
+          <div class="card-body p-0">
+            <table class="table table-hover mb-0" id="table-graphs">
+              <thead>
+                <tr>
+                  <th>ID</th><th>Label</th><th>Type</th>
+                  <th>Nodes</th><th>Edges</th><th>Status</th><th>Tags</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="tbody-graphs"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── HYPERNODES ──────────────────────────────────────────────── -->
+      <div id="screen-nodes" class="screen d-none">
+        <div class="screen-header">
+          <h4><i class="bi bi-circle-fill text-success me-2"></i>Hypernodes</h4>
+          <button class="btn btn-success btn-sm" id="btn-create-node">
+            <i class="bi bi-plus-lg me-1"></i>New Hypernode
+          </button>
+        </div>
+        <div class="card mb-3">
+          <div class="card-body py-2">
+            <div class="row g-2 align-items-center">
+              <div class="col-auto">
+                <select id="nodes-graph-select" class="form-select form-select-sm" style="width:240px">
+                  <option value="">— Select Hypergraph —</option>
+                </select>
+              </div>
+              <div class="col-auto">
+                <input type="text" id="node-search" class="form-control form-control-sm" placeholder="Search label..." style="width:180px"/>
+              </div>
+              <div class="col-auto">
+                <input type="text" id="node-type-filter" class="form-control form-control-sm" placeholder="Filter by type..." style="width:160px"/>
+              </div>
+              <div class="col-auto">
+                <select id="node-status-filter" class="form-select form-select-sm">
+                  <option value="active">Active</option>
+                  <option value="">All</option>
+                  <option value="archived">Archived</option>
+                  <option value="draft">Draft</option>
+                </select>
+              </div>
+              <div class="col-auto">
+                <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-nodes">
+                  <i class="bi bi-arrow-clockwise"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+              <thead>
+                <tr>
+                  <th>ID</th><th>Label</th><th>Type</th><th>Status</th><th>Tags</th>
+                  <th>Valid From</th><th>Valid To</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="tbody-nodes"></tbody>
+            </table>
+          </div>
+          <div class="card-footer d-flex justify-content-between align-items-center">
+            <span id="nodes-pagination-info" class="text-muted small"></span>
+            <div class="btn-group btn-group-sm" id="nodes-pagination"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── HYPEREDGES ──────────────────────────────────────────────── -->
+      <div id="screen-edges" class="screen d-none">
+        <div class="screen-header">
+          <h4><i class="bi bi-share-fill text-info me-2"></i>Hyperedges</h4>
+          <button class="btn btn-info btn-sm text-white" id="btn-create-edge">
+            <i class="bi bi-plus-lg me-1"></i>New Hyperedge
+          </button>
+        </div>
+        <div class="card mb-3">
+          <div class="card-body py-2">
+            <div class="row g-2 align-items-center">
+              <div class="col-auto">
+                <select id="edges-graph-select" class="form-select form-select-sm" style="width:240px">
+                  <option value="">— Select Hypergraph —</option>
+                </select>
+              </div>
+              <div class="col-auto">
+                <input type="text" id="edge-relation-filter" class="form-control form-control-sm" placeholder="Filter by relation..." style="width:200px"/>
+              </div>
+              <div class="col-auto">
+                <select id="edge-flavor-filter" class="form-select form-select-sm">
+                  <option value="">All Flavors</option>
+                  <option value="hub">hub</option>
+                  <option value="symmetric">symmetric</option>
+                  <option value="direct">direct</option>
+                  <option value="transitive">transitive</option>
+                  <option value="inverse-transitive">inverse-transitive</option>
+                </select>
+              </div>
+              <div class="col-auto">
+                <input type="text" id="edge-node-filter" class="form-control form-control-sm" placeholder="Contains node ID..." style="width:180px"/>
+              </div>
+              <div class="col-auto">
+                <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-edges">
+                  <i class="bi bi-arrow-clockwise"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+              <thead>
+                <tr>
+                  <th>ID</th><th>Relation</th><th>Flavor</th><th>Members</th>
+                  <th>Status</th><th>Tags</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="tbody-edges"></tbody>
+            </table>
+          </div>
+          <div class="card-footer d-flex justify-content-between align-items-center">
+            <span id="edges-pagination-info" class="text-muted small"></span>
+            <div class="btn-group btn-group-sm" id="edges-pagination"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── QUERY (HQL) ─────────────────────────────────────────────── -->
+      <div id="screen-query" class="screen d-none">
+        <div class="screen-header">
+          <h4><i class="bi bi-terminal-fill text-warning me-2"></i>HQL Query</h4>
+          <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary btn-sm" id="btn-query-examples">
+              <i class="bi bi-code-slash me-1"></i>Examples
+            </button>
+            <button class="btn btn-outline-secondary btn-sm" id="btn-query-validate">
+              <i class="bi bi-check-circle me-1"></i>Validate
+            </button>
+            <button class="btn btn-warning btn-sm text-dark" id="btn-query-run">
+              <i class="bi bi-play-fill me-1"></i>Run Query
+            </button>
+          </div>
+        </div>
+        <div class="row g-3" style="height: calc(100vh - 180px);">
+          <div class="col-md-5 d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <label class="form-label fw-semibold mb-0">HQL (YAML)</label>
+              <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="query-use-cache" checked/>
+                <label class="form-check-label small" for="query-use-cache">Cache</label>
+              </div>
+            </div>
+            <div id="query-editor-wrapper" class="flex-grow-1 border rounded overflow-hidden">
+              <textarea id="query-editor"></textarea>
+            </div>
+          </div>
+          <div class="col-md-7 d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <label class="form-label fw-semibold mb-0">Results</label>
+              <div class="d-flex gap-2 align-items-center">
+                <span id="query-result-count" class="badge bg-secondary"></span>
+                <button class="btn btn-outline-secondary btn-sm" id="btn-query-copy">
+                  <i class="bi bi-clipboard"></i>
+                </button>
+              </div>
+            </div>
+            <div id="query-result-area" class="flex-grow-1 border rounded bg-dark text-light p-3 overflow-auto font-monospace" style="font-size:0.8rem;">
+              <span class="text-muted">Run a query to see results...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── ACCOUNTS (admin) ────────────────────────────────────────── -->
+      <div id="screen-accounts" class="screen d-none admin-only">
+        <div class="screen-header">
+          <h4><i class="bi bi-people-fill text-warning me-2"></i>Accounts</h4>
+          <button class="btn btn-warning btn-sm text-dark" id="btn-create-account">
+            <i class="bi bi-plus-lg me-1"></i>New Account
+          </button>
+        </div>
+        <div class="card">
+          <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+              <thead>
+                <tr>
+                  <th>Username</th><th>Email</th><th>Roles</th><th>Status</th>
+                  <th>Last Login</th><th>Tags</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="tbody-accounts"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── MESHES (admin) ──────────────────────────────────────────── -->
+      <div id="screen-meshes" class="screen d-none admin-only">
+        <div class="screen-header">
+          <h4><i class="bi bi-hdd-network-fill text-warning me-2"></i>Meshes</h4>
+          <button class="btn btn-warning btn-sm text-dark" id="btn-create-mesh">
+            <i class="bi bi-plus-lg me-1"></i>New Mesh
+          </button>
+        </div>
+        <div class="card">
+          <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+              <thead>
+                <tr><th>ID</th><th>Label</th><th>Servers</th><th>Status</th><th></th></tr>
+              </thead>
+              <tbody id="tbody-meshes"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── SYSTEM (admin) ──────────────────────────────────────────── -->
+      <div id="screen-system" class="screen d-none admin-only">
+        <div class="screen-header">
+          <h4><i class="bi bi-gear-fill text-warning me-2"></i>System</h4>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header fw-semibold">Server Information</div>
+              <div class="card-body">
+                <table class="table table-sm mb-0" id="sys-server-info"></table>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header fw-semibold">Query Cache</div>
+              <div class="card-body">
+                <table class="table table-sm mb-0" id="sys-cache-info"></table>
+                <button class="btn btn-outline-danger btn-sm mt-2" id="btn-flush-cache">
+                  <i class="bi bi-trash me-1"></i>Flush Cache
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="card">
+              <div class="card-header fw-semibold">API Explorer</div>
+              <div class="card-body">
+                <p class="mb-2">Explore and test the HypergraphAI REST API and MCP server tools.</p>
+                <a href="/api/docs" target="_blank" class="btn btn-outline-primary btn-sm me-2">
+                  <i class="bi bi-code-square me-1"></i>Swagger UI
+                </a>
+                <a href="/api/redoc" target="_blank" class="btn btn-outline-secondary btn-sm">
+                  <i class="bi bi-book me-1"></i>ReDoc
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /screens -->
+  </div><!-- /main-content -->
+</div><!-- /app-shell -->
+
+<!-- ═══════════════════════════════════════════════════════════════ MODALS ═══ -->
+
+<!-- Graph Modal -->
+<div class="modal fade" id="modal-graph" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modal-graph-title">New Hypergraph</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="form-graph">
+          <input type="hidden" id="graph-form-mode" value="create"/>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">ID <span class="text-danger">*</span></label>
+              <input type="text" id="graph-id" class="form-control" placeholder="my-graph" required/>
+              <div class="form-text">Unique slug identifier</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Label <span class="text-danger">*</span></label>
+              <input type="text" id="graph-label" class="form-control" placeholder="My Hypergraph" required/>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Type</label>
+              <select id="graph-type" class="form-select">
+                <option value="instantiated">instantiated (physical)</option>
+                <option value="logical">logical (composed)</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Tags</label>
+              <input type="text" id="graph-tags" class="form-control" placeholder="tag1, tag2"/>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Description</label>
+              <textarea id="graph-description" class="form-control" rows="2"></textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Attributes (JSON)</label>
+              <textarea id="graph-attributes" class="form-control font-monospace" rows="3" placeholder='{"key": "value"}'>{}</textarea>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btn-save-graph">Save Hypergraph</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Node Modal -->
+<div class="modal fade" id="modal-node" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modal-node-title">New Hypernode</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="form-node">
+          <input type="hidden" id="node-form-mode" value="create"/>
+          <div class="row g-3">
+            <div class="col-md-6" id="node-graph-select-row">
+              <label class="form-label">Hypergraph <span class="text-danger">*</span></label>
+              <select id="node-graph-id" class="form-select">
+                <option value="">— Select Hypergraph —</option>
+              </select>
+            </div>
+            <div class="col-md-6 d-none" id="node-graph-display-row">
+              <label class="form-label">Hypergraph</label>
+              <div id="node-graph-display" class="form-control bg-body-secondary text-muted"></div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">ID <span class="text-danger">*</span></label>
+              <input type="text" id="node-id" class="form-control" placeholder="my-node-id" required/>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label">Label <span class="text-danger">*</span></label>
+              <input type="text" id="node-label" class="form-control" placeholder="My Node Label" required/>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Type</label>
+              <input type="text" id="node-type" class="form-control" placeholder="Entity" list="node-type-suggestions"/>
+              <datalist id="node-type-suggestions">
+                <option value="Entity"/><option value="Person"/><option value="Organization"/>
+                <option value="Concept"/><option value="RelationType"/><option value="Event"/>
+                <option value="Place"/><option value="Group"/>
+              </datalist>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Tags</label>
+              <input type="text" id="node-tags" class="form-control" placeholder="tag1, tag2"/>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Status</label>
+              <select id="node-status" class="form-select">
+                <option value="active">active</option>
+                <option value="draft">draft</option>
+                <option value="archived">archived</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Valid From</label>
+              <input type="datetime-local" id="node-valid-from" class="form-control"/>
+            </div>
+            <div class="col-md-3 offset-md-3">
+              <label class="form-label">Valid To</label>
+              <input type="datetime-local" id="node-valid-to" class="form-control"/>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Description</label>
+              <input type="text" id="node-description" class="form-control"/>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Attributes (JSON)</label>
+              <textarea id="node-attributes" class="form-control font-monospace" rows="6" placeholder='{"key": "value"}'>{}</textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">SKOS Broader (comma-separated node IDs)</label>
+              <input type="text" id="node-skos-broader" class="form-control" placeholder="concept-a, concept-b"/>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">SKOS Narrower (comma-separated node IDs)</label>
+              <input type="text" id="node-skos-narrower" class="form-control" placeholder="concept-x, concept-y"/>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-success" id="btn-save-node">Save Hypernode</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edge Modal -->
+<div class="modal fade" id="modal-edge" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modal-edge-title">New Hyperedge</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="form-edge">
+          <input type="hidden" id="edge-form-mode" value="create"/>
+          <div class="row g-3">
+            <div class="col-md-6" id="edge-graph-select-row">
+              <label class="form-label">Hypergraph <span class="text-danger">*</span></label>
+              <select id="edge-graph-id" class="form-select">
+                <option value="">— Select Hypergraph —</option>
+              </select>
+            </div>
+            <div class="col-md-6 d-none" id="edge-graph-display-row">
+              <label class="form-label">Hypergraph</label>
+              <div id="edge-graph-display" class="form-control bg-body-secondary text-muted"></div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">ID <span class="text-muted small">(optional, auto-generated)</span></label>
+              <input type="text" id="edge-id" class="form-control" placeholder="auto"/>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label">Relation <span class="text-danger">*</span></label>
+              <input type="text" id="edge-relation" class="form-control" placeholder="has-member" required list="edge-relation-suggestions"/>
+              <datalist id="edge-relation-suggestions">
+                <option value="has-member"/><option value="sibling"/><option value="broader"/>
+                <option value="narrower"/><option value="related"/><option value="contains"/>
+                <option value="instance-of"/><option value="holds-office"/><option value="part-of"/>
+              </datalist>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Flavor</label>
+              <select id="edge-flavor" class="form-select">
+                <option value="hub">hub</option>
+                <option value="symmetric">symmetric</option>
+                <option value="direct">direct</option>
+                <option value="transitive">transitive</option>
+                <option value="inverse-transitive">inverse-transitive</option>
+              </select>
+            </div>
+            <div class="col-md-9">
+              <label class="form-label">Label</label>
+              <input type="text" id="edge-label" class="form-control"/>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Status</label>
+              <select id="edge-status" class="form-select">
+                <option value="active">active</option>
+                <option value="draft">draft</option>
+                <option value="archived">archived</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Valid From</label>
+              <input type="datetime-local" id="edge-valid-from" class="form-control"/>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Valid To</label>
+              <input type="datetime-local" id="edge-valid-to" class="form-control"/>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Tags</label>
+              <input type="text" id="edge-tags" class="form-control" placeholder="tag1, tag2"/>
+            </div>
+
+            <!-- Members builder -->
+            <div class="col-12">
+              <label class="form-label fw-semibold">Members <span class="text-muted small">(hypernodes in this edge)</span></label>
+              <div id="edge-members-list" class="mb-2"></div>
+              <button type="button" class="btn btn-outline-primary btn-sm" id="btn-add-member">
+                <i class="bi bi-plus me-1"></i>Add Member
+              </button>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label">Attributes (JSON)</label>
+              <textarea id="edge-attributes" class="form-control font-monospace" rows="4" placeholder='{"key": "value"}'>{}</textarea>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-info text-white" id="btn-save-edge">Save Hyperedge</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Account Modal -->
+<div class="modal fade" id="modal-account" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modal-account-title">New Account</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="form-account">
+          <input type="hidden" id="account-form-mode" value="create"/>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Username <span class="text-danger">*</span></label>
+              <input type="text" id="account-username" class="form-control" required/>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Email</label>
+              <input type="email" id="account-email" class="form-control"/>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Password <span id="pw-required" class="text-danger">*</span></label>
+              <input type="password" id="account-password" class="form-control" placeholder="min 6 characters"/>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Roles</label>
+              <div class="d-flex gap-3 mt-1">
+                <div class="form-check"><input class="form-check-input" type="checkbox" value="admin" id="role-admin"/><label class="form-check-label" for="role-admin">admin</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" value="user" id="role-user" checked/><label class="form-check-label" for="role-user">user</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" value="agent" id="role-agent"/><label class="form-check-label" for="role-agent">agent</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" value="readonly" id="role-readonly"/><label class="form-check-label" for="role-readonly">readonly</label></div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Status</label>
+              <select id="account-status" class="form-select">
+                <option value="active">active</option>
+                <option value="inactive">inactive</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Tags</label>
+              <input type="text" id="account-tags" class="form-control" placeholder="tag1, tag2"/>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Description</label>
+              <input type="text" id="account-description" class="form-control"/>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-warning text-dark" id="btn-save-account">Save Account</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- View/Detail Modal -->
+<div class="modal fade" id="modal-detail" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modal-detail-title">Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <pre id="modal-detail-content" class="bg-dark text-light p-3 rounded" style="font-size:0.8rem;max-height:70vh;overflow:auto;"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Delete Modal -->
+<div class="modal fade" id="modal-confirm" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header border-0">
+        <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Confirm Delete</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="modal-confirm-body">Are you sure?</div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="btn-confirm-delete">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Query Examples Offcanvas -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="offcanvas-examples" style="width:500px">
+  <div class="offcanvas-header">
+    <h5 class="offcanvas-title">HQL Query Examples</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div class="offcanvas-body">
+    <div id="hql-examples-list"></div>
+  </div>
+</div>
+
+<!-- Toast notifications -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+  <div id="toast-container"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/yaml/yaml.js"></script>
+<script src="/ui/js/api.js"></script>
+<script src="/ui/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+# HypergraphAI dependencies
+
+# Web framework
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+
+# MCP (Model Context Protocol)
+mcp==1.9.0
+
+# MongoDB async driver
+motor==3.7.0
+pymongo>=4.10,<5.0
+
+# Data validation
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
+# Authentication
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt>=3.2.0,<4.0.0
+python-multipart==0.0.18
+
+# Environment
+python-dotenv==1.0.1
+
+# YAML
+pyyaml==6.0.2
+
+# HTTP client (for mesh/remote graph queries)
+httpx==0.28.1
+
+# Utilities
+python-dateutil==2.9.0
+
+# Shell
+prompt_toolkit==3.0.48
