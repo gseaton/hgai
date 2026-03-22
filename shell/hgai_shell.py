@@ -36,7 +36,7 @@ try:
     from prompt_toolkit.history import FileHistory
     from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
     from prompt_toolkit.completion import WordCompleter
-    from prompt_toolkit.styles import Style
+    from prompt_toolkit.formatted_text import ANSI
     HAS_PROMPT_TOOLKIT = True
 except ImportError:
     HAS_PROMPT_TOOLKIT = False
@@ -719,7 +719,7 @@ class HgaiShell:
             try:
                 prompt = self._prompt_str()
                 if session:
-                    line = session.prompt(prompt)
+                    line = session.prompt(ANSI(prompt))
                 else:
                     line = input(prompt)
                 self.handle(line)

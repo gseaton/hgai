@@ -1,0 +1,346 @@
+edges:
+- attributes: {}
+  created_by: admin
+  description: null
+  flavor: hub
+  hypergraph_id: hg-alpha
+  hyperkey: 097828c60c64b39fc0e0ad83f2f0bea7
+  id: three-stooges-curly-joe
+  label: Three Stooges - Curly Joe Era
+  members:
+  - attributes: {}
+    created_by: null
+    node_id: group:three-stooges
+    order: null
+    role: null
+    seq: 0
+    status: active
+    system_created: null
+    system_updated: null
+    tags: []
+    version: 1
+  - attributes: {}
+    created_by: null
+    node_id: person:moe
+    order: null
+    role: null
+    seq: 1
+    status: active
+    system_created: null
+    system_updated: null
+    tags: []
+    version: 1
+  - attributes: {}
+    created_by: null
+    node_id: person:larry
+    order: null
+    role: null
+    seq: 2
+    status: active
+    system_created: null
+    system_updated: null
+    tags: []
+    version: 1
+  - attributes: {}
+    created_by: null
+    node_id: person:curly-joe
+    order: null
+    role: null
+    seq: 3
+    status: active
+    system_created: null
+    system_updated: null
+    tags: []
+    version: 1
+  relation: has-member
+  relation_node_id: null
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-22T00:14:20.948000'
+  system_updated: '2026-03-22T00:29:23.876000'
+  tags: []
+  valid_from: '1940-01-01T08:01:00'
+  valid_to: '1950-01-01T07:59:00'
+  version: 2
+- attributes: {}
+  created_by: admin
+  description: null
+  flavor: hub
+  hypergraph_id: hg-alpha
+  hyperkey: 07c0d720610f3a51000e7ec958cf372d
+  id: three-stooges-curly
+  label: null
+  members:
+  - attributes: {}
+    created_by: null
+    node_id: group:three-stooges
+    order: null
+    role: null
+    seq: 0
+    status: active
+    system_created: null
+    system_updated: null
+    tags: []
+    version: 1
+  - attributes: {}
+    created_by: null
+    node_id: person:moe
+    order: null
+    role: null
+    seq: 1
+    status: active
+    system_created: null
+    system_updated: null
+    tags: []
+    version: 1
+  - attributes: {}
+    created_by: null
+    node_id: person:larry
+    order: null
+    role: null
+    seq: 2
+    status: active
+    system_created: null
+    system_updated: null
+    tags: []
+    version: 1
+  - attributes: {}
+    created_by: null
+    node_id: person:curly
+    order: null
+    role: null
+    seq: 3
+    status: active
+    system_created: null
+    system_updated: null
+    tags: []
+    version: 1
+  relation: has-member
+  relation_node_id: null
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-22T00:13:10.415000'
+  system_updated: '2026-03-22T00:28:28.299000'
+  tags: []
+  valid_from: '1930-01-01T08:01:00'
+  valid_to: '1940-01-01T07:59:00'
+  version: 2
+- attributes: {}
+  created_by: admin
+  description: null
+  flavor: hub
+  hypergraph_id: hg-alpha
+  hyperkey: 14a548c4a3dc8338fcc559b2bdf92a64
+  id: three-stooges-original
+  label: Original Three Stooges
+  members:
+  - attributes: {}
+    created_by: null
+    node_id: group:three-stooges
+    order: null
+    role: null
+    seq: 0
+    status: active
+    system_created: null
+    system_updated: null
+    tags: []
+    version: 1
+  - attributes: {}
+    created_by: null
+    node_id: person:moe
+    order: null
+    role: null
+    seq: 1
+    status: active
+    system_created: null
+    system_updated: null
+    tags: []
+    version: 1
+  - attributes: {}
+    created_by: null
+    node_id: person:larry
+    order: null
+    role: null
+    seq: 2
+    status: active
+    system_created: null
+    system_updated: null
+    tags: []
+    version: 1
+  - attributes: {}
+    created_by: null
+    node_id: shemp
+    order: null
+    role: null
+    seq: 3
+    status: active
+    system_created: null
+    system_updated: null
+    tags: []
+    version: 1
+  relation: has-member
+  relation_node_id: null
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-22T00:12:05.140000'
+  system_updated: '2026-03-22T00:29:45.340000'
+  tags:
+  - original
+  valid_from: '1920-01-01T08:01:00'
+  valid_to: '1930-01-01T07:59:00'
+  version: 2
+graph:
+  attributes:
+    hobbies:
+    - golf
+    - darts
+  composition: []
+  created_by: admin
+  description: First hypergraph
+  edge_count: 3
+  id: hg-alpha
+  label: Alpha Hg
+  node_count: 7
+  remote_refs: []
+  status: active
+  system_created: '2026-03-21T23:43:25.334000'
+  system_updated: '2026-03-21T23:43:25.334000'
+  tags:
+  - alpha
+  - hg
+  type: instantiated
+  version: 1
+hgai_export: '1.0'
+nodes:
+- attributes: {}
+  created_by: admin
+  description: null
+  hypergraph_id: hg-alpha
+  id: group:three-stooges
+  label: The Three Stooges
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-22T00:00:23.136000'
+  system_updated: '2026-03-22T00:00:23.136000'
+  tags: []
+  type: Group
+  valid_from: null
+  valid_to: null
+  version: 1
+- attributes: {}
+  created_by: admin
+  description: null
+  hypergraph_id: hg-alpha
+  id: person:curly-joe
+  label: Curly Joe
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-21T23:59:28.611000'
+  system_updated: '2026-03-21T23:59:28.611000'
+  tags: []
+  type: Person
+  valid_from: null
+  valid_to: null
+  version: 1
+- attributes: {}
+  created_by: admin
+  description: null
+  hypergraph_id: hg-alpha
+  id: person:curly
+  label: Curly
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-21T23:59:08.779000'
+  system_updated: '2026-03-21T23:59:08.779000'
+  tags: []
+  type: Person
+  valid_from: null
+  valid_to: null
+  version: 1
+- attributes: {}
+  created_by: admin
+  description: null
+  hypergraph_id: hg-alpha
+  id: person:shemp
+  label: Shemp
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-21T23:58:44.814000'
+  system_updated: '2026-03-21T23:58:44.814000'
+  tags: []
+  type: Person
+  valid_from: null
+  valid_to: null
+  version: 1
+- attributes: {}
+  created_by: admin
+  description: null
+  hypergraph_id: hg-alpha
+  id: person:larry
+  label: Larry
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-21T23:58:25.978000'
+  system_updated: '2026-03-21T23:58:25.978000'
+  tags: []
+  type: Person
+  valid_from: null
+  valid_to: null
+  version: 1
+- attributes: {}
+  created_by: admin
+  description: null
+  hypergraph_id: hg-alpha
+  id: person:moe
+  label: Moe
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-21T23:58:04.253000'
+  system_updated: '2026-03-21T23:58:04.253000'
+  tags:
+  - person:moe
+  type: Person
+  valid_from: null
+  valid_to: null
+  version: 1
+- attributes:
+    answer: 42
+    enabled: true
+    first_name: John
+    last_name: Doe
+    tau: 6.28
+  created_by: admin
+  description: 'John Doe : Person'
+  hypergraph_id: hg-alpha
+  id: person:jdoe
+  label: John Doe
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  status: active
+  system_created: '2026-03-21T23:54:05.364000'
+  system_updated: '2026-03-21T23:54:05.364000'
+  tags:
+  - person:jdoe
+  type: Person
+  valid_from: null
+  valid_to: null
+  version: 1
