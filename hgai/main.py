@@ -74,6 +74,15 @@ def create_app() -> FastAPI:
     app.include_router(accounts.router, prefix=prefix)
     app.include_router(meshes.router, prefix=prefix)
 
+    # SHQL module — mounted conditionally; failures are non-fatal
+    try:
+        from hgai_module_shql import SHQLModule
+        shql_module = SHQLModule()
+        app.include_router(shql_module.get_router(), prefix=prefix)
+        logger.info("SHQL module mounted at /api/v1/shql")
+    except BaseException as e:
+        logger.warning(f"SHQL module not available (continuing without it): {type(e).__name__}: {e}")
+
     # MCP server — mounted conditionally; failures are non-fatal
     try:
         from hgai.mcp.server import create_mcp_server

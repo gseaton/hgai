@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.css"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/theme/dracula.css"/>
   <link rel="stylesheet" href="/ui/css/hgai.css"/>
+  <link rel="icon" type="image/x-icon" href="/ui/favicon.ico">
 </head>
 <body>
 
@@ -58,6 +59,7 @@
     <a class="sidebar-link" data-screen="nodes" href="#"><i class="bi bi-circle-fill"></i> Hypernodes</a>
     <a class="sidebar-link" data-screen="edges" href="#"><i class="bi bi-share-fill"></i> Hyperedges</a>
     <a class="sidebar-link" data-screen="query" href="#"><i class="bi bi-terminal-fill"></i> Query (HQL)</a>
+    <a class="sidebar-link" data-screen="shql" href="#"><i class="bi bi-braces"></i> Query (SHQL)</a>
 
     <div class="sidebar-section-label admin-only">Administration</div>
     <a class="sidebar-link admin-only" data-screen="accounts" href="#"><i class="bi bi-people-fill"></i> Accounts</a>
@@ -327,6 +329,52 @@
               </div>
             </div>
             <div id="query-result-area" class="flex-grow-1 border rounded bg-dark text-light p-3 overflow-auto font-monospace" style="font-size:0.8rem;">
+              <span class="text-muted">Run a query to see results...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── QUERY (SHQL) ────────────────────────────────────────────── -->
+      <div id="screen-shql" class="screen d-none">
+        <div class="screen-header">
+          <h4><i class="bi bi-braces text-warning me-2"></i>SHQL Query</h4>
+          <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary btn-sm" id="btn-shql-examples">
+              <i class="bi bi-code-slash me-1"></i>Examples
+            </button>
+            <button class="btn btn-outline-secondary btn-sm" id="btn-shql-validate">
+              <i class="bi bi-check-circle me-1"></i>Validate
+            </button>
+            <button class="btn btn-warning btn-sm text-dark" id="btn-shql-run">
+              <i class="bi bi-play-fill me-1"></i>Run Query
+            </button>
+          </div>
+        </div>
+        <div class="row g-3" style="height: calc(100vh - 180px);">
+          <div class="col-md-5 d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <label class="form-label fw-semibold mb-0">SHQL (YAML)</label>
+              <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="shql-use-cache" checked/>
+                <label class="form-check-label small" for="shql-use-cache">Cache</label>
+              </div>
+            </div>
+            <div id="shql-editor-wrapper" class="flex-grow-1 border rounded overflow-hidden">
+              <textarea id="shql-editor"></textarea>
+            </div>
+          </div>
+          <div class="col-md-7 d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <label class="form-label fw-semibold mb-0">Results</label>
+              <div class="d-flex gap-2 align-items-center">
+                <span id="shql-result-count" class="badge bg-secondary"></span>
+                <button class="btn btn-outline-secondary btn-sm" id="btn-shql-copy">
+                  <i class="bi bi-clipboard"></i>
+                </button>
+              </div>
+            </div>
+            <div id="shql-result-area" class="flex-grow-1 border rounded bg-dark text-light p-3 overflow-auto font-monospace" style="font-size:0.8rem;">
               <span class="text-muted">Run a query to see results...</span>
             </div>
           </div>
@@ -754,6 +802,17 @@
   </div>
   <div class="offcanvas-body">
     <div id="hql-examples-list"></div>
+  </div>
+</div>
+
+<!-- SHQL Examples Offcanvas -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="offcanvas-shql-examples" style="width:500px">
+  <div class="offcanvas-header">
+    <h5 class="offcanvas-title">SHQL Query Examples</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div class="offcanvas-body">
+    <div id="shql-examples-list"></div>
   </div>
 </div>
 

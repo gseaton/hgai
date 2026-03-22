@@ -87,7 +87,7 @@ function showScreen(name) {
 
   const titles = {
     dashboard: 'Dashboard', graphs: 'Hypergraphs', nodes: 'Hypernodes',
-    edges: 'Hyperedges', query: 'HQL Query', accounts: 'Accounts',
+    edges: 'Hyperedges', query: 'HQL Query', shql: 'SHQL Query', accounts: 'Accounts',
     meshes: 'Meshes', system: 'System',
   };
   document.getElementById('topbar-screen-title').textContent = titles[name] || name;
@@ -100,6 +100,7 @@ function showScreen(name) {
     nodes: () => { State.nodesPage = 0; populateNodesGraphSelect(); loadNodes(); },
     edges: () => { State.edgesPage = 0; populateEdgesGraphSelect(); loadEdges(); },
     query: initQueryEditor,
+    shql: initShqlEditor,
     accounts: loadAccounts,
     meshes: loadMeshes,
     system: loadSystem,
@@ -808,6 +809,25 @@ document.getElementById('btn-save-edge').addEventListener('click', async () => {
   } catch (err) { toast(err.message, 'danger'); }
 });
 
+// ── JSON syntax highlighter ────────────────────────────────────────────────
+function syntaxHighlightJson(obj) {
+  const json = JSON.stringify(obj, null, 2);
+  return json.replace(
+    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
+    match => {
+      let cls = 'json-number';
+      if (/^"/.test(match)) {
+        cls = /:$/.test(match) ? 'json-key' : 'json-string';
+      } else if (/true|false/.test(match)) {
+        cls = 'json-bool';
+      } else if (/null/.test(match)) {
+        cls = 'json-null';
+      }
+      return `<span class="${cls}">${match.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>`;
+    }
+  );
+}
+
 // ── Query (HQL) ────────────────────────────────────────────────────────────
 const HQL_EXAMPLES = [
   {
@@ -886,7 +906,7 @@ async function runQuery() {
     const result = await HGAI_API.runQuery(hql, useCache);
     countEl.textContent = `${result.count || 0} results`;
     countEl.className = 'badge bg-success';
-    resultArea.textContent = JSON.stringify(result, null, 2);
+    resultArea.innerHTML = syntaxHighlightJson(result);
   } catch (err) {
     countEl.textContent = 'error';
     countEl.className = 'badge bg-danger';
@@ -913,7 +933,116 @@ document.getElementById('btn-query-examples').addEventListener('click', () => {
 });
 
 document.getElementById('btn-query-copy').addEventListener('click', () => {
-  const content = document.getElementById('query-result-area').textContent;
+  const content = document.getElementById('query-result-area').innerText;
+  navigator.clipboard.writeText(content).then(() => toast('Copied to clipboard'));
+});
+
+// ── Query (SHQL) ───────────────────────────────────────────────────────────
+const SHQL_EXAMPLES = [
+  {
+    title: 'Find all nodes of a type',
+    shql: `shql:\n  from: hello-world\n  where:\n    - node: ?person\n      node_type: Person\n  select:\n    - ?person`
+  },
+  {
+    title: 'Find nodes with attribute filter',
+    shql: `shql:\n  from: hello-world\n  where:\n    - node: ?p\n      node_type: Person\n    - filter:\n        CONTAINS:\n          - ?p.label\n          - "Shemp"\n  select:\n    - ?p.id\n    - ?p.label`
+  },
+  {
+    title: 'Find edges by relation type',
+    shql: `shql:\n  from: hello-world\n  where:\n    - edge: ?e\n      relation: has-member\n  select:\n    - ?e.id\n    - ?e.relation\n    - ?e.members`
+  },
+  {
+    title: 'Join nodes through a hyperedge',
+    shql: `shql:\n  from: hello-world\n  where:\n    - node: ?person\n      node_type: Person\n    - edge: ?membership\n      relation: has-member\n      members:\n        - node_id: ?person\n  select:\n    - ?person.label\n    - ?membership.id\n    - ?membership.relation`
+  },
+  {
+    title: 'Optional pattern (left outer join)',
+    shql: `shql:\n  from: hello-world\n  where:\n    - node: ?p\n      node_type: Person\n    - optional:\n        - edge: ?e\n          relation: sibling\n          members:\n            - node_id: ?p\n  select:\n    - ?p.label\n    - ?e.id`
+  },
+  {
+    title: 'Union of two patterns',
+    shql: `shql:\n  from: hello-world\n  where:\n    - union:\n        - - node: ?item\n            node_type: Person\n        - - node: ?item\n            node_type: Character\n  select:\n    - ?item.id\n    - ?item.label\n    - ?item.node_type`
+  },
+  {
+    title: 'Multi-graph with ORDER BY and LIMIT',
+    shql: `shql:\n  from:\n    - graph-1\n    - graph-2\n  where:\n    - node: ?n\n      node_type: Person\n  select:\n    - ?n.id\n    - ?n.label\n  order_by: ?n.label\n  limit: 10`
+  },
+  {
+    title: 'Numeric attribute filter',
+    shql: `shql:\n  from: hello-world\n  where:\n    - node: ?n\n    - filter:\n        ">=":\n          - ?n.attributes.score\n          - 90\n  select:\n    - ?n.id\n    - ?n.label\n    - ?n.attributes.score`
+  },
+];
+
+let _shqlEditorCM = null;
+
+function initShqlEditor() {
+  if (_shqlEditorCM) return;
+  const ta = document.getElementById('shql-editor');
+  _shqlEditorCM = CodeMirror.fromTextArea(ta, {
+    mode: 'yaml',
+    theme: 'dracula',
+    lineNumbers: true,
+    lineWrapping: true,
+    indentUnit: 2,
+    tabSize: 2,
+    extraKeys: {
+      'Ctrl-Enter': () => runShqlQuery(),
+      'Cmd-Enter': () => runShqlQuery(),
+    },
+  });
+  _shqlEditorCM.setValue(SHQL_EXAMPLES[0].shql);
+
+  const exList = document.getElementById('shql-examples-list');
+  SHQL_EXAMPLES.forEach(ex => {
+    const card = document.createElement('div');
+    card.className = 'hql-example-card';
+    card.innerHTML = `<div class="example-title">${ex.title}</div><pre>${ex.shql}</pre>`;
+    card.addEventListener('click', () => {
+      _shqlEditorCM.setValue(ex.shql);
+      bootstrap.Offcanvas.getInstance(document.getElementById('offcanvas-shql-examples'))?.hide();
+    });
+    exList.appendChild(card);
+  });
+}
+
+async function runShqlQuery() {
+  const shql = _shqlEditorCM?.getValue() || '';
+  const useCache = document.getElementById('shql-use-cache').checked;
+  const resultArea = document.getElementById('shql-result-area');
+  const countEl = document.getElementById('shql-result-count');
+  resultArea.innerHTML = '<span class="text-muted"><div class="spinner-border spinner-border-sm me-2"></div>Executing...</span>';
+  try {
+    const result = await HGAI_API.runShqlQuery(shql, useCache);
+    countEl.textContent = `${result.count || 0} results`;
+    countEl.className = 'badge bg-success';
+    resultArea.innerHTML = syntaxHighlightJson(result);
+  } catch (err) {
+    countEl.textContent = 'error';
+    countEl.className = 'badge bg-danger';
+    resultArea.innerHTML = `<span class="text-danger">${err.message}</span>`;
+  }
+}
+
+document.getElementById('btn-shql-run').addEventListener('click', runShqlQuery);
+
+document.getElementById('btn-shql-validate').addEventListener('click', async () => {
+  const shql = _shqlEditorCM?.getValue() || '';
+  try {
+    const result = await HGAI_API.validateShqlQuery(shql);
+    if (result.valid) {
+      toast('SHQL is valid', 'success');
+    } else {
+      toast('Validation errors: ' + result.errors.join('; '), 'danger');
+    }
+  } catch (err) { toast(err.message, 'danger'); }
+});
+
+document.getElementById('btn-shql-examples').addEventListener('click', () => {
+  new bootstrap.Offcanvas(document.getElementById('offcanvas-shql-examples')).show();
+});
+
+document.getElementById('btn-shql-copy').addEventListener('click', () => {
+  const content = document.getElementById('shql-result-area').innerText;
   navigator.clipboard.writeText(content).then(() => toast('Copied to clipboard'));
 });
 

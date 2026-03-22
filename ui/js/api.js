@@ -108,7 +108,7 @@ const HGAI_API = (() => {
   async function updateEdge(graphId, edgeId, data) { return request('PUT', `/graphs/${graphId}/edges/${edgeId}`, data); }
   async function deleteEdge(graphId, edgeId) { return request('DELETE', `/graphs/${graphId}/edges/${edgeId}`); }
 
-  // ── Query ─────────────────────────────────────────────────────────────────
+  // ── Query (HQL) ───────────────────────────────────────────────────────────
   async function runQuery(hql, useCache = true) {
     return request('POST', '/query', { hql, use_cache: useCache });
   }
@@ -116,6 +116,12 @@ const HGAI_API = (() => {
   async function flushCache(graphId = null) {
     return request('POST', '/query/cache/invalidate', null, graphId ? { graph_id: graphId } : {});
   }
+
+  // ── Query (SHQL) ──────────────────────────────────────────────────────────
+  async function runShqlQuery(shql, useCache = true) {
+    return request('POST', '/shql/query', { shql, use_cache: useCache });
+  }
+  async function validateShqlQuery(shql) { return request('POST', '/shql/validate', { shql }); }
 
   // ── Accounts ──────────────────────────────────────────────────────────────
   async function listAccounts(params = {}) { return request('GET', '/accounts', null, params); }
@@ -144,8 +150,10 @@ const HGAI_API = (() => {
     listNodes, getNode, createNode, updateNode, deleteNode,
     // edges
     listEdges, getEdge, createEdge, updateEdge, deleteEdge,
-    // query
+    // query (HQL)
     runQuery, validateQuery, flushCache,
+    // query (SHQL)
+    runShqlQuery, validateShqlQuery,
     // accounts
     listAccounts, getAccount, createAccount, updateAccount, deleteAccount,
     // meshes

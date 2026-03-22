@@ -20,6 +20,7 @@
 - [hgai Shell](#hgai-shell)
 - [Web UI](#web-ui)
 - [Inferencing](#inferencing)
+- [SHQL — Semantic Hypergraph Query Language](#shql--semantic-hypergraph-query-language)
 - [Module Development](#module-development)
 - [Administration](#administration)
 
@@ -82,6 +83,58 @@ hql:
   as: result
 ```
 
+### WHERE Operators
+
+┌───────────────────────┬───────────────────┐
+│       Operator        │       YAML        │
+├───────────────────────┼───────────────────┤
+│ less than             │ $lt: 20           │
+├───────────────────────┼───────────────────┤
+│ less than or equal    │ $lte: 20          │
+├───────────────────────┼───────────────────┤
+│ greater than          │ $gt: 20           │
+├───────────────────────┼───────────────────┤
+│ greater than or equal │ $gte: 20          │
+├───────────────────────┼───────────────────┤
+│ not equal             │ $ne: 20           │
+├───────────────────────┼───────────────────┤
+│ in a list             │ $in: [10, 15, 20] │
+└───────────────────────┴───────────────────┘
+
+### WHERE Boolean Operators
+
+#### Boolean Operators
+- `$or`
+- `$and`
+- `$nor`
+- `$not`
+
+#### Example WHERE Boolean Query
+
+```yaml
+hql:                                                                                                                                              
+    from: my-graph                                                                                                                                
+    match:                                                                                                                                          
+      type: any
+    where:                                                                                                                                          
+      $or:                                                                                                                                        
+        - attributes.answer:
+            $lt: 10
+        - attributes.answer:
+            $gt: 99                                                                                                                                 
+    return:
+      - id                                                                                                                                          
+      - label                                               
+      - type
+      - attributes
+    as: answer_out_of_range
+```
+
+The `$or` key passes directly through to MongoDB unchanged — the query engine maps any unrecognized `where` key straight 
+to the MongoDB query document, so all standard MongoDB logical operators work: `$or`, `$and`, `$nor`, `$not`.
+
+### Query Examples
+
 Multi-graph composition:
 ```yaml
 hql:
@@ -109,6 +162,115 @@ hql:
     relation: holds-office
   return:
     - members
+```
+
+```yaml
+hql:
+    from: 
+      - hg-alpha
+      - hg-bravo
+    at: "1944-11-22T00:00:00Z"
+    match:
+      type: hyperedge
+    where:
+      relation: president-of
+      flavor: hub
+      members.node_id:
+        $all: [nation:usa]
+      members.seq: 0
+    return:
+      - id
+      - relation
+      - members
+      - attributes
+    as: potus-at
+```
+
+Attributes Query:
+
+```yaml
+hql:
+    from: hello-world
+    match:
+      type: any
+    where:
+      attributes.family: Horwitz
+    return:
+      - id
+      - label
+      - attributes
+      - _entity_type
+    as: horwitz_family
+```
+Matches any hypernode or hyperedge whose attributes.family == "Horwitz" — 
+in the seed data this returns the Horwitz Brothers sibling edge.
+
+Numeric WHERE Operators:
+
+```yaml
+hql:
+  from: 
+    - hg-alpha
+    - hg-bravo
+  match:
+    type: any
+  where:
+    attributes.answer:
+      $gt: 2
+  return:
+    - id
+    - label
+    - type
+    - attributes
+  as: answer_lt_20
+```
+
+Hyperedges with member node/edge ids:
+
+```yaml
+hql:
+    from: hg-alpha
+    match:
+      type: hyperedge
+    where:
+      members:
+        node_id: person:curly-joe
+    return:
+      - id
+      - relation
+      - members
+      - attributes
+    as: edges_containing_moe
+```
+The `members.node_id` path is handled as a special case in the engine (query.py:117-120), 
+translating to a MongoDB `members.node_id` field match —
+which works against the array of `member` objects regardless of position.
+
+To match edges containing any one of several nodes:
+
+```yaml
+where:
+  members:
+    node_id:
+      $in: [moe-howard, larry-fine]
+```
+
+To match edges containing all of a set of nodes:
+
+```yaml
+hql:
+    from: hg-alpha
+    match:
+      type: hyperedge
+    where:
+    members.node_id:
+      $all: [person:moe, person:larry]
+    return:
+      - id
+      - relation
+      - members
+      - attributes
+    as: edges_containing_moe_et
 ```
 
 ---
@@ -546,6 +708,264 @@ The following inferencing capabilities are planned for future releases:
 - **Cross-graph inferencing** — SKOS closure and transitive walks spanning multiple hypergraphs in a logical composition or mesh
 - **Materialized inference cache** — optional pre-computation of common transitive closures, stored in `query_cache` and invalidated on edge mutations
 - **OWL-lite property chains** — support for `owl:propertyChainAxiom`-style inference, where a chain of relations implies a derived relation
+
+---
+
+## SHQL — Semantic Hypergraph Query Language
+
+SHQL (pronounced *"shekel"*) is a second query language for HypergraphAI, implemented as a pluggable module (`hgai_module_shql`). While HQL is a filter-and-aggregate language modelled after MongoDB queries, SHQL is a **pattern-matching** language inspired by SPARQL — designed for multi-hop traversal and implicit joins across hypernodes and hyperedges.
+
+### Endpoints
+
+```
+POST /api/v1/shql/query      Execute an SHQL query
+POST /api/v1/shql/validate   Validate an SHQL query (dry run)
+```
+
+### HQL vs SHQL
+
+| | HQL | SHQL |
+|---|---|---|
+| Style | Filter / aggregation | Pattern matching |
+| Variables | No | Yes (`?var`) |
+| Implicit joins | No | Yes — shared `?var` across patterns |
+| Multi-hop traversal | No | Yes |
+| Inspired by | MongoDB query API | SPARQL |
+| Use when | Simple filters, aggregations, PIT queries | Graph traversal, cross-entity joins, relationship discovery |
+
+### Language Structure
+
+```yaml
+shql:
+  from: <graph-id>              # required — graph ID or list of IDs
+  at: <iso-datetime>            # optional — point-in-time filter
+  select:                       # fields to return
+    - ?var                      # whole bound entity
+    - ?var.label                # single field from bound entity
+    - ?var.attributes.city      # nested attribute path
+    - "*"                       # everything (default)
+  where:                        # ordered list of patterns
+    - node:  { ... }            # hypernode pattern
+    - edge:  { ... }            # hyperedge pattern
+    - filter: "<expression>"    # expression filter
+    - optional: [ ... ]         # left outer join — patterns that may not match
+    - union:                    # set union of alternative branches
+        - patterns: [ ... ]
+        - patterns: [ ... ]
+  order_by: ?var.field          # optional sort key
+  limit: 100                    # default 500
+  offset: 0
+  distinct: true                # deduplicate result rows
+  as: result_alias
+```
+
+### Variables
+
+Variables start with `?` and bind matched entities across patterns. A variable used in two different patterns acts as an implicit join: all patterns sharing `?person` must agree on the same node.
+
+### Node Pattern
+
+```yaml
+- node:
+    bind: ?var          # bind matched node to this variable
+    id: my-node-id      # match by exact id (literal or ?var)
+    type: Person        # match by node type
+    tags: [stooge]      # must have all listed tags
+    status: active      # default: active
+    attributes:
+      born: { $lt: "1910-01-01" }   # MongoDB operators work here
+```
+
+### Edge Pattern
+
+```yaml
+- edge:
+    bind: ?edge         # bind matched edge to this variable
+    relation: has-member
+    flavor: hub
+    tags: [original]
+    attributes:
+      era: classic
+    members:            # member patterns (order-independent)
+      - node: { bind: ?group, id: three-stooges }
+      - node: { bind: ?stooge }     # bind any other member
+```
+
+### Filter Expressions
+
+FILTER expressions are strings supporting:
+
+| Syntax | Description |
+|---|---|
+| `?var.field = value` | Equality |
+| `?var.field != value` | Inequality |
+| `?var.field < 10` | Comparison (`<`, `>`, `<=`, `>=`) |
+| `?var.field IN [a, b, c]` | Membership |
+| `CONTAINS(?var.label, "text")` | Case-insensitive substring |
+| `STARTS_WITH(?var.label, "Mo")` | Prefix match |
+| `ENDS_WITH(?var.label, "ard")` | Suffix match |
+| `BOUND(?var)` | Variable is bound |
+| `IS_TYPE(?var, "Person")` | Type check |
+| `expr AND expr` | Logical AND |
+| `expr OR expr` | Logical OR |
+| `NOT expr` | Logical NOT |
+
+---
+
+### Examples
+
+All examples use the `hello-world` seed data (Three Stooges).
+
+#### 1. Find all Person hypernodes
+
+```yaml
+shql:
+  from: hello-world
+  select:
+    - ?person.id
+    - ?person.label
+    - ?person.attributes
+  where:
+    - node:
+        bind: ?person
+        type: Person
+  order_by: ?person.label
+  as: all_people
+```
+
+#### 2. Find which hyperedges contain a specific node (Moe Howard)
+
+```yaml
+shql:
+  from: hello-world
+  select:
+    - ?edge.id
+    - ?edge.relation
+    - ?edge.attributes
+  where:
+    - edge:
+        bind: ?edge
+        members:
+          - node: { id: moe-howard }
+  as: moes_edges
+```
+
+#### 3. Multi-hop join — find all stooges in the classic era lineup
+
+Variables `?stooge` and `?edge` are bound across node and edge patterns; the
+shared variable is the implicit join key.
+
+```yaml
+shql:
+  from: hello-world
+  select:
+    - ?stooge.id
+    - ?stooge.label
+    - ?edge.attributes.era
+  where:
+    - edge:
+        bind: ?edge
+        relation: has-member
+        attributes:
+          era: classic
+        members:
+          - node: { bind: ?group, id: three-stooges }
+          - node: { bind: ?stooge, type: Person }
+  order_by: ?stooge.label
+  as: classic_stooges
+```
+
+#### 4. FILTER on attribute value
+
+```yaml
+shql:
+  from: hello-world
+  select:
+    - ?person.id
+    - ?person.label
+    - ?person.attributes.born
+  where:
+    - node:
+        bind: ?person
+        type: Person
+    - filter: "?person.attributes.born < '1900-01-01'"
+  as: born_before_1900
+```
+
+#### 5. OPTIONAL — include sibling edges where they exist
+
+```yaml
+shql:
+  from: hello-world
+  select:
+    - ?person.label
+    - ?sibling_edge.relation
+  where:
+    - node:
+        bind: ?person
+        type: Person
+    - optional:
+        - edge:
+            bind: ?sibling_edge
+            relation: sibling
+            members:
+              - node: { bind: ?person }
+  as: people_with_optional_siblings
+```
+
+#### 6. UNION — people born before 1900 OR named "Curly"
+
+```yaml
+shql:
+  from: hello-world
+  select:
+    - ?person.id
+    - ?person.label
+  where:
+    - union:
+        - patterns:
+            - node:
+                bind: ?person
+                type: Person
+            - filter: "?person.attributes.born < '1900-01-01'"
+        - patterns:
+            - node:
+                bind: ?person
+                type: Person
+            - filter: "CONTAINS(?person.label, 'Curly')"
+  distinct: true
+  as: union_result
+```
+
+#### 7. Point-in-time query — who was a stooge in 1940?
+
+```yaml
+shql:
+  from: hello-world
+  at: "1940-06-01T00:00:00Z"
+  select:
+    - ?stooge.label
+    - ?edge.attributes
+  where:
+    - edge:
+        bind: ?edge
+        relation: has-member
+        members:
+          - node: { id: three-stooges }
+          - node: { bind: ?stooge, type: Person }
+  as: stooges_in_1940
+```
+
+### Module Location
+
+```
+hgai_module_shql/
+├── __init__.py       module export
+├── module.py         SHQLModule class (router registration)
+├── parser.py         parse_shql() + validate_shql()
+├── engine.py         execute_shql() — binding sets, pattern evaluation, projection
+└── api_router.py     POST /api/v1/shql/query and /validate
+```
 
 ---
 

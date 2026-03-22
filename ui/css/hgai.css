@@ -222,6 +222,14 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 .hql-example-card .example-title { font-weight: 600; font-size: 0.85rem; margin-bottom: 4px; }
 .hql-example-card pre { font-size: 0.75rem; margin: 0; background: transparent; padding: 0; color: #374151; }
 
+/* ── JSON syntax highlighting (result panes) ───────────────────────────────── */
+/* Dracula-inspired palette to match the CodeMirror theme */
+.json-key     { color: #f1fa8c; }   /* yellow  — object keys   */
+.json-string  { color: #50fa7b; }   /* green   — string values */
+.json-number  { color: #bd93f9; }   /* purple  — numbers       */
+.json-bool    { color: #ff79c6; }   /* pink    — true / false  */
+.json-null    { color: #ff79c6; }   /* pink    — null          */
+
 /* ── Misc ──────────────────────────────────────────────────────────────────── */
 .font-monospace { font-family: 'Fira Code', 'Cascadia Code', 'Courier New', monospace; }
 .cursor-pointer { cursor: pointer; }
