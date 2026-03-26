@@ -159,7 +159,7 @@ hql:
   at: "1963-11-22T00:00:00Z"
   match:
     type: hyperedge
-    relation: holds-office
+    relation: rel:holds-office
   return:
     - members
 ```
@@ -173,7 +173,7 @@ hql:
     match:
       type: hyperedge
     where:
-      relation: president-of
+      relation: rel:president-of
       flavor: hub
       members.node_id:
         $all: [nation:usa]
@@ -185,6 +185,55 @@ hql:
       - attributes
     as: potus-at
 ```
+
+The SHQL needs to: (1) find the president-of edge that includes nation:usa as a member, (2) bind the other member (seq 0) as the president's node ID, then (3) join to the Person node to project the requested fields.
+
+```yaml
+shql:
+  from:
+    - hg-alpha
+    - hg-bravo
+  at: "1948-11-22T00:00:00Z"
+  where:
+    # Match the president-of hyperedge that contains nation:usa as a member
+    - edge: ?potus_edge
+      relation: rel:president-of
+      members:
+        - node_id: nation:usa        # anchors the edge to the USA
+        - node_id: ?president_id     # binds the other member (the president)
+          seq: 0
+
+    # Join to the Person node using the bound ?president_id
+    - node: ?president
+      id: ?president_id
+      node_type: Person
+
+  select:
+    - ?president.id
+    - ?president.label
+    - ?president.description
+    - ?president.attributes
+
+  as: potus-at
+```
+
+How it works:
+
+┌──────┬──────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────┐
+│ Step │                 Pattern                  │                                      Effect                                       │
+├──────┼──────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
+│ 1    │ edge: ?potus_edge with nation:usa member │ Finds edges where nation:usa is a member, binding the edge doc to ?potus_edge     │
+├──────┼──────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
+│ 2    │ node_id: ?president_id + seq: 0          │ Binds the seq-0 member's node ID to ?president_id                                 │
+├──────┼──────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
+│ 3    │ node: ?president + id: ?president_id     │ Resolves ?president_id → MongoDB query, binding the full Person doc to ?president │
+├──────┼──────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
+│ 4    │ select                                   │ Projects id, label, description, attributes from the bound Person                 │
+└──────┴──────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────┘
+
+The `at:` timestamp is respected at every stage — both the edge lookup and node lookup are evaluated at the point-in-time `1948-11-22`, so the result reflects whoever held the office on that date. 
+
+---
 
 Attributes Query:
 
