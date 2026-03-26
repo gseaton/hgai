@@ -18,7 +18,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from hgai.core import engine
-from hgai.core.query import execute_hql, HQLError, validate_hql, parse_hql
+from hgai_module_hql.engine import execute_hql, HQLError, validate_hql, parse_hql
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 """Tests for the HQL query parser and validator."""
 
 import pytest
-from hgai.core.query import parse_hql, validate_hql, HQLError
+from hgai_module_hql.engine import parse_hql, validate_hql, HQLError
 
 
 def test_parse_valid_hql_yaml():

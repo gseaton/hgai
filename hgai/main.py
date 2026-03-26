@@ -12,7 +12,7 @@ from fastapi.responses import RedirectResponse
 from hgai.config import get_settings
 from hgai.db.mongodb import connect_db, close_db
 from hgai.core.auth import bootstrap_admin
-from hgai.api.routers import auth, hypergraphs, hypernodes, hyperedges, query, accounts, meshes
+from hgai.api.routers import auth, hypergraphs, hypernodes, hyperedges, accounts, meshes
 
 logger = logging.getLogger(__name__)
 
@@ -70,9 +70,17 @@ def create_app() -> FastAPI:
     app.include_router(hypergraphs.router, prefix=prefix)
     app.include_router(hypernodes.router, prefix=prefix)
     app.include_router(hyperedges.router, prefix=prefix)
-    app.include_router(query.router, prefix=prefix)
     app.include_router(accounts.router, prefix=prefix)
     app.include_router(meshes.router, prefix=prefix)
+
+    # HQL module — mounted conditionally; failures are non-fatal
+    try:
+        from hgai_module_hql import HQLModule
+        hql_module = HQLModule()
+        app.include_router(hql_module.get_router(), prefix=prefix)
+        logger.info("HQL module mounted at /api/v1/query")
+    except BaseException as e:
+        logger.warning(f"HQL module not available (continuing without it): {type(e).__name__}: {e}")
 
     # SHQL module — mounted conditionally; failures are non-fatal
     try:

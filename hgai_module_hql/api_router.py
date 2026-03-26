@@ -1,13 +1,10 @@
-"""HQL query execution API endpoints."""
-
-from typing import Any, Dict
+"""HQL REST API router."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from hgai.api.deps import get_current_active_account
 from hgai.core.cache import invalidate_cache
-from hgai.core.query import HQLError, execute_hql, validate_hql, parse_hql
 from hgai.models.account import AccountInDB
 
 router = APIRouter(prefix="/query", tags=["query"])
@@ -27,6 +24,7 @@ async def run_query(
     request: HQLRequest,
     account: AccountInDB = Depends(get_current_active_account),
 ):
+    from .engine import execute_hql, HQLError
     try:
         result = await execute_hql(request.hql, use_cache=request.use_cache)
         return result.to_dict()
@@ -41,6 +39,7 @@ async def validate_query(
     request: HQLValidateRequest,
     account: AccountInDB = Depends(get_current_active_account),
 ):
+    from .engine import parse_hql, validate_hql, HQLError
     try:
         hql = parse_hql(request.hql)
         errors = validate_hql(hql)
