@@ -878,6 +878,39 @@ POST /api/v1/shql/query      Execute an SHQL query
 POST /api/v1/shql/validate   Validate an SHQL query (dry run)
 ```
 
+### Mesh SHQL
+
+```yaml
+shql:
+  from: alpha-bravo-mesh
+  where:
+  - node: ?person
+    node_type: Person
+  select:
+    - ?person.id
+    - ?person.label
+    - ?person.node_type
+    - ?person.attributes
+    - ?person.tags
+````
+
+### Mesh HQL
+
+```yaml
+hql:
+  from: alpha-bravo-mesh
+  match:
+    type: hypernode
+    node_type: Person
+  return:
+    - id
+    - label
+    - type
+    - attributes
+    - tags
+  limit: 500
+```
+
 ### HQL vs SHQL
 
 | | HQL | SHQL |
