@@ -291,9 +291,7 @@ hql:
       - attributes
     as: edges_containing_moe
 ```
-The `members.node_id` path is handled as a special case in the engine (query.py:117-120), 
-translating to a MongoDB `members.node_id` field match —
-which works against the array of `member` objects regardless of position.
+The `members.node_id` path is handled as a special case in the HQL engine, translating to a MongoDB `members.node_id` field match — which works against the array of `member` objects regardless of position.
 
 To match edges containing any one of several nodes:
 
@@ -328,85 +326,71 @@ hql:
 
 ```
 hgai/
-├── hgai/                    # Main Python package
-│   ├── main.py              # FastAPI application entry point
-│   ├── config.py            # Settings (env vars, dotenv)
-│   ├── db/                  # Database layer (motor/MongoDB)
-│   ├── models/              # Pydantic data models
-│   ├── core/                # Core engine: query, inference, auth, cache
-│   ├── api/                 # REST API routers
-│   └── mcp/                 # MCP server and tools
-├── ui/                      # Web UI (SPA, vanilla JS + Bootstrap)
-├── shell/                   # hgai interactive CLI shell
-├── scripts/                 # MongoDB cold-start and seed scripts
-└── docs/                    # Documentation
+├── hgai/                        # Core Python package
+│   ├── main.py                  # FastAPI app, lifespan, module mounts
+│   ├── config.py                # pydantic-settings (HGAI_ prefix)
+│   ├── db/mongodb.py            # motor async connection + collection accessors
+│   ├── models/                  # Pydantic models: hypernode, hyperedge, hypergraph, account
+│   ├── core/                    # Core engine: CRUD, inference, auth, cache
+│   └── api/routers/             # auth, hypergraphs, hypernodes, hyperedges, accounts
+│
+├── hgai_module_hql/             # HQL — Hypergraph Query Language module
+│   ├── engine.py                # HQL parser + executor (YAML, PIT, multi-graph, aggregation)
+│   └── api_router.py            # POST /api/v1/query, /validate, /cache/invalidate
+│
+├── hgai_module_shql/            # SHQL — Semantic Hypergraph Query Language module
+│   ├── parser.py                # parse_shql() + validate_shql()
+│   ├── engine.py                # execute_shql() — binding sets, pattern evaluation, projection
+│   └── api_router.py            # POST /api/v1/shql/query, /validate
+│
+├── hgai_module_mesh/            # Mesh — distributed server registry + federation module
+│   ├── models.py                # MeshServer, MeshCreate, MeshUpdate, MeshResponse
+│   ├── engine.py                # ping, sync, federated HQL
+│   └── api_router.py            # CRUD + /ping, /sync, /query endpoints
+│
+├── hgai_module_mcp/             # MCP — Model Context Protocol module
+│   └── server.py                # FastMCP server: 14 tools (CRUD + HQL/SHQL query)
+│
+├── ui/                          # Web UI (SPA, vanilla JS + Bootstrap)
+├── shell/                       # hgai interactive CLI shell
+├── scripts/                     # MongoDB cold-start and seed scripts
+├── tests/                       # pytest test suite
+│   ├── test_engine.py           # Hyperkey tests
+│   ├── test_query.py            # HQL parser/validator tests
+│   └── test_mesh.py             # Mesh module tests
+├── hgai.sh                      # Start the hgai server
+├── shell.sh                     # Start the hgai interactive shell
+└── docs/                        # Documentation
+```
 
-Project Structure                                                                                                                                                                                                                                                                                                 
-                                                                                                                                                                                                                                                                                                                    
-  hgai/                                                                                                                                                                                                                                                                                                           
-  ├── README.md                          # Full developer/admin docs                                                                                                                                                                                                                                                
-  ├── LICENSE                            # MIT                                                                                                                                                                                                                                                                      
-  ├── .env.example                       # All env vars documented                                                                                                                                                                                                                                                  
-  ├── .gitignore                                                                                                                                                                                                                                                                                                    
-  ├── docker-compose.yml                 # MongoDB + hgai server                                                                                                                                                                                                                                                  
-  ├── Dockerfile                                                                                                                                                                                                                                                                                                    
-  ├── requirements.txt / pyproject.toml                                                                                                                                                                                                                                                                           
-  │                                                                                                                                                                                                                                                                                                                 
-  ├── scripts/                                                                                                                                                                                                                                                                                                      
-  │   ├── mongo-init.js                  # Cold-start: admin/pwd357, all collections + indexes
-  │   └── seed_data.py                   # Hello-world Three Stooges example data                                                                                                                                                                                                                                   
-  │                                                                                                                                                                                                                                                                                                                 
-  ├── hgai/                              # Python package                                                                                                                                                                                                                                                           
-  │   ├── main.py                        # FastAPI app, lifespan, MCP mount, UI static                                                                                                                                                                                                                              
-  │   ├── config.py                      # pydantic-settings (HGAI_ prefix)                                                                                                                                                                                                                                         
-  │   ├── db/mongodb.py                  # motor async connection + collection accessors                                                                                                                                                                                                                            
-  │   ├── models/                        # Pydantic models: hypernode, hyperedge, hypergraph, account, mesh                                                                                                                                                                                                         
-  │   ├── core/                                                                                                                                                                                                                                                                                                     
-  │   │   ├── engine.py                  # Hypernode/edge/graph CRUD, hyperkey generation, import/export                                                                                                                                                                                                            
-  │   │   ├── query.py                   # HQL parser + executor (YAML, PIT, multi-graph, aggregation)                                                                                                                                                                                                              
-  │   │   ├── inference.py               # SKOS broader/narrower/related transitive closure                                                                                                                                                                                                                         
-  │   │   ├── auth.py                    # JWT, bcrypt, RBAC, bootstrap admin                                                                                                                                                                                                                                       
-  │   │   └── cache.py                   # MongoDB-backed query cache with TTL                                                                                                                                                                                                                                      
-  │   ├── api/routers/                   # auth, hypergraphs, hypernodes, hyperedges, query, accounts, meshes                                                                                                                                                                                                       
-  │   └── mcp/server.py                  # FastMCP server with 15 tools (all CRUD + HQL query)                                                                                                                                                                                                                      
-  │                                                                                                                                                                                                                                                                                                                 
-  ├── ui/                                                                                                                                                                                                                                                                                                           
-  │   ├── index.html                     # Full SPA: login, dashboard, all CRUD screens, query, admin                                                                                                                                                                                                               
-  │   ├── css/hgai.css                   # Complete dark sidebar + responsive layout                                                                                                                                                                                                                                
-  │   └── js/                                                                                                                                                                                                                                                                                                       
-  │       ├── api.js                     # API client (all endpoints)                                                                                                                                                                                                                                               
-  │       └── app.js                     # All screen logic, modals, pagination, HQL editor                                                                                                                                                                                                                         
-  │                                                                                                                                                                                                                                                                                                                 
-  ├── shell/hgai_shell.py               # Interactive CLI shell with history, all commands                                                                                                                                                                                                                          
-  │                                                                                                                                                                                                                                                                                                                 
-  ├── docs/                                                                                                                                                                                                                                                                                                         
-  │   ├── concepts.md                    # Hypergraph concepts, HQL reference, SKOS, RBAC
-  │   ├── hello-world.md                 # Step-by-step first hypergraph tutorial                                                                                                                                                                                                                                   
-  │   ├── module-development.md          # Third-party module development guide                                                                                                                                                                                                                                     
-  │   └── api-reference.md               # Full REST + MCP API reference                                                                                                                                                                                                                                            
-  │                                                                                                                                                                                                                                                                                                                 
-  └── tests/                                                                                                                                                                                                                                                                                                        
-      ├── test_engine.py                 # Hyperkey tests                                                                                                                                                                                                                                                           
-      └── test_query.py                  # HQL parser/validator tests                                                                                                                                                                                                                                               
-```   
-To Run                                                                                                                                                                                                                                                                                                            
-                                                                                                                                                                                                                                                                                                                  
-### Docker (recommended)                                                                                                                                                                                                                                                                                            
-cp .env.example .env                                                                                                                                                                                                                                                                                              
-docker-compose up -d                                                                                                                                                                                                                                                                                              
-python scripts/seed_data.py     # load hello-world example data                                                                                                                                                                                                                                                   
-                                                                                                                                                                                                                                                                                                        
-### Local dev                                                                                                                                                                                                                                                                                                       
-pip install -r requirements.txt                                                                                                                                                                                                                                                                                   
-uvicorn hgai.main:app --reload                                                                                                                                                                                                                                                                                    
+### Docker (recommended)
+```bash
+cp .env.example .env
+docker-compose up -d
+python scripts/seed_data.py     # load hello-world example data
+```
 
-- Web UI: http://localhost:8000/ui/ — login: admin / pwd357                                                                                                                                                                                                                                                       
-- API docs: http://localhost:8000/api/docs                                                                                                                                                                                                                                                                      
-- MCP server: http://localhost:8000/mcp/                                                                                                                                                                                                                                                                          
-- Shell:                      
-  - $ python shell/hgai_shell.py
-  - $ python shell/hgai_shell.py --server http://localhost:8000 --user admin
-  - $ python shell/hgai_shell.py --server http://myserver:8000 -u myuser -p mypassword
+- Web UI: http://localhost:8000/ui/ — login: admin / pwd357
+- API docs: http://localhost:8000/api/docs
+- MCP server: http://localhost:8000/mcp/
+
+### Local dev
+```bash
+./hgai.sh                                           # start server (default port 8357)
+./hgai.sh --port 9000                               # custom port
+./hgai.sh --mongo-db mydb --server-id my-server     # full options
+```
+
+- Web UI: http://localhost:8357/ui/ — login: admin / pwd357
+- API docs: http://localhost:8357/api/docs
+- MCP server: http://localhost:8357/mcp/
+
+### Shell
+```bash
+./shell.sh                                                    # connect to localhost:8357
+./shell.sh --server http://localhost:8357 --user admin        # explicit connection
+./shell.sh --server http://myserver:8357 -u myuser -p mypass  # remote server
+```
 
 ### Component Layers
 
@@ -480,7 +464,7 @@ All configuration is via environment variables (or `.env` file):
 | `HGAI_SECRET_KEY` | *(required)* | JWT signing secret |
 | `HGAI_TOKEN_EXPIRE_MINUTES` | `480` | JWT token lifetime |
 | `HGAI_HOST` | `0.0.0.0` | Server bind host |
-| `HGAI_PORT` | `8000` | Server bind port |
+| `HGAI_PORT` | `8357` | Server bind port |
 | `HGAI_LOG_LEVEL` | `info` | Log level |
 | `HGAI_CACHE_TTL_SECONDS` | `300` | Query cache TTL |
 | `HGAI_CACHE_ENABLED` | `true` | Enable query caching |
@@ -509,7 +493,7 @@ mongosh --username admin --password pwd357 \
 cp .env.example .env
 
 # Run the server
-uvicorn hgai.main:app --reload --host 0.0.0.0 --port 8000
+./hgai.sh
 
 # Seed data (optional)
 python scripts/seed_data.py
@@ -539,7 +523,7 @@ docker-compose down -v
 
 See [docs/api-reference.md](docs/api-reference.md) for full API documentation.
 
-Base URL: `http://localhost:8000/api/v1`
+Base URL: `http://localhost:8357/api/v1`
 
 ### Authentication
 ```
@@ -588,6 +572,18 @@ POST   /api/v1/accounts        # Create account
 GET    /api/v1/accounts/{id}   # Get account
 PUT    /api/v1/accounts/{id}   # Update account
 DELETE /api/v1/accounts/{id}   # Delete account
+```
+
+### Meshes (admin only)
+```
+GET    /api/v1/meshes                   # List meshes
+POST   /api/v1/meshes                   # Create mesh
+GET    /api/v1/meshes/{id}              # Get mesh
+PUT    /api/v1/meshes/{id}              # Update mesh
+DELETE /api/v1/meshes/{id}              # Delete mesh
+GET    /api/v1/meshes/{id}/ping         # Health-check all servers in mesh
+POST   /api/v1/meshes/{id}/sync         # Refresh graph lists from live remotes
+POST   /api/v1/meshes/{id}/query        # Execute federated HQL across all mesh servers
 ```
 
 ---
@@ -648,8 +644,8 @@ Configure your MCP client (e.g., Claude Desktop):
 
 | Tool | Description |
 |------|-------------|
-| `hgai_query_execute` | Execute an HQL (Hypergraph Query Language) query in YAML format |
-| `hgai_query_validate` | Validate an HQL query without executing it |
+| `hgai_query_execute` | Execute an HQL or SHQL query — language auto-detected from top-level key |
+| `hgai_query_validate` | Validate an HQL or SHQL query without executing it — returns `language` field |
 
 ### Tool Reference
 
@@ -697,11 +693,11 @@ tags             Comma-separated tags
 
 #### `hgai_query_execute`
 ```
-hql_yaml    HQL query in YAML format (see HQL reference above)
+query_yaml  HQL or SHQL query in YAML format — top-level 'hql:' or 'shql:' key
 use_cache   Whether to use query result cache (default: true)
 ```
 
-Example:
+HQL example:
 ```yaml
 hql:
   from: my-graph
@@ -713,6 +709,20 @@ hql:
     - attributes
 ```
 
+SHQL example:
+```yaml
+shql:
+  from: my-graph
+  where:
+    - edge:
+        bind: ?e
+        relation: has-member
+        members:
+          - node: { bind: ?stooge, type: Person }
+  select:
+    - ?stooge.label
+```
+
 ---
 
 ## hgai Shell
@@ -720,12 +730,12 @@ hql:
 The `hgai` shell provides an interactive CLI for all HypergraphAI operations:
 
 ```bash
-python shell/hgai_shell.py
+./shell.sh
 ```
 
 Or connect to a remote server:
 ```bash
-python shell/hgai_shell.py --server http://myserver:8000 --user admin
+./shell.sh --server http://myserver:8357 --user admin
 ```
 
 ### Shell Commands
@@ -768,7 +778,7 @@ exit                            Exit shell
 
 ## Web UI
 
-The web UI is served at `http://localhost:8000/ui/` and provides:
+The web UI is served at `http://localhost:8357/ui/` (local dev) or `http://localhost:8000/ui/` (Docker) and provides:
 
 - **Login** — secure authentication
 - **Dashboard** — graph overview with counts and activity
@@ -1124,12 +1134,12 @@ Modules follow the naming convention: `hgai_module_<name>/`
 Minimum module structure:
 ```
 hgai_module_mymodule/
-├── __init__.py
-├── module.py          # HgaiModule subclass
-├── mcp_tools.py       # MCP tool definitions (optional)
-├── api_router.py      # FastAPI router (optional)
-└── README.md
+├── __init__.py        # exports MyModule
+├── module.py          # MyModule class with get_router() or get_app()
+└── api_router.py      # FastAPI router (optional)
 ```
+
+Modules are mounted conditionally in `hgai/main.py` — a missing or broken module logs a warning and is skipped; the server continues normally.
 
 ---
 
