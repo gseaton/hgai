@@ -32,6 +32,12 @@ class HQLError(Exception):
     pass
 
 
+class _MeshRedirect(Exception):
+    """Internal signal: the from-field references a mesh ID, not a graph ID."""
+    def __init__(self, mesh_id: str):
+        self.mesh_id = mesh_id
+
+
 class HQLResult:
     def __init__(self, alias: str, items: List[Dict], meta: Dict):
         self.alias = alias
@@ -185,6 +191,10 @@ async def _resolve_graph_ids(from_field: Any) -> List[str]:
     for gid in graph_ids:
         doc = await col_hypergraphs().find_one({"id": gid})
         if not doc:
+            # Check if it's a mesh ID — signal federation to the caller
+            from hgai.db.mongodb import col_meshes
+            if await col_meshes().find_one({"id": gid}):
+                raise _MeshRedirect(gid)
             raise HQLError(f"Hypergraph not found: {gid}")
         if doc.get("type") == "logical" and doc.get("composition"):
             resolved.extend(doc["composition"])
@@ -237,7 +247,20 @@ async def execute_hql(hql_text: str, use_cache: bool = True) -> HQLResult:
     # Aggregation
     aggregate = hql.get("aggregate", {})
 
-    graph_ids = await _resolve_graph_ids(from_field)
+    try:
+        graph_ids = await _resolve_graph_ids(from_field)
+    except _MeshRedirect as redirect:
+        try:
+            from hgai_module_mesh.engine import federated_hql
+            fed = await federated_hql(redirect.mesh_id, hql_text, use_cache=use_cache)
+            return HQLResult(
+                alias=fed.get("mesh_id", "result"),
+                items=fed["items"],
+                meta={**fed, "federated": True},
+            )
+        except ImportError:
+            raise HQLError("Mesh federation requires hgai_module_mesh to be installed")
+
     match_type = match.get("type", "any")
     items = []
 

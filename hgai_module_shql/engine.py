@@ -755,12 +755,26 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
     if isinstance(select_fields, str):
         select_fields = [select_fields]
 
-    # Resolve graph IDs (expand logical graphs)
+    # Resolve graph IDs (expand logical graphs; detect mesh IDs)
     raw_ids = [from_field] if isinstance(from_field, str) else from_field
     graph_ids: List[str] = []
     for gid in raw_ids:
         doc = await col_hypergraphs().find_one({"id": gid})
         if not doc:
+            # Check if it's a mesh ID — route to federation
+            from hgai.db.mongodb import col_meshes
+            if await col_meshes().find_one({"id": gid}):
+                try:
+                    from hgai_module_mesh.engine import federated_shql
+                    fed = await federated_shql(gid, shql_text, use_cache=use_cache)
+                    return SHQLResult(
+                        alias=fed.get("mesh_id", "result"),
+                        items=fed["items"],
+                        meta={**fed, "federated": True},
+                    )
+                except ImportError:
+                    from .parser import SHQLError
+                    raise SHQLError("Mesh federation requires hgai_module_mesh to be installed")
             from .parser import SHQLError
             raise SHQLError(f"Hypergraph not found: '{gid}'")
         if doc.get("type") == "logical" and doc.get("composition"):

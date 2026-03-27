@@ -185,6 +185,16 @@ class HgaiClient:
     def update_account(self, username, data): return self._request("PUT", f"/accounts/{username}", body=data)
     def delete_account(self, username): return self._request("DELETE", f"/accounts/{username}")
 
+    # Meshes
+    def list_meshes(self, **kw): return self._request("GET", "/meshes", params=kw)
+    def get_mesh(self, mid): return self._request("GET", f"/meshes/{mid}")
+    def create_mesh(self, data): return self._request("POST", "/meshes", body=data)
+    def update_mesh(self, mid, data): return self._request("PUT", f"/meshes/{mid}", body=data)
+    def delete_mesh(self, mid): return self._request("DELETE", f"/meshes/{mid}")
+    def ping_mesh(self, mid): return self._request("GET", f"/meshes/{mid}/ping")
+    def sync_mesh(self, mid): return self._request("POST", f"/meshes/{mid}/sync")
+    def query_mesh(self, mid, body): return self._request("POST", f"/meshes/{mid}/query", body=body)
+
 
 # ─── Shell ────────────────────────────────────────────────────────────────────
 COMMANDS = [
@@ -194,6 +204,7 @@ COMMANDS = [
     "query", "validate",
     "shql", "shql-validate",
     "import", "export",
+    "ping", "sync", "mesh-query",
     "cls", "help", "exit", "quit",
 ]
 
@@ -208,26 +219,37 @@ HELP_TEXT = {
         ls nodes               List hypernodes in active graph
         ls edges               List hyperedges in active graph
         ls accounts            List accounts (admin)
-        ls meshes              List meshes (admin)"""),
+        ls meshes              List meshes (admin)
+        ls meshes <id>         List servers in a mesh (admin)"""),
     "get": textwrap.dedent("""\
         get graph <id>         Get a hypergraph
         get node <id>          Get a hypernode
         get edge <id>          Get a hyperedge
-        get account <user>     Get an account (admin)"""),
+        get account <user>     Get an account (admin)
+        get mesh <id>          Get a mesh (admin)"""),
     "create": textwrap.dedent("""\
         create graph           Create a hypergraph (interactive YAML)
         create node            Create a hypernode (interactive YAML)
         create edge            Create a hyperedge (interactive YAML)
-        create account         Create an account (admin, interactive YAML)"""),
+        create account         Create an account (admin, interactive YAML)
+        create mesh            Create a mesh (admin, interactive YAML)"""),
     "update": textwrap.dedent("""\
         update graph <id>      Update a hypergraph (interactive YAML)
         update node <id>       Update a hypernode (interactive YAML)
-        update edge <id>       Update a hyperedge (interactive YAML)"""),
+        update edge <id>       Update a hyperedge (interactive YAML)
+        update mesh <id>       Update a mesh (admin, interactive YAML)"""),
     "delete": textwrap.dedent("""\
         delete graph <id>      Delete a hypergraph (and all its nodes/edges)
         delete node <id>       Delete a hypernode (active graph)
         delete edge <id>       Delete a hyperedge (active graph)
-        delete account <user>  Delete an account (admin)"""),
+        delete account <user>  Delete an account (admin)
+        delete mesh <id>       Delete a mesh (admin)"""),
+    "ping": "ping mesh <id>  —  Health-check all servers in a mesh (admin)",
+    "sync": "sync mesh <id>  —  Refresh server graph lists from live remotes (admin)",
+    "mesh-query": textwrap.dedent("""\
+        mesh-query <id>              Run HQL or SHQL query across all servers in a mesh
+        mesh-query <id> -f <file>    Run query from a YAML file
+        mesh-query <id> --no-cache   Bypass query cache"""),
     "delete-node": "delete-node <id>  —  Delete a hypernode from the active graph (alias: dn)",
     "delete-edge": "delete-edge <id>  —  Delete a hyperedge from the active graph (alias: de)",
     "query": textwrap.dedent("""\
@@ -390,6 +412,10 @@ class HgaiShell:
             "sv": self.cmd_shql_validate,
             "import": self.cmd_import,
             "export": self.cmd_export,
+            "ping": self.cmd_ping,
+            "sync": self.cmd_sync,
+            "mesh-query": self.cmd_mesh_query,
+            "mq": self.cmd_mesh_query,
             "help": self.cmd_help,
             "cls": lambda a: self.cmd_cls(),
             "exit": lambda a: self._exit(),
@@ -501,8 +527,24 @@ class HgaiShell:
                 row["roles_str"] = ", ".join(row.get("roles") or [])
             self._print_table(rows, ["username", "email", "roles_str", "status"], ["Username", "Email", "Roles", "Status"])
 
+        elif what in ("meshes", "mesh"):
+            # Optional: ls meshes <id> to list servers inside a mesh
+            mid = args[1] if len(args) > 1 else None
+            if mid:
+                mesh = self.client.get_mesh(mid)
+                servers = mesh.get("servers", [])
+                print(f"\n  {C.BOLD}Servers in mesh '{mid}' ({len(servers)} total){C.RESET}")
+                self._print_table(servers, ["id", "name", "url", "status"], ["ID", "Name", "URL", "Status"])
+            else:
+                resp = self.client.list_meshes(limit=100)
+                rows = resp.get("items", [])
+                print(f"\n  {C.BOLD}Meshes ({resp.get('total', 0)} total){C.RESET}")
+                for row in rows:
+                    row["server_count"] = len(row.get("servers", []))
+                self._print_table(rows, ["id", "label", "server_count", "status"], ["ID", "Label", "Servers", "Status"])
+
         else:
-            error(f"Unknown entity: '{what}'. Use: graphs, nodes, edges, accounts")
+            error(f"Unknown entity: '{what}'. Use: graphs, nodes, edges, accounts, meshes")
 
     def cmd_get(self, args):
         self._require_connection()
@@ -521,6 +563,8 @@ class HgaiShell:
             data = self.client.get_edge(self.active_graph, eid)
         elif what == "account":
             data = self.client.get_account(eid)
+        elif what == "mesh":
+            data = self.client.get_mesh(eid)
         else:
             error(f"Unknown entity: '{what}'"); return
 
@@ -582,8 +626,26 @@ class HgaiShell:
             result = self.client.create_account(data)
             success(f"Account created: {result.get('username')}")
 
+        elif what == "mesh":
+            print("\n  Creating Mesh (enter YAML, end with ---):")
+            template = textwrap.dedent("""\
+                id: my-mesh
+                label: My Mesh
+                description: ''
+                servers:
+                  - id: server-1
+                    name: Server One
+                    url: http://localhost:8357
+                    status: active""")
+            print(f"\n  Template:\n{C.DIM}{textwrap.indent(template, '    ')}{C.RESET}\n")
+            raw = self._read_multiline()
+            if not raw.strip(): return
+            data = yaml.safe_load(raw) if HAS_YAML else json.loads(raw)
+            result = self.client.create_mesh(data)
+            success(f"Mesh created: {result.get('id')}")
+
         else:
-            error(f"Usage: create <graph|node|edge|account>")
+            error(f"Usage: create <graph|node|edge|account|mesh>")
 
     def cmd_update(self, args):
         self._require_connection()
@@ -600,6 +662,8 @@ class HgaiShell:
         elif what == "edge":
             self._require_graph()
             existing = self.client.get_edge(self.active_graph, eid)
+        elif what == "mesh":
+            existing = self.client.get_mesh(eid)
         else:
             error(f"Unknown entity: '{what}'"); return
 
@@ -616,6 +680,8 @@ class HgaiShell:
             result = self.client.update_node(self.active_graph, eid, data)
         elif what == "edge":
             result = self.client.update_edge(self.active_graph, eid, data)
+        elif what == "mesh":
+            result = self.client.update_mesh(eid, data)
 
         success(f"Updated: {eid}")
         self._print_json(result)
@@ -642,6 +708,8 @@ class HgaiShell:
             self.client.delete_edge(self.active_graph, eid)
         elif what == "account":
             self.client.delete_account(eid)
+        elif what == "mesh":
+            self.client.delete_mesh(eid)
         else:
             error(f"Unknown entity: '{what}'"); return
 
@@ -848,6 +916,71 @@ class HgaiShell:
             success(f"Exported '{gid}' to: {outfile}")
         else:
             self._print_json(data)
+
+    def cmd_ping(self, args):
+        self._require_connection()
+        if len(args) < 2 or args[0].lower() != "mesh":
+            error("Usage: ping mesh <id>"); return
+        mid = args[1]
+        result = self.client.ping_mesh(mid)
+        servers = result.get("results", [])
+        print(f"\n  {C.BOLD}Ping results for mesh '{mid}'{C.RESET}")
+        for srv in servers:
+            status = srv.get("status", "?")
+            color = C.GREEN if status == "ok" else C.RED
+            sid = srv.get("server_id", "?")
+            url = srv.get("url", "?")
+            latency = srv.get("latency_ms")
+            lat_str = f" ({latency:.0f}ms)" if latency is not None else ""
+            print(f"  {color}{C.BOLD}{status:<6}{C.RESET}  {sid}  {C.DIM}{url}{lat_str}{C.RESET}")
+        print()
+
+    def cmd_sync(self, args):
+        self._require_connection()
+        if len(args) < 2 or args[0].lower() != "mesh":
+            error("Usage: sync mesh <id>"); return
+        mid = args[1]
+        result = self.client.sync_mesh(mid)
+        info(f"Sync complete for mesh '{mid}'")
+        self._print_json(result)
+
+    def cmd_mesh_query(self, args):
+        self._require_connection()
+        if not args:
+            error("Usage: mesh-query <mesh-id> [-f <file>] [--no-cache]"); return
+        mid = args[0]
+        rest = args[1:]
+        use_cache = "--no-cache" not in rest
+        outfile = self._parse_outfile(rest)
+
+        if "-f" in rest:
+            idx = rest.index("-f")
+            filepath = rest[idx + 1] if idx + 1 < len(rest) else None
+            if not filepath:
+                error("Usage: mesh-query <id> -f <file>"); return
+            with open(filepath) as f:
+                query_text = f.read()
+        else:
+            print(f"\n  Enter HQL or SHQL query for mesh '{mid}' (YAML, end with ---):")
+            query_text = self._read_multiline()
+
+        if not query_text.strip():
+            return
+
+        parsed = yaml.safe_load(query_text) if HAS_YAML else json.loads(query_text)
+        if "hql" in parsed:
+            body = {"hql": query_text, "use_cache": use_cache}
+            lang = "HQL"
+        elif "shql" in parsed:
+            body = {"shql": query_text, "use_cache": use_cache}
+            lang = "SHQL"
+        else:
+            error("Query must have a top-level 'hql:' or 'shql:' key"); return
+
+        result = self.client.query_mesh(mid, body)
+        count = result.get("count", 0)
+        info(f"{lang} mesh query '{mid}': {count} results")
+        self._write_result(result, outfile)
 
     def cmd_cls(self):
         os.system('cls' if os.name == 'nt' else 'clear')

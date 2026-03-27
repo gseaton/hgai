@@ -136,6 +136,9 @@ const HGAI_API = (() => {
   async function createMesh(data) { return request('POST', '/meshes', data); }
   async function updateMesh(id, data) { return request('PUT', `/meshes/${id}`, data); }
   async function deleteMesh(id) { return request('DELETE', `/meshes/${id}`); }
+  async function pingMesh(id) { return request('GET', `/meshes/${id}/ping`); }
+  async function syncMesh(id) { return request('POST', `/meshes/${id}/sync`); }
+  async function queryMesh(id, body) { return request('POST', `/meshes/${id}/query`, body); }
 
   return {
     // session
@@ -157,6 +160,6 @@ const HGAI_API = (() => {
     // accounts
     listAccounts, getAccount, createAccount, updateAccount, deleteAccount,
     // meshes
-    listMeshes, getMesh, createMesh, updateMesh, deleteMesh,
+    listMeshes, getMesh, createMesh, updateMesh, deleteMesh, pingMesh, syncMesh, queryMesh,
   };
 })();

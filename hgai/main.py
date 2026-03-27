@@ -36,7 +36,21 @@ async def lifespan(app: FastAPI):
     if created:
         logger.info(f"Admin account '{settings.admin_username}' created (first run bootstrap)")
 
+    # Start mesh background sync scheduler
+    try:
+        from hgai_module_mesh.scheduler import start_scheduler, stop_scheduler
+        start_scheduler(settings.mesh_sync_interval_seconds)
+    except ImportError:
+        stop_scheduler = None
+
     yield
+
+    # Stop mesh sync scheduler
+    try:
+        if stop_scheduler:
+            stop_scheduler()
+    except Exception:
+        pass
 
     await close_db()
     logger.info("HypergraphAI server shutdown complete")

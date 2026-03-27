@@ -412,14 +412,47 @@
             <i class="bi bi-plus-lg me-1"></i>New Mesh
           </button>
         </div>
-        <div class="card">
+        <div class="card mb-3">
           <div class="card-body p-0">
             <table class="table table-hover mb-0">
               <thead>
-                <tr><th>ID</th><th>Label</th><th>Servers</th><th>Status</th><th></th></tr>
+                <tr>
+                  <th>ID</th><th>Label</th><th>Description</th>
+                  <th>Servers</th><th>Status</th><th></th>
+                </tr>
               </thead>
               <tbody id="tbody-meshes"></tbody>
             </table>
+          </div>
+        </div>
+        <!-- Mesh detail / servers panel (shown when a mesh row is expanded) -->
+        <div id="mesh-detail-panel" class="d-none">
+          <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <span class="fw-semibold"><i class="bi bi-hdd-stack me-1"></i>Servers in <code id="mesh-detail-id"></code></span>
+              <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-info" id="btn-mesh-ping-panel">
+                  <i class="bi bi-wifi me-1"></i>Ping All
+                </button>
+                <button class="btn btn-sm btn-outline-success" id="btn-mesh-sync-panel">
+                  <i class="bi bi-arrow-repeat me-1"></i>Sync
+                </button>
+                <button class="btn btn-sm btn-outline-primary" id="btn-mesh-query-panel">
+                  <i class="bi bi-terminal me-1"></i>Federated Query
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" id="btn-mesh-detail-close">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </div>
+            </div>
+            <div class="card-body p-0">
+              <table class="table table-sm mb-0">
+                <thead>
+                  <tr><th>ID</th><th>Name</th><th>URL</th><th>Status</th><th>Ping</th></tr>
+                </thead>
+                <tbody id="tbody-mesh-servers"></tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -813,6 +846,114 @@
   </div>
   <div class="offcanvas-body">
     <div id="shql-examples-list"></div>
+  </div>
+</div>
+
+<!-- Mesh Create/Edit Modal -->
+<div class="modal fade" id="modal-mesh" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modal-mesh-title">New Mesh</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="mesh-form-mode" value="create"/>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">ID <span class="text-danger">*</span></label>
+            <input type="text" id="mesh-id" class="form-control font-monospace" placeholder="my-mesh"/>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Label</label>
+            <input type="text" id="mesh-label" class="form-control" placeholder="My Mesh"/>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Status</label>
+            <select id="mesh-status" class="form-select">
+              <option value="active">active</option>
+              <option value="draft">draft</option>
+              <option value="archived">archived</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Description</label>
+            <input type="text" id="mesh-description" class="form-control" placeholder="Optional description"/>
+          </div>
+          <div class="col-12">
+            <label class="form-label d-flex justify-content-between">
+              <span>Servers</span>
+              <button type="button" class="btn btn-xs btn-outline-secondary" id="btn-add-mesh-server">
+                <i class="bi bi-plus-lg me-1"></i>Add Server
+              </button>
+            </label>
+            <div id="mesh-servers-list" class="d-flex flex-column gap-2"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-warning text-dark" id="btn-save-mesh">
+          <i class="bi bi-floppy me-1"></i>Save Mesh
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Mesh Ping Results Modal -->
+<div class="modal fade" id="modal-mesh-ping" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-wifi me-2 text-info"></i>Ping Results — <code id="modal-ping-mesh-id"></code></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Server</th><th>URL</th><th>Status</th><th>Latency</th><th>Error</th></tr></thead>
+          <tbody id="tbody-ping-results"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Mesh Federated Query Offcanvas -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="offcanvas-mesh-query" style="width:620px">
+  <div class="offcanvas-header border-bottom">
+    <h5 class="offcanvas-title"><i class="bi bi-terminal me-2"></i>Federated Query — <code id="mesh-query-id"></code></h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div class="offcanvas-body d-flex flex-column p-0">
+    <div class="p-3 border-bottom">
+      <div class="d-flex gap-2 align-items-center mb-2">
+        <select id="mesh-query-lang" class="form-select form-select-sm" style="width:auto">
+          <option value="hql">HQL</option>
+          <option value="shql">SHQL</option>
+        </select>
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" id="mesh-query-use-cache" checked/>
+          <label class="form-check-label small" for="mesh-query-use-cache">Cache</label>
+        </div>
+        <button class="btn btn-sm btn-warning text-dark ms-auto" id="btn-mesh-query-run">
+          <i class="bi bi-play-fill me-1"></i>Run
+        </button>
+      </div>
+      <textarea id="mesh-query-editor" class="form-control font-monospace" rows="10"
+        placeholder="Enter HQL or SHQL query YAML here..."></textarea>
+    </div>
+    <div class="p-3 flex-grow-1 overflow-auto">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <span class="fw-semibold small">Results</span>
+        <span id="mesh-query-result-count" class="badge bg-secondary">—</span>
+        <button class="btn btn-xs btn-outline-secondary ms-auto" id="btn-mesh-query-copy">
+          <i class="bi bi-clipboard"></i>
+        </button>
+      </div>
+      <pre id="mesh-query-result-area" class="bg-dark text-light p-3 rounded"
+        style="font-size:0.78rem;min-height:200px;max-height:50vh;overflow:auto;">(results appear here)</pre>
+    </div>
   </div>
 </div>
 

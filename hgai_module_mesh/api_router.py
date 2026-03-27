@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from hgai.core.auth import require_admin
 from hgai.db.mongodb import col_meshes
@@ -55,7 +55,7 @@ async def get_mesh(mesh_id: str, _admin=Depends(require_admin)):
 
 @router.put("/{mesh_id}", response_model=MeshResponse)
 async def update_mesh(mesh_id: str, data: MeshUpdate, admin=Depends(require_admin)):
-    update_fields = {k: v for k, v in data.model_dump(exclude_none=True).items()}
+    update_fields = {k: v for k, v in data.model_dump(exclude_none=True).items() if k != "version"}
     update_fields["system_updated"] = now_utc()
     result = await col_meshes().find_one_and_update(
         {"id": mesh_id},
@@ -103,12 +103,51 @@ async def query_mesh(
     body: dict,
     _admin=Depends(require_admin),
 ):
-    """Fan out an HQL query across all servers in a mesh and merge results."""
-    from .engine import federated_hql
-    hql_text = body.get("hql")
-    if not hql_text:
-        raise HTTPException(status_code=400, detail="'hql' field is required")
+    """Fan out an HQL or SHQL query across all servers in a mesh and merge results.
+
+    Provide either an 'hql' key (HQL query text) or an 'shql' key (SHQL query text).
+    """
+    from .engine import federated_hql, federated_shql
+    use_cache = body.get("use_cache", True)
+
+    if "hql" in body:
+        try:
+            return await federated_hql(mesh_id, body["hql"], use_cache=use_cache)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+    if "shql" in body:
+        try:
+            return await federated_shql(mesh_id, body["shql"], use_cache=use_cache)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+    raise HTTPException(status_code=400, detail="Request body must contain an 'hql' or 'shql' field")
+
+
+@router.api_route(
+    "/{mesh_id}/servers/{server_id}/proxy/{path:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+)
+async def proxy_to_server(
+    mesh_id: str,
+    server_id: str,
+    path: str,
+    request: Request,
+    _admin=Depends(require_admin),
+):
+    """Forward a request to a specific server in a mesh.
+
+    The request method, path, and body are forwarded as-is.
+    Example: POST /meshes/my-mesh/servers/srv-1/proxy/api/v1/graphs
+    """
+    from .engine import proxy_request
     try:
-        return await federated_hql(mesh_id, hql_text, use_cache=body.get("use_cache", True))
+        body = await request.json() if request.method in ("POST", "PUT", "PATCH") else None
+    except Exception:
+        body = None
+    params = dict(request.query_params)
+    try:
+        return await proxy_request(mesh_id, server_id, request.method, path, body=body, params=params)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

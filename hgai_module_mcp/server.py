@@ -470,6 +470,113 @@ async def hgai_query_validate(query_yaml: str) -> str:
     return json.dumps({"valid": False, "errors": ["Query must have a top-level 'hql' or 'shql' key"]})
 
 
+# ─── Mesh Tools ───────────────────────────────────────────────────────────────
+
+@mcp.tool()
+async def hgai_mesh_list() -> str:
+    """List all HypergraphAI meshes."""
+    from hgai.db.mongodb import col_meshes
+    cursor = col_meshes().find({}).sort("system_created", -1).limit(200)
+    docs = []
+    async for doc in cursor:
+        doc.pop("_id", None)
+        docs.append({
+            "id": doc.get("id"),
+            "label": doc.get("label"),
+            "description": doc.get("description"),
+            "server_count": len(doc.get("servers", [])),
+            "status": doc.get("status"),
+        })
+    return json.dumps({"total": len(docs), "meshes": docs}, indent=2, default=str)
+
+
+@mcp.tool()
+async def hgai_mesh_get(mesh_id: str) -> str:
+    """Get a mesh by ID, including its server list.
+
+    Args:
+        mesh_id: The mesh identifier
+    """
+    from hgai.db.mongodb import col_meshes
+    doc = await col_meshes().find_one({"id": mesh_id})
+    if not doc:
+        return json.dumps({"error": f"Mesh '{mesh_id}' not found"})
+    doc.pop("_id", None)
+    return json.dumps(doc, indent=2, default=str)
+
+
+@mcp.tool()
+async def hgai_mesh_ping(mesh_id: str) -> str:
+    """Health-check all servers in a mesh.
+
+    Args:
+        mesh_id: The mesh identifier
+    """
+    from hgai_module_mesh.engine import ping_mesh
+    try:
+        results = await ping_mesh(mesh_id)
+        reachable = sum(1 for r in results if r.get("reachable"))
+        return json.dumps({
+            "mesh_id": mesh_id,
+            "reachable": reachable,
+            "total": len(results),
+            "results": results,
+        }, indent=2, default=str)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def hgai_mesh_sync(mesh_id: str) -> str:
+    """Refresh the graph list on each server in a mesh from the live remotes.
+
+    Args:
+        mesh_id: The mesh identifier
+    """
+    from hgai_module_mesh.engine import sync_mesh_graphs
+    try:
+        result = await sync_mesh_graphs(mesh_id)
+        return json.dumps(result, indent=2, default=str)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def hgai_mesh_query(mesh_id: str, query_yaml: str, use_cache: bool = True) -> str:
+    """Execute a federated HQL or SHQL query across all servers in a mesh.
+
+    The query language is detected from the top-level key ('hql:' or 'shql:').
+    Results from all servers are merged and tagged with '_mesh_server_id'.
+
+    Args:
+        mesh_id: The mesh identifier
+        query_yaml: HQL or SHQL query in YAML format
+        use_cache: Whether to use query result cache (default True)
+    """
+    import yaml as _yaml
+    from hgai_module_mesh.engine import federated_hql, federated_shql
+    try:
+        data = _yaml.safe_load(query_yaml)
+    except Exception as e:
+        return json.dumps({"error": f"Failed to parse query YAML: {e}"})
+
+    if not isinstance(data, dict):
+        return json.dumps({"error": "Query must be a YAML object with a top-level 'hql' or 'shql' key"})
+
+    try:
+        if "hql" in data:
+            result = await federated_hql(mesh_id, query_yaml, use_cache=use_cache)
+        elif "shql" in data:
+            result = await federated_shql(mesh_id, query_yaml, use_cache=use_cache)
+        else:
+            return json.dumps({"error": "Query must have a top-level 'hql' or 'shql' key"})
+        return json.dumps(result, indent=2, default=str)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+    except Exception as e:
+        return json.dumps({"error": str(e), "type": "ExecutionError"})
+
+
 def create_mcp_server():
     """Create and return the MCP ASGI app for mounting in FastAPI."""
     return mcp.streamable_http_app()

@@ -1,7 +1,7 @@
 """HypergraphAI configuration settings."""
 
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     token_expire_minutes: int = Field(default=480, description="JWT token lifetime in minutes")
     algorithm: str = Field(default="HS256", description="JWT algorithm")
 
+    # API keys for machine-to-machine auth (UUID4 strings recommended)
+    primary_api_key: Optional[str] = Field(default=None, description="Primary API key (UUID4)")
+    secondary_api_key: Optional[str] = Field(default=None, description="Secondary API key (UUID4)")
+
     # Server
     host: str = Field(default="0.0.0.0")
     port: int = Field(default=8357)
@@ -44,6 +48,9 @@ class Settings(BaseSettings):
     cache_enabled: bool = Field(default=True)
     cache_ttl_seconds: int = Field(default=300)
     cache_max_size: int = Field(default=1000)
+
+    # Mesh
+    mesh_sync_interval_seconds: int = Field(default=300, description="Background mesh graph-list sync interval (0 = disabled)")
 
     # Bootstrap admin account
     admin_username: str = Field(default="admin")

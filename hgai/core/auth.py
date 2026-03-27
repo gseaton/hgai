@@ -3,17 +3,45 @@
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from hgai.config import get_settings
 from hgai.db.mongodb import col_accounts
-from hgai.models.account import AccountInDB, TokenData
+from hgai.models.account import AccountInDB, AccountPermissions, TokenData
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
+
+# auto_error=False so we can fall through to API key check when the header is missing or invalid
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", auto_error=False)
+
+
+def _api_key_account() -> AccountInDB:
+    """Return a synthetic admin AccountInDB for API key authenticated requests."""
+    return AccountInDB(
+        username="api-key",
+        email=None,
+        description="Machine-to-machine API key account",
+        roles=["admin"],
+        permissions=AccountPermissions(
+            graphs=["*"],
+            operations=["read", "write", "delete", "admin", "query", "export", "import"],
+        ),
+        password_hash="",
+        tags=["system", "api-key"],
+        status="active",
+    )
+
+
+def _resolve_api_key(token: str) -> bool:
+    """Return True if token matches a configured API key."""
+    if not token:
+        return False
+    settings = get_settings()
+    keys = [k for k in (settings.primary_api_key, settings.secondary_api_key) if k]
+    return token in keys
 
 
 def hash_password(password: str) -> str:
@@ -57,12 +85,21 @@ async def authenticate_account(username: str, password: str) -> Optional[Account
     return account
 
 
-async def get_current_account(token: str = Depends(oauth2_scheme)) -> AccountInDB:
+async def get_current_account(token: Optional[str] = Depends(oauth2_scheme)) -> AccountInDB:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    if not token:
+        raise credentials_exception
+
+    # API key fast-path (no DB lookup required)
+    if _resolve_api_key(token):
+        return _api_key_account()
+
+    # JWT validation
     settings = get_settings()
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])

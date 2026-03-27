@@ -1151,48 +1151,279 @@ document.getElementById('btn-save-account').addEventListener('click', async () =
 });
 
 // ── Meshes ─────────────────────────────────────────────────────────────────
+let _activeMeshId = null;
+
 async function loadMeshes() {
   const tbody = document.getElementById('tbody-meshes');
-  tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  // Hide detail panel when refreshing the list
+  document.getElementById('mesh-detail-panel').classList.add('d-none');
+  _activeMeshId = null;
   try {
     const resp = await HGAI_API.listMeshes({ limit: 200 });
     tbody.innerHTML = '';
     if (!resp.items || !resp.items.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No meshes configured</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No meshes configured</td></tr>';
       return;
     }
     resp.items.forEach(m => {
       const tr = document.createElement('tr');
+      tr.className = 'cursor-pointer';
       tr.innerHTML = `
         <td><code>${m.id}</code></td>
         <td>${m.label||'—'}</td>
-        <td>${(m.servers||[]).length} server(s)</td>
+        <td class="text-muted small">${truncate(m.description||'', 40)}</td>
+        <td><span class="badge bg-secondary">${(m.servers||[]).length}</span></td>
         <td>${statusBadge(m.status)}</td>
         <td class="text-end">
-          <button class="btn btn-xs btn-outline-secondary me-1" onclick="viewMesh('${m.id}')"><i class="bi bi-eye"></i></button>
-          <button class="btn btn-xs btn-outline-danger" onclick="deleteMesh('${m.id}')"><i class="bi bi-trash"></i></button>
+          <button class="btn btn-xs btn-outline-info me-1" title="Ping" onclick="event.stopPropagation();openMeshPing('${m.id}')"><i class="bi bi-wifi"></i></button>
+          <button class="btn btn-xs btn-outline-success me-1" title="Sync" onclick="event.stopPropagation();runMeshSync('${m.id}')"><i class="bi bi-arrow-repeat"></i></button>
+          <button class="btn btn-xs btn-outline-primary me-1" title="Federated Query" onclick="event.stopPropagation();openMeshQuery('${m.id}')"><i class="bi bi-terminal"></i></button>
+          <button class="btn btn-xs btn-outline-secondary me-1" title="Edit" onclick="event.stopPropagation();editMesh('${m.id}')"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-xs btn-outline-danger" title="Delete" onclick="event.stopPropagation();deleteMesh('${m.id}')"><i class="bi bi-trash"></i></button>
         </td>`;
+      tr.addEventListener('click', () => openMeshDetail(m.id));
       tbody.appendChild(tr);
     });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6" class="text-danger text-center">${err.message}</td></tr>`;
+  }
+}
+
+async function openMeshDetail(id) {
+  _activeMeshId = id;
+  const panel = document.getElementById('mesh-detail-panel');
+  const tbody = document.getElementById('tbody-mesh-servers');
+  document.getElementById('mesh-detail-id').textContent = id;
+  panel.classList.remove('d-none');
+  tbody.innerHTML = '<tr><td colspan="5" class="text-center py-3"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  try {
+    const m = await HGAI_API.getMesh(id);
+    tbody.innerHTML = '';
+    (m.servers || []).forEach(srv => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><code>${srv.server_id||'—'}</code></td>
+        <td>${srv.server_name||'—'}</td>
+        <td><a href="${srv.url}" target="_blank" class="small text-muted">${srv.url||'—'}</a></td>
+        <td>${statusBadge(srv.status)}</td>
+        <td><span class="badge bg-light text-dark" id="ping-${srv.server_id}">—</span></td>`;
+      tbody.appendChild(tr);
+    });
+    if (!m.servers || !m.servers.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No servers configured</td></tr>';
+    }
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="5" class="text-danger text-center">${err.message}</td></tr>`;
   }
 }
 
-window.viewMesh = async (id) => {
-  const m = await HGAI_API.getMesh(id).catch(()=>null);
-  showDetail(`Mesh: ${id}`, m);
+document.getElementById('btn-mesh-detail-close').addEventListener('click', () => {
+  document.getElementById('mesh-detail-panel').classList.add('d-none');
+  _activeMeshId = null;
+});
+
+document.getElementById('btn-mesh-ping-panel').addEventListener('click', () => {
+  if (_activeMeshId) openMeshPing(_activeMeshId);
+});
+
+document.getElementById('btn-mesh-sync-panel').addEventListener('click', () => {
+  if (_activeMeshId) runMeshSync(_activeMeshId);
+});
+
+document.getElementById('btn-mesh-query-panel').addEventListener('click', () => {
+  if (_activeMeshId) openMeshQuery(_activeMeshId);
+});
+
+window.openMeshPing = async (id) => {
+  document.getElementById('modal-ping-mesh-id').textContent = id;
+  const tbody = document.getElementById('tbody-ping-results');
+  tbody.innerHTML = '<tr><td colspan="5" class="text-center py-3"><div class="spinner-border spinner-border-sm"></div> Pinging...</td></tr>';
+  new bootstrap.Modal(document.getElementById('modal-mesh-ping')).show();
+  try {
+    const result = await HGAI_API.pingMesh(id);
+    tbody.innerHTML = '';
+    (result.results || []).forEach(r => {
+      const ok = r.status === 'ok';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><code>${r.server_id||'—'}</code></td>
+        <td><a href="${r.url||'#'}" target="_blank" class="small text-muted">${r.url||'—'}</a></td>
+        <td><span class="badge ${ok ? 'badge-status-active' : 'bg-danger'}">${r.status||'?'}</span></td>
+        <td>${r.latency_ms != null ? r.latency_ms.toFixed(0) + ' ms' : '—'}</td>
+        <td class="text-danger small">${r.error||''}</td>`;
+      tbody.appendChild(tr);
+      // Update inline ping badge in server detail panel
+      const badge = document.getElementById(`ping-${r.server_id}`);
+      if (badge) {
+        badge.textContent = ok ? `${(r.latency_ms||0).toFixed(0)}ms` : r.status;
+        badge.className = `badge ${ok ? 'badge-status-active' : 'bg-danger'}`;
+      }
+    });
+    if (!result.results || !result.results.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No servers in mesh</td></tr>';
+    }
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="5" class="text-danger text-center">${err.message}</td></tr>`;
+  }
 };
+
+window.runMeshSync = async (id) => {
+  try {
+    toast(`Syncing mesh "${id}"…`, 'info');
+    const result = await HGAI_API.syncMesh(id);
+    const updated = result.updated_servers || result.servers_updated || 0;
+    toast(`Mesh "${id}" synced — ${updated} server(s) updated`);
+    if (_activeMeshId === id) openMeshDetail(id);
+  } catch (err) { toast(err.message, 'danger'); }
+};
+
+window.openMeshQuery = (id) => {
+  document.getElementById('mesh-query-id').textContent = id;
+  document.getElementById('mesh-query-result-count').textContent = '—';
+  document.getElementById('mesh-query-result-count').className = 'badge bg-secondary';
+  document.getElementById('mesh-query-result-area').textContent = '(results appear here)';
+  new bootstrap.Offcanvas(document.getElementById('offcanvas-mesh-query')).show();
+};
+
+document.getElementById('btn-mesh-query-run').addEventListener('click', async () => {
+  const id = document.getElementById('mesh-query-id').textContent;
+  const lang = document.getElementById('mesh-query-lang').value;
+  const useCache = document.getElementById('mesh-query-use-cache').checked;
+  const queryText = document.getElementById('mesh-query-editor').value.trim();
+  const resultArea = document.getElementById('mesh-query-result-area');
+  const countEl = document.getElementById('mesh-query-result-count');
+
+  if (!queryText) { toast('Enter a query first', 'warning'); return; }
+
+  resultArea.textContent = 'Executing…';
+  countEl.textContent = '…';
+  countEl.className = 'badge bg-secondary';
+
+  // Auto-wrap with language key if missing
+  let body;
+  const stripped = queryText.trimStart();
+  if (stripped.startsWith(`${lang}:`)) {
+    body = { [lang]: queryText, use_cache: useCache };
+  } else {
+    // Wrap it
+    const wrapped = `${lang}:\n` + queryText.split('\n').map(l => '  ' + l).join('\n');
+    body = { [lang]: wrapped, use_cache: useCache };
+  }
+
+  try {
+    const result = await HGAI_API.queryMesh(id, body);
+    countEl.textContent = `${result.count || 0} results`;
+    countEl.className = 'badge bg-success';
+    resultArea.innerHTML = syntaxHighlightJson(result);
+  } catch (err) {
+    countEl.textContent = 'error';
+    countEl.className = 'badge bg-danger';
+    resultArea.textContent = err.message;
+  }
+});
+
+document.getElementById('btn-mesh-query-copy').addEventListener('click', () => {
+  const content = document.getElementById('mesh-query-result-area').innerText;
+  navigator.clipboard.writeText(content).then(() => toast('Copied to clipboard'));
+});
+
+// Mesh create/edit modal
+document.getElementById('btn-create-mesh').addEventListener('click', () => openMeshModal());
+
+window.editMesh = (id) => openMeshModal(id);
+
+function _renderMeshServerRow(srv = {}) {
+  const div = document.createElement('div');
+  div.className = 'member-row align-items-start';
+  div.innerHTML = `
+    <input type="text" class="form-control form-control-sm srv-id" placeholder="id" style="width:110px;flex-shrink:0" value="${srv.server_id||''}"/>
+    <input type="text" class="form-control form-control-sm srv-name" placeholder="name" style="width:120px;flex-shrink:0" value="${srv.server_name||''}"/>
+    <input type="text" class="form-control form-control-sm srv-url" placeholder="http://host:8357" style="width:180px;flex-shrink:0" value="${srv.url||''}"/>
+    <input type="text" class="form-control form-control-sm srv-token font-monospace" placeholder="api_token (optional)" style="flex:1;min-width:0" value="${srv.api_token||''}"/>
+    <select class="form-select form-select-sm srv-status" style="width:95px;flex-shrink:0">
+      <option ${srv.status==='active'?'selected':''}>active</option>
+      <option ${srv.status==='inactive'?'selected':''}>inactive</option>
+    </select>
+    <button type="button" class="btn btn-xs btn-outline-danger flex-shrink-0" onclick="this.closest('.member-row').remove()">
+      <i class="bi bi-x-lg"></i>
+    </button>`;
+  return div;
+}
+
+async function openMeshModal(meshId = null) {
+  const modal = new bootstrap.Modal(document.getElementById('modal-mesh'));
+  document.getElementById('mesh-form-mode').value = meshId ? 'edit' : 'create';
+  document.getElementById('modal-mesh-title').textContent = meshId ? `Edit Mesh: ${meshId}` : 'New Mesh';
+
+  const serversList = document.getElementById('mesh-servers-list');
+  serversList.innerHTML = '';
+
+  if (meshId) {
+    try {
+      const m = await HGAI_API.getMesh(meshId);
+      document.getElementById('mesh-id').value = m.id;
+      document.getElementById('mesh-id').readOnly = true;
+      document.getElementById('mesh-label').value = m.label || '';
+      document.getElementById('mesh-description').value = m.description || '';
+      document.getElementById('mesh-status').value = m.status || 'active';
+      (m.servers || []).forEach(srv => serversList.appendChild(_renderMeshServerRow(srv)));
+    } catch {}
+  } else {
+    document.getElementById('mesh-id').value = '';
+    document.getElementById('mesh-id').readOnly = false;
+    document.getElementById('mesh-label').value = '';
+    document.getElementById('mesh-description').value = '';
+    document.getElementById('mesh-status').value = 'active';
+    serversList.appendChild(_renderMeshServerRow());
+  }
+  modal.show();
+}
+
+document.getElementById('btn-add-mesh-server').addEventListener('click', () => {
+  document.getElementById('mesh-servers-list').appendChild(_renderMeshServerRow());
+});
+
+document.getElementById('btn-save-mesh').addEventListener('click', async () => {
+  const mode = document.getElementById('mesh-form-mode').value;
+  const id = document.getElementById('mesh-id').value.trim();
+  if (!id) { toast('Mesh ID is required', 'warning'); return; }
+
+  const servers = Array.from(document.querySelectorAll('#mesh-servers-list .member-row')).map(row => ({
+    server_id: row.querySelector('.srv-id').value.trim(),
+    server_name: row.querySelector('.srv-name').value.trim(),
+    url: row.querySelector('.srv-url').value.trim(),
+    api_token: row.querySelector('.srv-token').value.trim() || null,
+    status: row.querySelector('.srv-status').value,
+  })).filter(s => s.server_id || s.url);
+
+  const data = {
+    id,
+    label: document.getElementById('mesh-label').value.trim() || id,
+    description: document.getElementById('mesh-description').value.trim() || null,
+    status: document.getElementById('mesh-status').value,
+    servers,
+  };
+
+  try {
+    if (mode === 'create') {
+      await HGAI_API.createMesh(data);
+      toast(`Mesh "${id}" created`);
+    } else {
+      await HGAI_API.updateMesh(id, data);
+      toast(`Mesh "${id}" updated`);
+    }
+    bootstrap.Modal.getInstance(document.getElementById('modal-mesh'))?.hide();
+    loadMeshes();
+  } catch (err) { toast(err.message, 'danger'); }
+});
+
 window.deleteMesh = (id) => {
   confirmDelete(`Delete mesh "${id}"?`, async () => {
     try { await HGAI_API.deleteMesh(id); toast(`Mesh "${id}" deleted`); loadMeshes(); }
     catch (err) { toast(err.message, 'danger'); }
   });
 };
-
-document.getElementById('btn-create-mesh').addEventListener('click', () => {
-  toast('Mesh creation coming soon — use the API or hgai shell', 'info');
-});
 
 // ── System ─────────────────────────────────────────────────────────────────
 async function loadSystem() {
