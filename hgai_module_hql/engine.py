@@ -237,6 +237,7 @@ async def execute_hql(hql_text: str, use_cache: bool = True) -> HQLResult:
     limit = hql.get("limit", 500)
     skip = hql.get("skip", 0)
     infer = hql.get("infer", False)
+    distinct = hql.get("distinct", False)
 
     # Parse point-in-time
     pit: Optional[datetime] = None
@@ -290,6 +291,17 @@ async def execute_hql(hql_text: str, use_cache: bool = True) -> HQLResult:
     if infer and items:
         items = await apply_skos_inference(items, graph_ids)
 
+    # DISTINCT — deduplicate by id when available, otherwise by full row content
+    if distinct:
+        seen: set = set()
+        deduped = []
+        for item in items:
+            key = item.get("id") or json.dumps(item, sort_keys=True, default=str)
+            if key not in seen:
+                seen.add(key)
+                deduped.append(item)
+        items = deduped
+
     # Apply aggregations
     agg_results = {}
     if aggregate:
@@ -308,6 +320,7 @@ async def execute_hql(hql_text: str, use_cache: bool = True) -> HQLResult:
         "match_type": match_type,
         "pit": pit.isoformat() if pit else None,
         "inferred": infer,
+        "distinct": distinct,
         "cached": False,
         **agg_results,
     }
