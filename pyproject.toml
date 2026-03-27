@@ -43,7 +43,7 @@ hgai-shell = "shell.hgai_shell:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["hgai*", "hgai_module_hql*", "shell*"]
+include = ["hgai*", "hgai_module_hql*", "hgai_module_mcp*", "hgai_module_mesh*", "shell*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

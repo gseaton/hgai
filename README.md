@@ -594,29 +594,123 @@ DELETE /api/v1/accounts/{id}   # Delete account
 
 ## MCP Server
 
-HypergraphAI exposes all operations as MCP (Model Context Protocol) server tools at:
+HypergraphAI exposes all operations as MCP (Model Context Protocol) tools via the `hgai_module_mcp` module, mounted at:
 
 ```
-http://localhost:8000/mcp/
+http://localhost:8357/mcp/
 ```
-
-MCP server groups:
-- `hgai-core` — hypergraph, hypernode, hyperedge CRUD
-- `hgai-query` — HQL query execution
-- `hgai-admin` — account and server management
 
 Configure your MCP client (e.g., Claude Desktop):
 ```json
 {
   "mcpServers": {
     "hgai": {
-      "url": "http://localhost:8000/mcp/",
+      "url": "http://localhost:8357/mcp/",
       "headers": {
         "Authorization": "Bearer <your-token>"
       }
     }
   }
 }
+```
+
+### MCP Tools
+
+#### Hypergraph Tools
+
+| Tool | Description |
+|------|-------------|
+| `hgai_hypergraph_list` | List all hypergraphs, filtered by status (`active`, `archived`, `draft`, or all) |
+| `hgai_hypergraph_get` | Get a hypergraph by ID |
+| `hgai_hypergraph_stats` | Get node/edge counts and statistics for a hypergraph |
+| `hgai_hypergraph_create` | Create a new hypergraph (`instantiated` or `logical`) |
+
+#### Hypernode Tools
+
+| Tool | Description |
+|------|-------------|
+| `hgai_hypernode_list` | List hypernodes in a graph, filtered by type and/or tags |
+| `hgai_hypernode_get` | Get a hypernode by ID |
+| `hgai_hypernode_create` | Create a new hypernode with type, attributes, and tags |
+| `hgai_hypernode_update` | Update a hypernode's label, attributes, tags, or status |
+| `hgai_hypernode_delete` | Delete a hypernode |
+
+#### Hyperedge Tools
+
+| Tool | Description |
+|------|-------------|
+| `hgai_hyperedge_list` | List hyperedges in a graph, filtered by relation type or member node ID |
+| `hgai_hyperedge_get` | Get a hyperedge by ID or hyperkey |
+| `hgai_hyperedge_create` | Create a new n-ary hyperedge connecting any number of hypernodes |
+| `hgai_hyperedge_delete` | Delete a hyperedge |
+
+#### Query Tools
+
+| Tool | Description |
+|------|-------------|
+| `hgai_query_execute` | Execute an HQL (Hypergraph Query Language) query in YAML format |
+| `hgai_query_validate` | Validate an HQL query without executing it |
+
+### Tool Reference
+
+#### `hgai_hypergraph_create`
+```
+id          Unique identifier (slug format recommended)
+label       Human-readable display label
+description Optional description
+graph_type  'instantiated' (physical) or 'logical' (composed)
+tags        Comma-separated tags
+```
+
+#### `hgai_hypernode_create`
+```
+graph_id         Target hypergraph ID
+id               Unique node ID within the hypergraph
+label            Display label
+node_type        Entity type: 'Person', 'Organization', 'Concept', 'RelationType', etc.
+attributes_json  JSON string of document attributes, e.g. '{"city": "Paris"}'
+tags             Comma-separated tags
+description      Optional description
+```
+
+#### `hgai_hypernode_update`
+```
+graph_id         Hypergraph ID
+node_id          Node ID to update
+label            New label (optional)
+attributes_json  New attributes as JSON string (optional, replaces existing)
+tags             New comma-separated tags (optional)
+status           New status: 'active', 'draft', or 'archived' (optional)
+```
+
+#### `hgai_hyperedge_create`
+```
+graph_id         Target hypergraph ID
+relation         Semantic relation type: 'has-member', 'sibling', 'broader', etc.
+members_json     JSON array: [{"node_id": "id", "seq": 0}, ...]
+edge_id          Optional human-readable ID (hyperkey auto-generated if omitted)
+label            Optional display label
+flavor           'hub', 'symmetric', 'direct', 'transitive', or 'inverse-transitive'
+attributes_json  JSON document of edge attributes
+tags             Comma-separated tags
+```
+
+#### `hgai_query_execute`
+```
+hql_yaml    HQL query in YAML format (see HQL reference above)
+use_cache   Whether to use query result cache (default: true)
+```
+
+Example:
+```yaml
+hql:
+  from: my-graph
+  match:
+    type: hyperedge
+    relation: has-member
+  return:
+    - members
+    - attributes
 ```
 
 ---

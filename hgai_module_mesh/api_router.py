@@ -1,4 +1,4 @@
-"""Mesh management API endpoints."""
+"""Mesh REST API router."""
 
 from typing import Optional
 
@@ -7,10 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from hgai.core.auth import require_admin
 from hgai.db.mongodb import col_meshes
 from hgai.models.common import PaginatedResponse, now_utc
-from hgai.models.mesh import MeshCreate, MeshResponse, MeshUpdate
+
+from .models import MeshCreate, MeshResponse, MeshUpdate
 
 router = APIRouter(prefix="/meshes", tags=["meshes"])
 
+
+# ─── Registry CRUD ────────────────────────────────────────────────────────────
 
 @router.get("", response_model=PaginatedResponse)
 async def list_meshes(
@@ -70,3 +73,42 @@ async def delete_mesh(mesh_id: str, _admin=Depends(require_admin)):
     result = await col_meshes().delete_one({"id": mesh_id})
     if not result.deleted_count:
         raise HTTPException(status_code=404, detail=f"Mesh '{mesh_id}' not found")
+
+
+# ─── Active Mesh Operations ───────────────────────────────────────────────────
+
+@router.get("/{mesh_id}/ping")
+async def ping_mesh(mesh_id: str, _admin=Depends(require_admin)):
+    """Health-check all servers in a mesh."""
+    from .engine import ping_mesh as _ping_mesh
+    try:
+        return {"mesh_id": mesh_id, "results": await _ping_mesh(mesh_id)}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{mesh_id}/sync")
+async def sync_mesh(mesh_id: str, _admin=Depends(require_admin)):
+    """Refresh each server's graph list from the live remotes."""
+    from .engine import sync_mesh_graphs
+    try:
+        return await sync_mesh_graphs(mesh_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{mesh_id}/query")
+async def query_mesh(
+    mesh_id: str,
+    body: dict,
+    _admin=Depends(require_admin),
+):
+    """Fan out an HQL query across all servers in a mesh and merge results."""
+    from .engine import federated_hql
+    hql_text = body.get("hql")
+    if not hql_text:
+        raise HTTPException(status_code=400, detail="'hql' field is required")
+    try:
+        return await federated_hql(mesh_id, hql_text, use_cache=body.get("use_cache", True))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

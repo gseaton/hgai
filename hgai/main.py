@@ -12,7 +12,7 @@ from fastapi.responses import RedirectResponse
 from hgai.config import get_settings
 from hgai.db.mongodb import connect_db, close_db
 from hgai.core.auth import bootstrap_admin
-from hgai.api.routers import auth, hypergraphs, hypernodes, hyperedges, accounts, meshes
+from hgai.api.routers import auth, hypergraphs, hypernodes, hyperedges, accounts
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,15 @@ def create_app() -> FastAPI:
     app.include_router(hypernodes.router, prefix=prefix)
     app.include_router(hyperedges.router, prefix=prefix)
     app.include_router(accounts.router, prefix=prefix)
-    app.include_router(meshes.router, prefix=prefix)
+
+    # Mesh module — mounted conditionally; failures are non-fatal
+    try:
+        from hgai_module_mesh import MeshModule
+        mesh_module = MeshModule()
+        app.include_router(mesh_module.get_router(), prefix=prefix)
+        logger.info("Mesh module mounted at /api/v1/meshes")
+    except BaseException as e:
+        logger.warning(f"Mesh module not available (continuing without it): {type(e).__name__}: {e}")
 
     # HQL module — mounted conditionally; failures are non-fatal
     try:
@@ -92,14 +100,14 @@ def create_app() -> FastAPI:
     except BaseException as e:
         logger.warning(f"SHQL module not available (continuing without it): {type(e).__name__}: {e}")
 
-    # MCP server — mounted conditionally; failures are non-fatal
+    # MCP module — mounted conditionally; failures are non-fatal
     try:
-        from hgai.mcp.server import create_mcp_server
-        mcp_app = create_mcp_server()
-        app.mount("/mcp", mcp_app)
-        logger.info("MCP server mounted at /mcp")
+        from hgai_module_mcp import MCPModule
+        mcp_module = MCPModule()
+        app.mount("/mcp", mcp_module.get_app())
+        logger.info("MCP module mounted at /mcp")
     except BaseException as e:
-        logger.warning(f"MCP server not available (continuing without it): {type(e).__name__}: {e}")
+        logger.warning(f"MCP module not available (continuing without it): {type(e).__name__}: {e}")
 
     # Serve Web UI static files
     ui_dir = Path(__file__).parent.parent / "ui"
