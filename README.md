@@ -892,7 +892,29 @@ shql:
     - ?person.node_type
     - ?person.attributes
     - ?person.tags
-````
+```
+
+Returns all hyperedge group + members
+
+```yaml
+shql:
+  from: alpha-bravo-mesh
+  where:
+    - node: ?group
+      node_type: Group
+    - edge: ?hub
+      relation: rel:member
+      flavor: hub
+      members:
+        - node_id: ?group
+          seq: 0
+  select:
+    - ?group.id
+    - ?group.label
+    - ?hub.id
+    - ?hub.relation
+    - ?hub.members
+```
 
 ### Mesh HQL
 
