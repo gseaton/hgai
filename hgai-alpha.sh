@@ -1,0 +1,3 @@
+#!/bin/bash
+echo Running hgai alpha...
+./hgai.sh --mongo-connection mongodb://localhost:27017 --mongo-db hgai_alpha --server-name "hgai - alpha" --server-id hgai-alpha --port 8361

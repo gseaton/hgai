@@ -1,0 +1,3 @@
+#!/bin/bash
+echo Running hgai bravo...
+./hgai.sh --mongo-connection mongodb://localhost:27017 --mongo-db hgai_bravo --server-name "hgai - bravo" --server-id hgai-bravo --port 8362

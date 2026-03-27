@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     # Server
     host: str = Field(default="0.0.0.0")
-    port: int = Field(default=8000)
+    port: int = Field(default=8357)
     log_level: str = Field(default="info")
     reload: bool = Field(default=False)
     cors_origins: str = Field(default="*")

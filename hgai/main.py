@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
     # Connect to MongoDB
     await connect_db()
     logger.info(f"Connected to MongoDB: {settings.mongo_db}")
+    print(f"MongoDB database: {settings.mongo_db}")
 
     # Bootstrap admin account on first run
     created = await bootstrap_admin(
@@ -137,12 +138,42 @@ app = create_app()
 
 
 def cli_main():
+    import argparse
+    import os
     import uvicorn
+
+    parser = argparse.ArgumentParser(description="HypergraphAI server")
+    parser.add_argument("--port", type=int, default=None, help="Port to listen on")
+    parser.add_argument("--mongo-connection", default=None, help="MongoDB connection URI (overrides HGAI_MONGO_URI)")
+    parser.add_argument("--mongo-db", default=None, help="MongoDB database name (overrides HGAI_MONGO_DB)")
+    parser.add_argument("--server-id", default=None, help="Server identifier (overrides HGAI_SERVER_ID)")
+    parser.add_argument("--server-name", default=None, help="Server display name (overrides HGAI_SERVER_NAME)")
+    args = parser.parse_args()
+
+    # Set env vars then clear the lru_cache so get_settings() re-reads them.
+    # (create_app() runs at module level and populates the cache before args are parsed.)
+    if args.mongo_connection:
+        os.environ["HGAI_MONGO_URI"] = args.mongo_connection
+    if args.mongo_db:
+        os.environ["HGAI_MONGO_DB"] = args.mongo_db
+    if args.server_id:
+        os.environ["HGAI_SERVER_ID"] = args.server_id
+    if args.server_name:
+        os.environ["HGAI_SERVER_NAME"] = args.server_name
+
+    get_settings.cache_clear()
     settings = get_settings()
+
+    port = (
+        args.port
+        or int(os.environ.get("DEFAULT_HGAI_PORT", 0))
+        or settings.port
+    )
+
     uvicorn.run(
         "hgai.main:app",
         host=settings.host,
-        port=settings.port,
+        port=port,
         log_level=settings.log_level,
         reload=settings.reload,
     )

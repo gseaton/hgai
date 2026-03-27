@@ -1,3 +1,0 @@
-#!/bin/bash
-echo Starting HypergraphAI shell...
-python shell/hgai_shell.py
