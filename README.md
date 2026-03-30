@@ -475,6 +475,25 @@ All configuration is via environment variables (or `.env` file):
 
 ## Running Locally
 
+### ENV VARS
+
+Environment variables used if not overridden using command-line overrides
+
+- `HGAI_PORT` : defaults to 8357
+- `HGAI_MONGO_URI` : default MongoDB connection string
+- `HGAI_MONGO_DB` : default MongoDB hgai database name (common 'hgai')
+- `HGAI_SERVER_ID` : default hgai server id (used in meshes)
+- `HGAI_SERVER_NAME` : default hgai server name (used in meshes)
+
+```bash
+# Defaults to port=8357; mongo-db=hgai 
+$ ./hgai.sh
+
+# Starting parallel local hgai servers
+$ ./hgai.sh --port 8361 --server-id hgai-alpha --mongo-db hgai_alpha --server-name HypergaphAI-Alpha
+$ ./hgai.sh --port 8362 --server-id hgai-bravo --mongo-db hgai_bravo --server-name HypergaphAI-Bravo
+```
+
 ```bash
 # Install dependencies
 pip install -r requirements.txt
@@ -730,15 +749,15 @@ shql:
 The `hgai` shell provides an interactive CLI for all HypergraphAI operations:
 
 ```bash
-./shell.sh
+./hgsh.sh
 ```
 
 Or connect to a remote server:
 ```bash
-./shell.sh --server http://myserver:8357 --user admin
+./hgsh.sh --server http://myserver:8357 --user admin
 ```
 
-### Shell Commands
+### hgsh Shell Commands
 
 ```
 connect <url> [-u user] [-p]   Connect to a HypergraphAI server
