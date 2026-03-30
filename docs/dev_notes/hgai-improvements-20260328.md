@@ -1,5 +1,8 @@
 # hgai improvements
 
+## MCP Services
+- narrative queries converted to hql/shql
+
 ## Edge Hydration
 - on get edge, allow for hydration levels
   - allow for hyrdation levels
