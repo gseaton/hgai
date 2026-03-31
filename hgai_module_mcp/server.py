@@ -32,6 +32,8 @@ mcp = FastMCP(
         "Hyperedges are first-class entities and can connect n nodes. "
         "All operations require a valid hypergraph_id context."
     ),
+    streamable_http_path="/",
+    stateless_http=True,
 )
 
 

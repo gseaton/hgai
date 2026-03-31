@@ -1,7 +1,7 @@
 """HypergraphAI FastAPI application entry point."""
 
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, AsyncExitStack
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -15,6 +15,8 @@ from hgai.core.auth import bootstrap_admin
 from hgai.api.routers import auth, hypergraphs, hypernodes, hyperedges, accounts
 
 logger = logging.getLogger(__name__)
+
+_mcp_module = None  # set by create_app(), consumed by lifespan
 
 
 @asynccontextmanager
@@ -43,7 +45,11 @@ async def lifespan(app: FastAPI):
     except ImportError:
         stop_scheduler = None
 
-    yield
+    async with AsyncExitStack() as stack:
+        if _mcp_module is not None:
+            await stack.enter_async_context(_mcp_module.lifespan())
+
+        yield
 
     # Stop mesh sync scheduler
     try:
@@ -117,8 +123,9 @@ def create_app() -> FastAPI:
     # MCP module — mounted conditionally; failures are non-fatal
     try:
         from hgai_module_mcp import MCPModule
-        mcp_module = MCPModule()
-        app.mount("/mcp", mcp_module.get_app())
+        global _mcp_module
+        _mcp_module = MCPModule()
+        app.mount("/mcp", _mcp_module.get_app())
         logger.info("MCP module mounted at /mcp")
     except BaseException as e:
         logger.warning(f"MCP module not available (continuing without it): {type(e).__name__}: {e}")

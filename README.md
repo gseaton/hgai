@@ -13,10 +13,14 @@
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
+  - [Authentication Methods](#authentication-methods)
 - [Running Locally](#running-locally)
 - [Docker Deployment](#docker-deployment)
 - [API Reference](#api-reference)
 - [MCP Server](#mcp-server)
+  - [Discovering Available Tools](#discovering-available-tools)
+  - [MCP Tool Payload Examples](#mcp-tool-payload-examples)
+    - [Get a Hypernode](#get-a-hypernode)
 - [hgai Shell](#hgai-shell)
 - [Web UI](#web-ui)
 - [Inferencing](#inferencing)
@@ -463,6 +467,8 @@ All configuration is via environment variables (or `.env` file):
 | `HGAI_MONGO_DB` | `hgai` | MongoDB database name |
 | `HGAI_SECRET_KEY` | *(required)* | JWT signing secret |
 | `HGAI_TOKEN_EXPIRE_MINUTES` | `480` | JWT token lifetime |
+| `HGAI_PRIMARY_API_KEY` | *(none)* | Primary API key for machine-to-machine auth |
+| `HGAI_SECONDARY_API_KEY` | *(none)* | Secondary API key (for key rotation) |
 | `HGAI_HOST` | `0.0.0.0` | Server bind host |
 | `HGAI_PORT` | `8357` | Server bind port |
 | `HGAI_LOG_LEVEL` | `info` | Log level |
@@ -470,6 +476,83 @@ All configuration is via environment variables (or `.env` file):
 | `HGAI_CACHE_ENABLED` | `true` | Enable query caching |
 | `HGAI_SERVER_ID` | `hgai-local` | Server identifier (for meshes) |
 | `HGAI_SERVER_NAME` | `HypergraphAI Local` | Server display name |
+
+### Authentication Methods
+
+HypergraphAI supports two authentication methods:
+
+#### 1. JWT Tokens (User Authentication)
+
+For interactive users and web UI access. Obtain a token via the login endpoint:
+
+```bash
+curl -X POST http://localhost:8357/api/v1/auth/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=admin&password=pwd357"
+```
+
+Response:
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "expires_in": 28800
+}
+```
+
+Use the token in subsequent requests:
+```bash
+curl http://localhost:8357/api/v1/graphs \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+#### 2. API Keys (Machine-to-Machine Authentication)
+
+For AI agents, MCP clients, and automated systems. API keys are stateless and do not require a login step — they grant full admin access.
+
+**Setup:**
+
+Generate a secure API key:
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Add to your `.env` file:
+```bash
+HGAI_PRIMARY_API_KEY=your-generated-api-key-here
+HGAI_SECONDARY_API_KEY=optional-second-key-for-rotation
+```
+
+**Usage:**
+
+Use the API key directly as a Bearer token:
+```bash
+curl http://localhost:8357/api/v1/graphs \
+  -H "Authorization: Bearer your-generated-api-key-here"
+```
+
+**MCP Client Configuration:**
+
+Configure Claude Desktop or other MCP clients with the API key:
+```json
+{
+  "mcpServers": {
+    "hgai": {
+      "url": "http://localhost:8357/mcp/",
+      "headers": {
+        "Authorization": "Bearer your-generated-api-key-here"
+      }
+    }
+  }
+}
+```
+
+**Key Rotation:**
+
+Two API keys are supported (`PRIMARY` and `SECONDARY`) to enable zero-downtime key rotation:
+1. Generate a new key and set it as `HGAI_SECONDARY_API_KEY`
+2. Update clients to use the new key
+3. Move the new key to `HGAI_PRIMARY_API_KEY` and remove the old key
 
 ---
 
@@ -629,6 +712,96 @@ Configure your MCP client (e.g., Claude Desktop):
 }
 ```
 
+### Discovering Available Tools
+
+To get the list of all available MCP tools from the server, use the `tools/list` MCP method.
+
+**Using curl:**
+```bash
+curl -X POST http://localhost:8357/mcp/ \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/list",
+    "params": {}
+  }'
+```
+
+**Example response:**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "tools": [
+      {
+        "name": "hgai_hypergraph_list",
+        "description": "List all HypergraphAI hypergraphs.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "Filter by status ('active', 'archived', 'draft', or '' for all)"
+            }
+          }
+        }
+      },
+      {
+        "name": "hgai_hypernode_get",
+        "description": "Get a hypernode by ID.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "graph_id": { "type": "string", "description": "The hypergraph identifier" },
+            "node_id": { "type": "string", "description": "The hypernode identifier" }
+          },
+          "required": ["graph_id", "node_id"]
+        }
+      }
+    ]
+  }
+}
+```
+
+**Using Python (mcp client):**
+```python
+import asyncio
+from mcp import ClientSession
+from mcp.client.sse import sse_client
+
+async def list_tools():
+    async with sse_client("http://localhost:8357/mcp/") as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await session.list_tools()
+            for tool in tools.tools:
+                print(f"{tool.name}: {tool.description}")
+
+asyncio.run(list_tools())
+```
+
+**Calling a tool via MCP protocol:**
+```bash
+curl -X POST http://localhost:8357/mcp/ \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/call",
+    "params": {
+      "name": "hgai_hypernode_get",
+      "arguments": {
+        "graph_id": "hello-world",
+        "node_id": "moe-howard"
+      }
+    }
+  }'
+```
+
 ### MCP Tools
 
 #### Hypergraph Tools
@@ -740,6 +913,321 @@ shql:
           - node: { bind: ?stooge, type: Person }
   select:
     - ?stooge.label
+```
+
+### MCP Tool Payload Examples
+
+These examples show the JSON payloads for common MCP server tool calls. Use these with your MCP client or via the MCP protocol.
+
+#### List Hypergraphs
+
+```json
+{
+  "name": "hgai_hypergraph_list",
+  "arguments": {
+    "status": "active"
+  }
+}
+```
+
+#### Get a Hypergraph
+
+```json
+{
+  "name": "hgai_hypergraph_get",
+  "arguments": {
+    "graph_id": "hello-world"
+  }
+}
+```
+
+#### Get Hypergraph Statistics
+
+```json
+{
+  "name": "hgai_hypergraph_stats",
+  "arguments": {
+    "graph_id": "hello-world"
+  }
+}
+```
+
+#### Create a Hypergraph
+
+```json
+{
+  "name": "hgai_hypergraph_create",
+  "arguments": {
+    "id": "my-knowledge-graph",
+    "label": "My Knowledge Graph",
+    "description": "A hypergraph for storing project knowledge",
+    "graph_type": "instantiated",
+    "tags": "project,knowledge"
+  }
+}
+```
+
+#### List Hypernodes
+
+```json
+{
+  "name": "hgai_hypernode_list",
+  "arguments": {
+    "graph_id": "hello-world",
+    "node_type": "Person",
+    "tags": "",
+    "skip": 0,
+    "limit": 50
+  }
+}
+```
+
+#### Get a Hypernode
+
+Fetch a single hypernode by its ID within a hypergraph.
+
+**curl:**
+```bash
+curl -s -X POST http://localhost:8357/mcp/ \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "hgai_hypernode_get",
+      "arguments": {
+        "graph_id": "hello-world",
+        "node_id": "moe-howard"
+      }
+    }
+  }'
+```
+
+**Python (MCP streamable HTTP client):**
+```python
+import asyncio
+import json
+from mcp.client.streamable_http import streamablehttp_client
+from mcp import ClientSession
+
+async def get_node(graph_id: str, node_id: str):
+    async with streamablehttp_client(
+        "http://localhost:8357/mcp/",
+        headers={"Authorization": "Bearer <your-api-key>"},
+    ) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            result = await session.call_tool(
+                "hgai_hypernode_get",
+                {"graph_id": graph_id, "node_id": node_id},
+            )
+            node = json.loads(result.content[0].text)
+            return node
+
+node = asyncio.run(get_node("hello-world", "moe-howard"))
+print(node)
+```
+
+**Example response:**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"id\": \"moe-howard\", \"graph_id\": \"hello-world\", \"label\": \"Moe Howard\", \"type\": \"Person\", \"attributes\": {\"born\": \"1897-06-19\", \"role\": \"Leader\"}, \"tags\": [\"stooge\", \"original\"], \"status\": \"active\", \"valid_from\": null, \"valid_to\": null}"
+      }
+    ]
+  }
+}
+```
+
+If the node does not exist, the tool returns `{"error": "Node '<node_id>' not found in graph '<graph_id>'"}` inside the `text` field (HTTP 200 — errors are returned as tool output, not HTTP errors).
+
+#### Create a Hypernode
+
+```json
+{
+  "name": "hgai_hypernode_create",
+  "arguments": {
+    "graph_id": "hello-world",
+    "id": "person:john-doe",
+    "label": "John Doe",
+    "node_type": "Person",
+    "attributes_json": "{\"born\": \"1990-05-15\", \"city\": \"New York\"}",
+    "tags": "employee,developer",
+    "description": "A software developer"
+  }
+}
+```
+
+#### Update a Hypernode
+
+```json
+{
+  "name": "hgai_hypernode_update",
+  "arguments": {
+    "graph_id": "hello-world",
+    "node_id": "person:john-doe",
+    "label": "John A. Doe",
+    "attributes_json": "{\"born\": \"1990-05-15\", \"city\": \"San Francisco\", \"role\": \"Senior Developer\"}",
+    "tags": "employee,developer,senior",
+    "status": "active"
+  }
+}
+```
+
+#### Delete a Hypernode
+
+```json
+{
+  "name": "hgai_hypernode_delete",
+  "arguments": {
+    "graph_id": "hello-world",
+    "node_id": "person:john-doe"
+  }
+}
+```
+
+#### List Hyperedges
+
+```json
+{
+  "name": "hgai_hyperedge_list",
+  "arguments": {
+    "graph_id": "hello-world",
+    "relation": "has-member",
+    "node_id": "",
+    "skip": 0,
+    "limit": 50
+  }
+}
+```
+
+#### Get a Hyperedge
+
+```json
+{
+  "name": "hgai_hyperedge_get",
+  "arguments": {
+    "graph_id": "hello-world",
+    "edge_id": "three-stooges-classic-lineup"
+  }
+}
+```
+
+#### Create a Hyperedge
+
+```json
+{
+  "name": "hgai_hyperedge_create",
+  "arguments": {
+    "graph_id": "hello-world",
+    "relation": "has-member",
+    "members_json": "[{\"node_id\": \"team:engineering\", \"seq\": 0}, {\"node_id\": \"person:john-doe\", \"seq\": 1}, {\"node_id\": \"person:jane-smith\", \"seq\": 2}]",
+    "edge_id": "engineering-team-members",
+    "label": "Engineering Team Members",
+    "flavor": "hub",
+    "attributes_json": "{\"department\": \"Engineering\", \"formed\": \"2024-01-15\"}",
+    "tags": "team,membership"
+  }
+}
+```
+
+#### Delete a Hyperedge
+
+```json
+{
+  "name": "hgai_hyperedge_delete",
+  "arguments": {
+    "graph_id": "hello-world",
+    "edge_id": "engineering-team-members"
+  }
+}
+```
+
+#### Execute an HQL Query
+
+```json
+{
+  "name": "hgai_query_execute",
+  "arguments": {
+    "query_yaml": "hql:\n  from: hello-world\n  match:\n    type: hypernode\n    node_type: Person\n  return:\n    - id\n    - label\n    - attributes\n  limit: 50",
+    "use_cache": true
+  }
+}
+```
+
+#### Execute an SHQL Query
+
+```json
+{
+  "name": "hgai_query_execute",
+  "arguments": {
+    "query_yaml": "shql:\n  from: hello-world\n  where:\n    - node:\n        bind: ?person\n        type: Person\n    - edge:\n        bind: ?membership\n        relation: has-member\n        members:\n          - node: { bind: ?person }\n  select:\n    - ?person.id\n    - ?person.label\n    - ?membership.relation\n  limit: 100",
+    "use_cache": true
+  }
+}
+```
+
+#### Validate a Query
+
+```json
+{
+  "name": "hgai_query_validate",
+  "arguments": {
+    "query_yaml": "hql:\n  from: hello-world\n  match:\n    type: hyperedge\n    relation: has-member\n  return:\n    - members\n    - attributes"
+  }
+}
+```
+
+#### List Meshes
+
+```json
+{
+  "name": "hgai_mesh_list",
+  "arguments": {}
+}
+```
+
+#### Get a Mesh
+
+```json
+{
+  "name": "hgai_mesh_get",
+  "arguments": {
+    "mesh_id": "alpha-bravo-mesh"
+  }
+}
+```
+
+#### Ping Mesh Servers
+
+```json
+{
+  "name": "hgai_mesh_ping",
+  "arguments": {
+    "mesh_id": "alpha-bravo-mesh"
+  }
+}
+```
+
+#### Federated Mesh Query
+
+```json
+{
+  "name": "hgai_mesh_query",
+  "arguments": {
+    "mesh_id": "alpha-bravo-mesh",
+    "query_yaml": "hql:\n  from: alpha-bravo-mesh\n  match:\n    type: hypernode\n    node_type: Person\n  return:\n    - id\n    - label\n    - attributes\n  limit: 100",
+    "use_cache": true
+  }
+}
 ```
 
 ---

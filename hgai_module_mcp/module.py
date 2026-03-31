@@ -1,5 +1,7 @@
 """MCP module descriptor for HypergraphAI."""
 
+from contextlib import asynccontextmanager
+
 
 class _ApiKeyMiddleware:
     """ASGI middleware that validates Bearer API keys for the MCP sub-app.
@@ -82,5 +84,11 @@ class MCPModule:
     )
 
     def get_app(self):
-        from .server import create_mcp_server
+        from .server import create_mcp_server, mcp
+        self._mcp = mcp
         return _ApiKeyMiddleware(create_mcp_server())
+
+    @asynccontextmanager
+    async def lifespan(self):
+        async with self._mcp.session_manager.run():
+            yield
