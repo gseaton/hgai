@@ -25,7 +25,8 @@ from typing import Any, Dict, List, Optional, Union
 import yaml
 
 from hgai.db.mongodb import col_hyperedges, col_hypernodes, col_hypergraphs
-from hgai.core.inference import apply_skos_inference
+
+_SKOS_FIELDS = ("skos_broader", "skos_narrower", "skos_related")
 
 
 class HQLError(Exception):
@@ -236,7 +237,6 @@ async def execute_hql(hql_text: str, use_cache: bool = True) -> HQLResult:
     alias = hql.get("as", "result")
     limit = hql.get("limit", 500)
     skip = hql.get("skip", 0)
-    infer = hql.get("infer", False)
     distinct = hql.get("distinct", False)
 
     # Parse point-in-time
@@ -272,6 +272,8 @@ async def execute_hql(hql_text: str, use_cache: bool = True) -> HQLResult:
         cursor = col_hypernodes().find(node_query).skip(skip).limit(limit)
         async for doc in cursor:
             doc.pop("_id", None)
+            for _f in _SKOS_FIELDS:
+                doc.pop(_f, None)
             doc["_entity_type"] = "hypernode"
             projected = _project_fields(doc, return_fields)
             items.append(projected)
@@ -283,13 +285,11 @@ async def execute_hql(hql_text: str, use_cache: bool = True) -> HQLResult:
         cursor = col_hyperedges().find(edge_query).skip(skip).limit(limit)
         async for doc in cursor:
             doc.pop("_id", None)
+            for _f in _SKOS_FIELDS:
+                doc.pop(_f, None)
             doc["_entity_type"] = "hyperedge"
             projected = _project_fields(doc, return_fields)
             items.append(projected)
-
-    # Apply SKOS inferencing if requested
-    if infer and items:
-        items = await apply_skos_inference(items, graph_ids)
 
     # DISTINCT — deduplicate by id when available, otherwise by full row content
     if distinct:
@@ -319,7 +319,6 @@ async def execute_hql(hql_text: str, use_cache: bool = True) -> HQLResult:
         "graph_ids": graph_ids,
         "match_type": match_type,
         "pit": pit.isoformat() if pit else None,
-        "inferred": infer,
         "distinct": distinct,
         "cached": False,
         **agg_results,

@@ -126,9 +126,6 @@ Create a hypergraph.
   "status": "active",
   "valid_from": "2020-01-01T00:00:00Z",
   "valid_to": null,
-  "skos_broader": [],
-  "skos_narrower": [],
-  "skos_related": []
 }
 ```
 

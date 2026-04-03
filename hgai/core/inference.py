@@ -1,80 +1,11 @@
-"""SKOS-based semantic inferencing for HypergraphAI.
+"""Semantic inferencing for HypergraphAI.
 
-Supports SKOS relationships: broader, narrower, related, and transitivity.
-Used for inferencing across hyperedges and hypernodes.
+SKOS inferencing via hyperedge hub relations is a planned future implementation.
 """
 
 from typing import Any, Dict, List, Set
 
 from hgai.db.mongodb import col_hyperedges, col_hypernodes
-
-
-async def get_skos_closure(
-    node_id: str,
-    graph_ids: List[str],
-    relation: str = "broader",
-    max_depth: int = 10,
-) -> List[str]:
-    """Compute transitive SKOS closure (e.g., all broader concepts).
-
-    relation: 'broader', 'narrower', or 'related'
-    Returns list of node IDs reachable via the SKOS relation chain.
-    """
-    visited: Set[str] = set()
-    queue = [node_id]
-    field_map = {
-        "broader": "skos_broader",
-        "narrower": "skos_narrower",
-        "related": "skos_related",
-    }
-    field = field_map.get(relation, "skos_broader")
-
-    depth = 0
-    while queue and depth < max_depth:
-        current_batch = queue[:]
-        queue = []
-        depth += 1
-
-        cursor = col_hypernodes().find(
-            {"id": {"$in": current_batch}, "hypergraph_id": {"$in": graph_ids}},
-            {field: 1, "id": 1},
-        )
-        async for doc in cursor:
-            for related_id in doc.get(field, []):
-                if related_id not in visited:
-                    visited.add(related_id)
-                    queue.append(related_id)
-
-    return list(visited)
-
-
-async def apply_skos_inference(
-    items: List[Dict[str, Any]],
-    graph_ids: List[str],
-) -> List[Dict[str, Any]]:
-    """Apply SKOS inferencing to a result set.
-
-    Adds inferred relationships to each item's _inferred field.
-    """
-    for item in items:
-        node_id = item.get("id")
-        if not node_id:
-            continue
-
-        inferred: Dict[str, List[str]] = {}
-
-        broader = await get_skos_closure(node_id, graph_ids, "broader")
-        if broader:
-            inferred["broader_closure"] = broader
-
-        narrower = await get_skos_closure(node_id, graph_ids, "narrower")
-        if narrower:
-            inferred["narrower_closure"] = narrower
-
-        if inferred:
-            item["_inferred"] = inferred
-
-    return items
 
 
 async def infer_inverse_edges(

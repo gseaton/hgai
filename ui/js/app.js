@@ -546,8 +546,6 @@ async function openNodeModal(nodeId = null) {
       document.getElementById('node-valid-from').value = n.valid_from ? n.valid_from.slice(0,16) : '';
       document.getElementById('node-valid-to').value = n.valid_to ? n.valid_to.slice(0,16) : '';
       document.getElementById('node-attributes').value = JSON.stringify(n.attributes || {}, null, 2);
-      document.getElementById('node-skos-broader').value = (n.skos_broader || []).join(', ');
-      document.getElementById('node-skos-narrower').value = (n.skos_narrower || []).join(', ');
     } catch {}
   } else if (!isEdit) {
     document.getElementById('form-node').reset();
@@ -593,8 +591,6 @@ document.getElementById('btn-save-node').addEventListener('click', async () => {
     valid_from: vFrom ? new Date(vFrom).toISOString() : null,
     valid_to: vTo ? new Date(vTo).toISOString() : null,
     attributes: parseJSON(document.getElementById('node-attributes').value),
-    skos_broader: parseTags(document.getElementById('node-skos-broader').value),
-    skos_narrower: parseTags(document.getElementById('node-skos-narrower').value),
   };
 
   try {
@@ -862,6 +858,14 @@ const HQL_EXAMPLES = [
     title: 'Find edges containing a specific node',
     hql: `hql:\n  from: hello-world\n  match:\n    type: hyperedge\n    nodes:\n      - moe-howard\n  return:\n    - id\n    - relation\n    - members`
   },
+  {
+    title: 'Find nodes by attribute value',
+    hql: `hql:\n  from: hello-world\n  match:\n    type: hypernode\n  where:\n    attributes.last_name: Howard\n  return:\n    - "*"`
+  },
+  {
+    title: 'Find nodes by attribute regex',
+    hql: `hql:\n  from: hello-world\n  match:\n    type: hypernode\n  where:\n    attributes.last_name:\n      $regex: "How.*"\n      $options: "i"\n  return:\n    - "*"`
+  },
 ];
 
 function initQueryEditor() {
@@ -970,6 +974,18 @@ const SHQL_EXAMPLES = [
   {
     title: 'Numeric attribute filter',
     shql: `shql:\n  from: hello-world\n  where:\n    - node: ?n\n    - filter:\n        ">=":\n          - ?n.attributes.score\n          - 90\n  select:\n    - ?n.id\n    - ?n.label\n    - ?n.attributes.score`
+  },
+  {
+    title: 'Find nodes by attribute value',
+    shql: `shql:\n  from: hello-world\n  where:\n    - node: "?n"\n      attributes:\n        last_name: Howard\n  select:\n    - "?n"`
+  },
+  {
+    title: 'Find nodes by attribute regex (DB-side)',
+    shql: `shql:\n  from: hello-world\n  where:\n    - node: "?n"\n      attributes:\n        last_name:\n          $regex: "How.*"\n          $options: "i"\n  select:\n    - "?n"`
+  },
+  {
+    title: 'Find nodes by attribute regex (filter)',
+    shql: `shql:\n  from: hello-world\n  where:\n    - node: "?n"\n    - filter:\n        MATCHES:\n          - ?n.attributes.last_name\n          - "How.*"\n  select:\n    - "?n.id"\n    - "?n.label"\n    - "?n.attributes.last_name"`
   },
 ];
 

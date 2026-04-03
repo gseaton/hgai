@@ -1303,38 +1303,7 @@ HypergraphAI's inference engine (`hgai/core/inference.py`) derives implicit know
 
 ### SKOS Semantic Inferencing
 
-HypergraphAI implements the [SKOS (Simple Knowledge Organization System)](https://www.w3.org/TR/skos-reference/) vocabulary for hierarchical and associative concept relationships. SKOS links are stored directly on hypernodes:
-
-| Field | Meaning |
-|---|---|
-| `skos_broader` | This node is a narrower concept of the listed nodes (parent concepts) |
-| `skos_narrower` | This node is a broader concept of the listed nodes (child concepts) |
-| `skos_related` | This node is associatively related to the listed nodes |
-
-**Transitive closure** is computed via breadth-first traversal up to a configurable depth (default: 10 hops). This means if `Dog` → `broader` → `Animal` → `broader` → `LivingThing`, then querying the broader closure of `Dog` returns both `Animal` and `LivingThing`.
-
-Example hypernode with SKOS links:
-```json
-{
-  "id": "dog",
-  "label": "Dog",
-  "type": "Concept",
-  "skos_broader": ["animal"],
-  "skos_narrower": ["labrador", "poodle"],
-  "skos_related": ["cat"]
-}
-```
-
-When SKOS inference is applied to a result set, each item gains an `_inferred` field:
-```json
-{
-  "id": "dog",
-  "_inferred": {
-    "broader_closure": ["animal", "living-thing", "organism"],
-    "narrower_closure": ["labrador", "poodle", "guide-dog"]
-  }
-}
-```
+SKOS (Simple Knowledge Organization System) inferencing — hierarchical (`broader`/`narrower`) and associative (`related`) concept relationships — is planned for a future release. It will be implemented via hyperedge hub relations rather than as fields on hypernodes.
 
 ### Inverse Edge Inferencing
 
@@ -1366,7 +1335,8 @@ Hyperedge `flavor` declares the inferencing semantics the relationship supports:
 
 The following inferencing capabilities are planned for future releases:
 
-- **HQL `infer:` clause** — explicit inference directives inside HQL queries (e.g., `infer: skos_broader`, `infer: transitive`)
+- **SKOS inferencing via hyperedge hub relations** — `broader`, `narrower`, and `related` concept hierarchies expressed as typed hyperedges, with transitive closure at query time
+- **HQL `infer:` clause** — explicit inference directives inside HQL queries (e.g., `infer: transitive`)
 - **Rule-based inferencing** — user-defined inference rules stored as hypernodes of type `InferenceRule`, evaluated at query time
 - **Cross-graph inferencing** — SKOS closure and transitive walks spanning multiple hypergraphs in a logical composition or mesh
 - **Materialized inference cache** — optional pre-computation of common transitive closures, stored in `query_cache` and invalidated on edge mutations

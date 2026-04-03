@@ -51,7 +51,6 @@ Key fields:
 - `tags` — searchable string tags
 - `status` — `active`, `draft`, or `archived`
 - `valid_from` / `valid_to` — temporal existential qualifiers (real-world validity)
-- `skos_broader` / `skos_narrower` / `skos_related` — SKOS semantic links
 
 ### Hyperedge
 

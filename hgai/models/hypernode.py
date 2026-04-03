@@ -24,10 +24,6 @@ class HypernodeBase(TimestampedModel):
         default=None, description="When this node ceased to be valid in the real world"
     )
 
-    # SKOS semantic relationships (to other node IDs)
-    skos_broader: List[str] = Field(default_factory=list, description="SKOS broader concepts")
-    skos_narrower: List[str] = Field(default_factory=list, description="SKOS narrower concepts")
-    skos_related: List[str] = Field(default_factory=list, description="SKOS related concepts")
 
 
 class HypernodeCreate(HypernodeBase):
@@ -46,9 +42,6 @@ class HypernodeUpdate(TimestampedModel):
     status: Optional[Status] = None
     valid_from: Optional[datetime] = None
     valid_to: Optional[datetime] = None
-    skos_broader: Optional[List[str]] = None
-    skos_narrower: Optional[List[str]] = None
-    skos_related: Optional[List[str]] = None
 
 
 class HypernodeInDB(HypernodeBase):

@@ -31,6 +31,8 @@ import yaml
 
 from hgai.db.mongodb import col_hyperedges, col_hypernodes, col_hypergraphs
 
+_SKOS_FIELDS = ("skos_broader", "skos_narrower", "skos_related")
+
 BindingSet = Dict[str, Any]
 
 
@@ -203,6 +205,8 @@ async def _eval_node_pattern(
         cursor = col_hypernodes().find(q).limit(2000)
         async for doc in cursor:
             doc.pop("_id", None)
+            for _f in _SKOS_FIELDS:
+                doc.pop(_f, None)
             new_binding = dict(binding)
             if bind_var:
                 new_binding[bind_var] = doc
@@ -287,6 +291,8 @@ async def _eval_edge_pattern(
         cursor = col_hyperedges().find(q).limit(2000)
         async for doc in cursor:
             doc.pop("_id", None)
+            for _f in _SKOS_FIELDS:
+                doc.pop(_f, None)
             edge_members = doc.get("members", [])
 
             if member_patterns:
@@ -408,6 +414,18 @@ def _eval_expr(expr: str, binding: BindingSet) -> bool:
             suffix = parts[1].strip("\"'")
             return isinstance(val, str) and val.lower().endswith(suffix.lower())
         return False
+    if upper.startswith("MATCHES("):
+        inner = expr[8:-1]
+        parts = [p.strip() for p in inner.split(",", 1)]
+        if len(parts) == 2:
+            import re as _re
+            val     = _resolve_binding_path(parts[0], binding)
+            pattern = parts[1].strip("\"'")
+            try:
+                return isinstance(val, str) and bool(_re.search(pattern, val))
+            except _re.error:
+                return False
+        return False
     if upper.startswith("BOUND("):
         var = expr[6:-1].strip()
         return var in binding and binding[var] is not None
@@ -504,6 +522,8 @@ async def _resolve_node_bindings(
     )
     async for doc in cursor:
         doc.pop("_id", None)
+        for _f in _SKOS_FIELDS:
+            doc.pop(_f, None)
         node_map[doc["id"]] = doc
 
     result = []
@@ -600,7 +620,7 @@ def _filter_dict_to_str(expr: Any) -> str:
         inner = _filter_dict_to_str(args[0] if isinstance(args, list) else args)
         return f"NOT ({inner})"
 
-    if op_upper in ("CONTAINS", "STARTS_WITH", "ENDS_WITH", "IS_TYPE"):
+    if op_upper in ("CONTAINS", "STARTS_WITH", "ENDS_WITH", "IS_TYPE", "MATCHES"):
         a, b = args[0], args[1]
         b_str = f'"{b}"' if isinstance(b, str) else str(b)
         return f"{op_upper}({a}, {b_str})"
