@@ -27,6 +27,7 @@
 - [SHQL — Semantic Hypergraph Query Language](#shql--semantic-hypergraph-query-language)
 - [Module Development](#module-development)
 - [Administration](#administration)
+  - [MongoDB Indexes](#mongodb-indexes)
 
 ---
 
@@ -1703,6 +1704,79 @@ docker-compose exec mongo mongorestore \
   --username admin --password pwd357 \
   --authenticationDatabase admin \
   --db hgai /backup/hgai
+```
+
+### MongoDB Indexes
+
+Indexes are created automatically at server startup via `ensure_indexes()` in `hgai/db/mongodb.py`. The call is idempotent — MongoDB skips indexes that already exist with the same name and definition.
+
+#### hypergraphs
+
+| Index | Fields | Options | Purpose |
+|-------|--------|---------|---------|
+| `id_unique` | `id` | unique | Graph lookup by ID (every request) |
+| `status` | `status` | — | Graph list and active-graph queries |
+
+#### hypernodes
+
+| Index | Fields | Options | Purpose |
+|-------|--------|---------|---------|
+| `id_graph_unique` | `id, hypergraph_id` | unique | Single-node lookup; enforces ID uniqueness per graph |
+| `graph_status` | `hypergraph_id, status` | — | Hot path — used on every node list query |
+| `graph_type` | `hypergraph_id, type` | — | `node_type` filter in HQL/SHQL |
+| `tags` | `tags` | multikey | Tag `$all` filter |
+| `label` | `label` | — | Label regex/text search |
+| `graph_pit` | `hypergraph_id, valid_from, valid_to` | sparse | Point-in-time queries |
+
+#### hyperedges
+
+| Index | Fields | Options | Purpose |
+|-------|--------|---------|---------|
+| `id_graph_unique` | `id, hypergraph_id` | unique | Edge lookup by ID |
+| `hyperkey_graph_unique` | `hyperkey, hypergraph_id` | unique | Hyperkey lookup; enforces semantic deduplication at DB level |
+| `graph_status` | `hypergraph_id, status` | — | Hot path — used on every edge list query |
+| `graph_relation` | `hypergraph_id, relation` | — | Relation filter in HQL/SHQL |
+| `members_node_id` | `members.node_id` | multikey | Node membership queries (`node_id` filter) |
+| `graph_pit` | `hypergraph_id, valid_from, valid_to` | sparse | Point-in-time queries |
+
+#### meshes
+
+| Index | Fields | Options | Purpose |
+|-------|--------|---------|---------|
+| `id_unique` | `id` | unique | Mesh lookup by ID |
+
+#### accounts
+
+| Index | Fields | Options | Purpose |
+|-------|--------|---------|---------|
+| `username_unique` | `username` | unique | Authentication lookups; enforces unique usernames |
+
+#### query_cache
+
+| Index | Fields | Options | Purpose |
+|-------|--------|---------|---------|
+| `cache_key_unique` | `cache_key` | unique | Fast cache hit/miss lookups |
+| `expires_at_ttl` | `expires_at` | TTL `expireAfterSeconds=0` | MongoDB background reaper auto-deletes expired entries |
+
+The TTL index on `expires_at` means MongoDB's background thread removes expired cache documents automatically — no manual cleanup required. The manual TTL check in `cache.py` remains as a belt-and-suspenders fallback for immediate consistency on reads.
+
+#### audit_log
+
+| Index | Fields | Options | Purpose |
+|-------|--------|---------|---------|
+| `timestamp_desc` | `timestamp` (desc) | — | Time-ordered audit log reads |
+
+#### Verifying indexes in MongoDB
+
+```bash
+# Connect to the running MongoDB instance
+mongosh --username admin --password pwd357 --authenticationDatabase admin
+
+# List indexes on a collection
+use hgai
+db.hypernodes.getIndexes()
+db.hyperedges.getIndexes()
+db.query_cache.getIndexes()
 ```
 
 ---
