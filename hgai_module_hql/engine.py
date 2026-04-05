@@ -231,6 +231,10 @@ async def execute_hql(hql_text: str, use_cache: bool = True) -> HQLResult:
             return result
 
     from_field = hql["from"]
+    raw_ids = [from_field] if isinstance(from_field, str) else list(from_field)
+    dot_refs   = [r for r in raw_ids if r.count(".") == 2]
+    plain_refs = [r for r in raw_ids if r.count(".") != 2]
+
     match = hql.get("match", {})
     where = hql.get("where", {})
     return_fields = hql.get("return", ["*"])
@@ -248,48 +252,62 @@ async def execute_hql(hql_text: str, use_cache: bool = True) -> HQLResult:
     # Aggregation
     aggregate = hql.get("aggregate", {})
 
-    try:
-        graph_ids = await _resolve_graph_ids(from_field)
-    except _MeshRedirect as redirect:
+    all_items: List[Dict] = []
+
+    # ── Dot-notation mesh refs (mesh_id.server_id.graph_id) ──────────────────
+    if dot_refs:
         try:
-            from hgai_module_mesh.engine import federated_hql
-            fed = await federated_hql(redirect.mesh_id, hql_text, use_cache=use_cache)
-            return HQLResult(
-                alias=fed.get("mesh_id", "result"),
-                items=fed["items"],
-                meta={**fed, "federated": True},
-            )
+            from hgai_module_mesh.engine import execute_dot_refs
+            dot_result = await execute_dot_refs(dot_refs, hql_text, "hql", use_cache=use_cache)
+            all_items.extend(dot_result["items"])
         except ImportError:
-            raise HQLError("Mesh federation requires hgai_module_mesh to be installed")
+            raise HQLError("Mesh dot-notation requires hgai_module_mesh to be installed")
+
+    # ── Local graph IDs / bare mesh IDs ──────────────────────────────────────
+    graph_ids: List[str] = []
+    if plain_refs:
+        try:
+            graph_ids = await _resolve_graph_ids(
+                plain_refs[0] if len(plain_refs) == 1 else plain_refs
+            )
+        except _MeshRedirect as redirect:
+            try:
+                from hgai_module_mesh.engine import federated_hql
+                fed = await federated_hql(redirect.mesh_id, hql_text, use_cache=use_cache)
+                all_items.extend(fed["items"])
+            except ImportError:
+                raise HQLError("Mesh federation requires hgai_module_mesh to be installed")
 
     match_type = match.get("type", "any")
-    items = []
 
-    if match_type in ("hypernode", "any"):
-        query = _build_mongo_query(graph_ids, match, where, pit)
-        # Remove hyperedge-only fields from query
-        node_query = {k: v for k, v in query.items() if k not in ("relation", "flavor", "members.node_id")}
-        cursor = col_hypernodes().find(node_query).skip(skip).limit(limit)
-        async for doc in cursor:
-            doc.pop("_id", None)
-            for _f in _SKOS_FIELDS:
-                doc.pop(_f, None)
-            doc["_entity_type"] = "hypernode"
-            projected = _project_fields(doc, return_fields)
-            items.append(projected)
+    if graph_ids:
+        if match_type in ("hypernode", "any"):
+            query = _build_mongo_query(graph_ids, match, where, pit)
+            # Remove hyperedge-only fields from query
+            node_query = {k: v for k, v in query.items() if k not in ("relation", "flavor", "members.node_id")}
+            cursor = col_hypernodes().find(node_query).skip(skip).limit(limit)
+            async for doc in cursor:
+                doc.pop("_id", None)
+                for _f in _SKOS_FIELDS:
+                    doc.pop(_f, None)
+                doc["_entity_type"] = "hypernode"
+                projected = _project_fields(doc, return_fields)
+                all_items.append(projected)
 
-    if match_type in ("hyperedge", "any"):
-        query = _build_mongo_query(graph_ids, match, where, pit)
-        # Remove hypernode-only fields
-        edge_query = {k: v for k, v in query.items() if k not in ("type",)}
-        cursor = col_hyperedges().find(edge_query).skip(skip).limit(limit)
-        async for doc in cursor:
-            doc.pop("_id", None)
-            for _f in _SKOS_FIELDS:
-                doc.pop(_f, None)
-            doc["_entity_type"] = "hyperedge"
-            projected = _project_fields(doc, return_fields)
-            items.append(projected)
+        if match_type in ("hyperedge", "any"):
+            query = _build_mongo_query(graph_ids, match, where, pit)
+            # Remove hypernode-only fields
+            edge_query = {k: v for k, v in query.items() if k not in ("type",)}
+            cursor = col_hyperedges().find(edge_query).skip(skip).limit(limit)
+            async for doc in cursor:
+                doc.pop("_id", None)
+                for _f in _SKOS_FIELDS:
+                    doc.pop(_f, None)
+                doc["_entity_type"] = "hyperedge"
+                projected = _project_fields(doc, return_fields)
+                all_items.append(projected)
+
+    items = all_items
 
     # DISTINCT — deduplicate by id when available, otherwise by full row content
     if distinct:
@@ -317,6 +335,7 @@ async def execute_hql(hql_text: str, use_cache: bool = True) -> HQLResult:
 
     meta = {
         "graph_ids": graph_ids,
+        "dot_refs": dot_refs if dot_refs else None,
         "match_type": match_type,
         "pit": pit.isoformat() if pit else None,
         "distinct": distinct,

@@ -775,23 +775,35 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
     if isinstance(select_fields, str):
         select_fields = [select_fields]
 
-    # Resolve graph IDs (expand logical graphs; detect mesh IDs)
-    raw_ids = [from_field] if isinstance(from_field, str) else from_field
+    # Partition from: values into dot-notation mesh refs and plain local refs
+    raw_ids = [from_field] if isinstance(from_field, str) else list(from_field)
+    dot_refs   = [r for r in raw_ids if r.count(".") == 2]
+    plain_refs = [r for r in raw_ids if r.count(".") != 2]
+
+    # Handle dot-notation mesh refs (mesh_id.server_id.graph_id)
+    dot_items: List[Dict] = []
+    if dot_refs:
+        try:
+            from hgai_module_mesh.engine import execute_dot_refs
+            dot_result = await execute_dot_refs(dot_refs, shql_text, "shql", use_cache=use_cache)
+            dot_items = dot_result["items"]
+        except ImportError:
+            from .parser import SHQLError
+            raise SHQLError("Mesh dot-notation requires hgai_module_mesh to be installed")
+
+    # Resolve local graph IDs (expand logical graphs; detect bare mesh IDs)
     graph_ids: List[str] = []
-    for gid in raw_ids:
+    for gid in plain_refs:
         doc = await col_hypergraphs().find_one({"id": gid})
         if not doc:
-            # Check if it's a mesh ID — route to federation
+            # Check if it's a bare mesh ID — route to federation
             from hgai.db.mongodb import col_meshes
             if await col_meshes().find_one({"id": gid}):
                 try:
                     from hgai_module_mesh.engine import federated_shql
                     fed = await federated_shql(gid, shql_text, use_cache=use_cache)
-                    return SHQLResult(
-                        alias=fed.get("mesh_id", "result"),
-                        items=fed["items"],
-                        meta={**fed, "federated": True},
-                    )
+                    dot_items.extend(fed["items"])
+                    continue
                 except ImportError:
                     from .parser import SHQLError
                     raise SHQLError("Mesh federation requires hgai_module_mesh to be installed")
@@ -809,14 +821,16 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
         from dateutil.parser import parse as parse_dt
         pit = parse_dt(shql["at"])
 
-    # Execute patterns starting from a single empty binding
-    bindings = await _evaluate_patterns(where_patterns, graph_ids, pit, [{}])
+    # Execute local patterns (skipped when no local graphs)
+    if graph_ids:
+        bindings = await _evaluate_patterns(where_patterns, graph_ids, pit, [{}])
+        bindings = await _resolve_node_bindings(bindings, graph_ids)
+        items = _project_select(bindings, select_fields)
+    else:
+        items = []
 
-    # Promote bare node_id strings to full documents
-    bindings = await _resolve_node_bindings(bindings, graph_ids)
-
-    # Project SELECT fields
-    items = _project_select(bindings, select_fields)
+    # Merge dot-notation / federation results
+    items.extend(dot_items)
 
     # DISTINCT
     if distinct:
@@ -852,6 +866,7 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
 
     meta = {
         "graph_ids":     graph_ids,
+        "dot_refs":      dot_refs if dot_refs else None,
         "pit":           pit.isoformat() if pit else None,
         "pattern_count": len(where_patterns),
         "cached":        False,

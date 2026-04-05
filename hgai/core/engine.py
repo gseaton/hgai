@@ -14,6 +14,7 @@ from hgai.db.mongodb import (
     col_hypergraphs,
     col_hypernodes,
 )
+from hgai.core.cache import invalidate_cache
 from hgai.models.common import Status, now_utc
 from hgai.models.hyperedge import HyperedgeCreate, HyperedgeInDB, HyperedgeUpdate
 from hgai.models.hypergraph import HypergraphCreate, HypergraphInDB, HypergraphUpdate
@@ -98,6 +99,7 @@ async def update_hypergraph(
     if not result:
         return None
     result.pop("_id", None)
+    await invalidate_cache(graph_id)
     return HypergraphInDB(**result)
 
 
@@ -106,6 +108,7 @@ async def delete_hypergraph(graph_id: str) -> bool:
     if result.deleted_count:
         await col_hypernodes().delete_many({"hypergraph_id": graph_id})
         await col_hyperedges().delete_many({"hypergraph_id": graph_id})
+        await invalidate_cache(graph_id)
         return True
     return False
 
@@ -145,6 +148,7 @@ async def create_hypernode(
         {"id": graph_id}, {"$inc": {"node_count": 1}}
     )
     doc.pop("_id", None)
+    await invalidate_cache(graph_id)
     return HypernodeInDB(**doc)
 
 
@@ -206,6 +210,7 @@ async def update_hypernode(
     if not result:
         return None
     result.pop("_id", None)
+    await invalidate_cache(graph_id)
     return HypernodeInDB(**result)
 
 
@@ -213,6 +218,7 @@ async def delete_hypernode(graph_id: str, node_id: str) -> bool:
     result = await col_hypernodes().delete_one({"id": node_id, "hypergraph_id": graph_id})
     if result.deleted_count:
         await col_hypergraphs().update_one({"id": graph_id}, {"$inc": {"node_count": -1}})
+        await invalidate_cache(graph_id)
         return True
     return False
 
@@ -242,6 +248,7 @@ async def create_hyperedge(
     await col_hyperedges().insert_one(doc)
     await col_hypergraphs().update_one({"id": graph_id}, {"$inc": {"edge_count": 1}})
     doc.pop("_id", None)
+    await invalidate_cache(graph_id)
     return HyperedgeInDB(**doc)
 
 
@@ -316,6 +323,7 @@ async def update_hyperedge(
     if not result:
         return None
     result.pop("_id", None)
+    await invalidate_cache(graph_id)
     return HyperedgeInDB(**result)
 
 
@@ -325,6 +333,7 @@ async def delete_hyperedge(graph_id: str, edge_id: str) -> bool:
     )
     if result.deleted_count:
         await col_hypergraphs().update_one({"id": graph_id}, {"$inc": {"edge_count": -1}})
+        await invalidate_cache(graph_id)
         return True
     return False
 

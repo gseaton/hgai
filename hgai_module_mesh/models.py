@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from hgai.models.common import Status, TimestampedModel
 
@@ -11,6 +11,13 @@ class MeshServer(TimestampedModel):
     """A HypergraphAI server within a mesh."""
 
     server_id: str = Field(..., description="Unique server identifier")
+
+    @field_validator("server_id")
+    @classmethod
+    def server_id_no_dots(cls, v: str) -> str:
+        if "." in v:
+            raise ValueError("Server ID must not contain '.' (reserved for mesh dot-notation)")
+        return v
     server_name: str = Field(..., description="Display name")
     url: str = Field(..., description="Server base URL")
     api_token: Optional[str] = Field(default=None, description="Auth token for this server")
@@ -22,6 +29,13 @@ class MeshBase(TimestampedModel):
     """Base mesh fields."""
 
     id: str = Field(..., description="Unique mesh identifier")
+
+    @field_validator("id")
+    @classmethod
+    def id_no_dots(cls, v: str) -> str:
+        if "." in v:
+            raise ValueError("Mesh ID must not contain '.' (reserved for mesh dot-notation)")
+        return v
     label: str = Field(..., description="Display label")
     description: Optional[str] = Field(default=None)
     servers: List[MeshServer] = Field(

@@ -6,7 +6,8 @@ from typing import Any, Dict, List, Optional
 import httpx
 import yaml
 
-from hgai.db.mongodb import col_meshes
+from hgai.config import get_settings
+from hgai.db.mongodb import col_hypergraphs, col_meshes
 from hgai.models.common import now_utc
 
 from .models import MeshServer
@@ -14,6 +15,31 @@ from .models import MeshServer
 logger = logging.getLogger(__name__)
 
 _HTTP_TIMEOUT = 10.0
+
+
+def _is_local(server: MeshServer) -> bool:
+    """Return True when the server entry refers to this running instance.
+
+    Matches by server_id first, then falls back to URL — covering the case
+    where the mesh entry uses a different server_id than the local settings.
+    """
+    settings = get_settings()
+    if server.server_id == settings.server_id:
+        return True
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(server.url)
+        local_hosts = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        return parsed.hostname in local_hosts and port == settings.port
+    except Exception:
+        return False
+
+
+async def _local_graph_ids() -> List[str]:
+    """Return all active instantiated graph IDs from the local MongoDB."""
+    cursor = col_hypergraphs().find({"status": "active"}, {"id": 1})
+    return [doc["id"] async for doc in cursor]
 
 
 def _headers(server: MeshServer) -> Dict[str, str]:
@@ -89,6 +115,8 @@ async def _graphs_for_server(server: MeshServer) -> List[str]:
     """Return the server's graph IDs, fetching them live if the cached list is empty."""
     if server.graphs:
         return server.graphs
+    if _is_local(server):
+        return await _local_graph_ids()
     return await fetch_remote_graphs(server)
 
 
@@ -120,17 +148,24 @@ async def federated_shql(mesh_id: str, shql_text: str, use_cache: bool = True) -
             continue
         rewritten = _rewrite_from(shql_text, "shql", graphs)
         try:
-            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-                r = await client.post(
-                    f"{server.url.rstrip('/')}/api/v1/shql/query",
-                    headers=_headers(server),
-                    json={"shql": rewritten, "use_cache": use_cache},
-                )
-                r.raise_for_status()
-                data = r.json()
-                for item in data.get("items", []):
+            if _is_local(server):
+                from hgai_module_shql.engine import execute_shql
+                result = await execute_shql(rewritten, use_cache=use_cache)
+                for item in result.items:
                     item["_mesh_server_id"] = server.server_id
-                all_items.extend(data.get("items", []))
+                all_items.extend(result.items)
+            else:
+                async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+                    r = await client.post(
+                        f"{server.url.rstrip('/')}/api/v1/shql/query",
+                        headers=_headers(server),
+                        json={"shql": rewritten, "use_cache": use_cache},
+                    )
+                    r.raise_for_status()
+                    data = r.json()
+                    for item in data.get("items", []):
+                        item["_mesh_server_id"] = server.server_id
+                    all_items.extend(data.get("items", []))
         except Exception as e:
             errors.append({"server_id": server.server_id, "error": str(e)})
             logger.warning(f"Federated SHQL failed on {server.server_id}: {e}")
@@ -181,6 +216,120 @@ async def proxy_request(
         raise ValueError(f"Proxy request to {server_id} failed: {e}")
 
 
+def _parse_dot_ref(ref: str) -> Optional[tuple]:
+    """Parse a dot-notation from: ref.
+
+    Returns (mesh_id, server_id_or_*, graph_id_or_*) when the string
+    contains exactly two dots, otherwise None (treated as a local graph ID).
+    """
+    parts = ref.split(".")
+    if len(parts) == 3:
+        return (parts[0], parts[1], parts[2])
+    return None
+
+
+async def resolve_dot_refs(
+    refs: List[str],
+) -> tuple:
+    """Resolve dot-notation from: refs into a local-ID list and a mesh routing list.
+
+    Returns (local_graph_ids, [(MeshServer, [graph_ids]), ...])
+
+    Wildcards ('*') are expanded against the server's known graph list.
+    Multiple refs that resolve to the same server are merged.
+    """
+    local_ids: List[str] = []
+    server_graphs: Dict[str, tuple] = {}  # server_id -> (MeshServer, [graph_ids])
+
+    for ref in refs:
+        parsed = _parse_dot_ref(ref)
+        if parsed is None:
+            local_ids.append(ref)
+            continue
+
+        mesh_id, server_pat, graph_pat = parsed
+        mesh_doc = await col_meshes().find_one({"id": mesh_id})
+        if not mesh_doc:
+            logger.warning(f"Mesh not found for dot-ref '{ref}' — skipped")
+            continue
+
+        for srv_data in mesh_doc.get("servers", []):
+            server = MeshServer(**srv_data)
+            if server_pat != "*" and server.server_id != server_pat:
+                continue
+
+            graphs = await _graphs_for_server(server)
+            if graph_pat != "*":
+                graphs = [g for g in graphs if g == graph_pat]
+            if not graphs:
+                continue
+
+            key = server.server_id
+            if key not in server_graphs:
+                server_graphs[key] = (server, [])
+            existing = server_graphs[key][1]
+            for g in graphs:
+                if g not in existing:
+                    existing.append(g)
+
+    return local_ids, list(server_graphs.values())
+
+
+async def execute_dot_refs(
+    refs: List[str],
+    query_text: str,
+    lang: str,
+    use_cache: bool = True,
+) -> Dict[str, Any]:
+    """Execute a query across dot-notation mesh refs and merge results.
+
+    lang: 'hql' or 'shql'
+    Returns {'count': int, 'items': [...], 'errors': [...]}
+    """
+    _local_ids, routing = await resolve_dot_refs(refs)
+
+    all_items: List[Dict] = []
+    errors: List[Dict] = []
+
+    for server, graph_ids in routing:
+        if not graph_ids:
+            continue
+        rewritten = _rewrite_from(query_text, lang, graph_ids)
+        try:
+            if _is_local(server):
+                if lang == "hql":
+                    from hgai_module_hql.engine import execute_hql
+                    result = await execute_hql(rewritten, use_cache=use_cache)
+                    for item in result.items:
+                        item["_mesh_server_id"] = server.server_id
+                    all_items.extend(result.items)
+                else:
+                    from hgai_module_shql.engine import execute_shql
+                    result = await execute_shql(rewritten, use_cache=use_cache)
+                    for item in result.items:
+                        item["_mesh_server_id"] = server.server_id
+                    all_items.extend(result.items)
+            else:
+                endpoint = "/api/v1/query" if lang == "hql" else "/api/v1/shql/query"
+                body: Dict[str, Any] = {lang: rewritten, "use_cache": use_cache}
+                async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+                    r = await client.post(
+                        f"{server.url.rstrip('/')}{endpoint}",
+                        headers=_headers(server),
+                        json=body,
+                    )
+                    r.raise_for_status()
+                    data = r.json()
+                    for item in data.get("items", []):
+                        item["_mesh_server_id"] = server.server_id
+                    all_items.extend(data.get("items", []))
+        except Exception as e:
+            errors.append({"server_id": server.server_id, "error": str(e)})
+            logger.warning(f"Dot-ref {lang.upper()} query failed on {server.server_id}: {e}")
+
+    return {"count": len(all_items), "items": all_items, "errors": errors}
+
+
 async def federated_hql(mesh_id: str, hql_text: str, use_cache: bool = True) -> Dict[str, Any]:
     """Fan out an HQL query to all servers in a mesh and merge results."""
     doc = await col_meshes().find_one({"id": mesh_id})
@@ -198,17 +347,24 @@ async def federated_hql(mesh_id: str, hql_text: str, use_cache: bool = True) -> 
             continue
         rewritten = _rewrite_from(hql_text, "hql", graphs)
         try:
-            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-                r = await client.post(
-                    f"{server.url.rstrip('/')}/api/v1/query",
-                    headers=_headers(server),
-                    json={"hql": rewritten, "use_cache": use_cache},
-                )
-                r.raise_for_status()
-                data = r.json()
-                for item in data.get("items", []):
+            if _is_local(server):
+                from hgai_module_hql.engine import execute_hql
+                result = await execute_hql(rewritten, use_cache=use_cache)
+                for item in result.items:
                     item["_mesh_server_id"] = server.server_id
-                all_items.extend(data.get("items", []))
+                all_items.extend(result.items)
+            else:
+                async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+                    r = await client.post(
+                        f"{server.url.rstrip('/')}/api/v1/query",
+                        headers=_headers(server),
+                        json={"hql": rewritten, "use_cache": use_cache},
+                    )
+                    r.raise_for_status()
+                    data = r.json()
+                    for item in data.get("items", []):
+                        item["_mesh_server_id"] = server.server_id
+                    all_items.extend(data.get("items", []))
         except Exception as e:
             errors.append({"server_id": server.server_id, "error": str(e)})
             logger.warning(f"Federated HQL failed on {server.server_id}: {e}")

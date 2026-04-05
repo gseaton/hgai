@@ -186,6 +186,14 @@ Create a hypergraph.
 
 Execute an HQL query.
 
+The `from` field accepts:
+- A local graph ID: `"my-graph"`
+- A list of local graph IDs: `["graph-1", "graph-2"]`
+- Mesh dot-notation refs: `"mesh-id.server-id.graph-id"` (wildcards `*` supported in any position)
+- A mix of local IDs and dot-notation refs in the same list
+
+Graph IDs, server IDs, and mesh IDs must not contain `.` (reserved as the dot-notation delimiter).
+
 **Body:**
 ```json
 {

@@ -866,6 +866,22 @@ const HQL_EXAMPLES = [
     title: 'Find nodes by attribute regex',
     hql: `hql:\n  from: hello-world\n  match:\n    type: hypernode\n  where:\n    attributes.last_name:\n      $regex: "How.*"\n      $options: "i"\n  return:\n    - "*"`
   },
+  {
+    title: 'Mesh — all nodes from one graph on one server',
+    hql: `hql:\n  from: bauhaus-strix.bauhaus.stooges-graph\n  match:\n    type: hypernode\n  return:\n    - id\n    - label\n    - type`
+  },
+  {
+    title: 'Mesh — one graph across all servers',
+    hql: `hql:\n  from: bauhaus-strix.*.stooges-graph\n  match:\n    type: hypernode\n  return:\n    - id\n    - label\n    - "_mesh_server_id"`
+  },
+  {
+    title: 'Mesh — all graphs on all servers',
+    hql: `hql:\n  from: bauhaus-strix.*.*\n  match:\n    type: hypernode\n  where:\n    attributes.last_name: Howard\n  return:\n    - id\n    - label\n    - attributes\n    - "_mesh_server_id"`
+  },
+  {
+    title: 'Mesh — mix local and mesh graphs',
+    hql: `hql:\n  from:\n    - hello-world\n    - bauhaus-strix.bauhaus.stooges-graph\n  match:\n    type: hypernode\n  return:\n    - id\n    - label\n    - "_mesh_server_id"`
+  },
 ];
 
 function initQueryEditor() {
@@ -986,6 +1002,22 @@ const SHQL_EXAMPLES = [
   {
     title: 'Find nodes by attribute regex (filter)',
     shql: `shql:\n  from: hello-world\n  where:\n    - node: "?n"\n    - filter:\n        MATCHES:\n          - ?n.attributes.last_name\n          - "How.*"\n  select:\n    - "?n.id"\n    - "?n.label"\n    - "?n.attributes.last_name"`
+  },
+  {
+    title: 'Mesh — all nodes from one graph on one server',
+    shql: `shql:\n  from: bauhaus-strix.bauhaus.stooges-graph\n  where:\n    - node: ?n\n  select:\n    - ?n.id\n    - ?n.label\n    - ?n.type`
+  },
+  {
+    title: 'Mesh — one graph across all servers',
+    shql: `shql:\n  from: bauhaus-strix.*.stooges-graph\n  where:\n    - node: ?n\n  select:\n    - ?n.id\n    - ?n.label\n    - ?n._mesh_server_id`
+  },
+  {
+    title: 'Mesh — all graphs on all servers',
+    shql: `shql:\n  from: bauhaus-strix.*.*\n  where:\n    - node: ?n\n      node_type: Person\n    - filter:\n        "==":\n          - ?n.attributes.last_name\n          - Howard\n  select:\n    - ?n.id\n    - ?n.label\n    - ?n._mesh_server_id`
+  },
+  {
+    title: 'Mesh — mix local and mesh graphs',
+    shql: `shql:\n  from:\n    - hello-world\n    - bauhaus-strix.bauhaus.stooges-graph\n  where:\n    - node: ?n\n      node_type: Person\n  select:\n    - ?n.id\n    - ?n.label`
   },
 ];
 

@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from hgai.models.common import TimestampedModel
 
@@ -26,6 +26,13 @@ class HypergraphBase(TimestampedModel):
 
     id: str = Field(..., description="Unique hypergraph identifier")
     label: str = Field(..., description="Display label")
+
+    @field_validator("id")
+    @classmethod
+    def id_no_dots(cls, v: str) -> str:
+        if "." in v:
+            raise ValueError("Hypergraph ID must not contain '.' (reserved for mesh dot-notation)")
+        return v
     description: Optional[str] = Field(default=None)
     type: GraphType = Field(default=GraphType.instantiated)
 

@@ -184,7 +184,7 @@ HQL is a YAML-based declarative query language. Every query starts with the `hql
 
 ```yaml
 hql:
-  from: <graph-id>          # Required: graph ID or list of graph IDs
+  from: <graph-id>          # Required: graph ID, list of IDs, or mesh dot-refs
   at: <ISO-8601 datetime>   # Optional: point-in-time qualifier
   match:                     # Optional: entity matching conditions
     type: hypernode|hyperedge|any
@@ -206,7 +206,6 @@ hql:
   as: <alias>               # Optional: result alias name
   limit: 500                # Optional: max results
   skip: 0                   # Optional: pagination offset
-  infer: false              # Optional: enable SKOS inferencing
   aggregate:                 # Optional: aggregation operations
     count: true
     group_by: <field>
@@ -233,6 +232,37 @@ hql:
   match:
     type: hyperedge
 ```
+
+### Mesh Dot-Notation
+
+Query graphs on remote mesh servers directly from `from:` using dot-notation: `{mesh_id}.{server_id}.{graph_id}`
+
+Use `*` as a wildcard in any position:
+
+| `from:` value | Meaning |
+|---|---|
+| `abc.srv1.alpha` | Mesh `abc`, server `srv1`, graph `alpha` |
+| `abc.*.alpha` | Mesh `abc`, all servers that have graph `alpha` |
+| `abc.srv1.*` | Mesh `abc`, server `srv1`, all its graphs |
+| `abc.*.*` | All servers and all graphs in mesh `abc` |
+
+Dot-refs can be mixed with local graph IDs in the same `from:` list:
+
+```yaml
+hql:
+  from:
+    - local-graph                      # local graph (no dots)
+    - my-mesh.server-a.remote-graph    # specific graph on one server
+    - my-mesh.*.shared-graph           # same graph across all servers
+  match:
+    type: hypernode
+  return:
+    - id
+    - label
+    - _mesh_server_id                  # added to each result from a mesh server
+```
+
+**Note:** graph IDs, server IDs, and mesh IDs must not contain `.` — it is reserved as the dot-notation delimiter.
 
 ---
 
