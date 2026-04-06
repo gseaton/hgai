@@ -58,6 +58,13 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
+    # Close shared mesh HTTP client
+    try:
+        from hgai_module_mesh.engine import close_http_client
+        await close_http_client()
+    except ImportError:
+        pass
+
     await close_db()
     logger.info("HypergraphAI server shutdown complete")
 

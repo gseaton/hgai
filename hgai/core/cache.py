@@ -1,7 +1,7 @@
 """Query result caching for HypergraphAI."""
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from hgai.config import get_settings
 from hgai.db.mongodb import col_query_cache
@@ -25,7 +25,17 @@ async def get_cached_result(cache_key: str) -> Optional[Dict[str, Any]]:
     return doc.get("result")
 
 
-async def set_cached_result(cache_key: str, result: Dict[str, Any]) -> None:
+async def set_cached_result(
+    cache_key: str,
+    result: Dict[str, Any],
+    graph_ids: Optional[List[str]] = None,
+) -> None:
+    """Store a query result in the cache.
+
+    graph_ids should be the list of local hypergraph IDs the query touched.
+    These are stored on the cache document so invalidate_cache(graph_id) can
+    target only the entries affected by a specific graph mutation.
+    """
     settings = get_settings()
     if not settings.cache_enabled:
         return
@@ -36,6 +46,7 @@ async def set_cached_result(cache_key: str, result: Dict[str, Any]) -> None:
         {
             "cache_key": cache_key,
             "result": result,
+            "graph_ids": graph_ids or [],
             "expires_at": expires_at,
             "created_at": datetime.now(timezone.utc),
         },
@@ -44,11 +55,14 @@ async def set_cached_result(cache_key: str, result: Dict[str, Any]) -> None:
 
 
 async def invalidate_cache(graph_id: Optional[str] = None) -> int:
-    """Invalidate cached query results. If graph_id given, only invalidate for that graph."""
+    """Invalidate cached query results.
+
+    If graph_id is provided, only entries that queried that specific graph are
+    removed — leaving unrelated graph caches intact.
+    If graph_id is None, the entire cache is flushed.
+    """
     if graph_id:
-        # Can't easily filter by graph_id in cache keys without storing metadata
-        # For now, flush all cache when a graph is modified
-        result = await col_query_cache().delete_many({})
+        result = await col_query_cache().delete_many({"graph_ids": graph_id})
     else:
         result = await col_query_cache().delete_many({})
     return result.deleted_count

@@ -875,6 +875,6 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
     result = SHQLResult(alias=alias, items=items, meta=meta)
 
     if use_cache:
-        await set_cached_result(cache_key, result.to_dict())
+        await set_cached_result(cache_key, result.to_dict(), graph_ids=graph_ids)
 
     return result

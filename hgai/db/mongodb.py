@@ -86,6 +86,8 @@ async def ensure_indexes() -> None:
     # ── query_cache ───────────────────────────────────────────────────────────
     await col_query_cache().create_indexes([
         IndexModel([("cache_key", ASCENDING)], unique=True, name="cache_key_unique"),
+        # Multikey index on graph_ids array — enables graph-scoped invalidation
+        IndexModel([("graph_ids", ASCENDING)], name="graph_ids"),
         # TTL index: MongoDB automatically removes expired documents
         IndexModel(
             [("expires_at", ASCENDING)],

@@ -28,6 +28,9 @@
 - [Module Development](#module-development)
 - [Administration](#administration)
   - [MongoDB Indexes](#mongodb-indexes)
+  - [Performance](#performance)
+    - [Graph-scoped cache invalidation](#graph-scoped-cache-invalidation)
+    - [Shared HTTP client](#shared-http-client)
 
 ---
 
@@ -1358,6 +1361,8 @@ POST /api/v1/shql/validate   Validate an SHQL query (dry run)
 
 ### Mesh SHQL
 
+All servers in a mesh are queried **concurrently** — total latency equals the slowest server, not the sum of all servers. Unreachable servers are skipped and reported in the `errors` field of the response.
+
 ```yaml
 shql:
   from: alpha-bravo-mesh
@@ -1395,6 +1400,8 @@ shql:
 ```
 
 ### Mesh HQL
+
+Like Mesh SHQL, all servers are queried **concurrently**. Dot-notation refs (`mesh.server.graph`) also fan out concurrently within the same `asyncio.gather` call.
 
 ```yaml
 hql:
@@ -1756,9 +1763,12 @@ Indexes are created automatically at server startup via `ensure_indexes()` in `h
 | Index | Fields | Options | Purpose |
 |-------|--------|---------|---------|
 | `cache_key_unique` | `cache_key` | unique | Fast cache hit/miss lookups |
+| `graph_ids` | `graph_ids` | multikey | Graph-scoped invalidation — `delete_many({"graph_ids": id})` |
 | `expires_at_ttl` | `expires_at` | TTL `expireAfterSeconds=0` | MongoDB background reaper auto-deletes expired entries |
 
 The TTL index on `expires_at` means MongoDB's background thread removes expired cache documents automatically — no manual cleanup required. The manual TTL check in `cache.py` remains as a belt-and-suspenders fallback for immediate consistency on reads.
+
+The `graph_ids` multikey index enables graph-scoped cache invalidation: every cache document stores the list of local graph IDs it queried, so a write to graph `X` only evicts entries that touched `X`. See [Graph-scoped cache invalidation](#graph-scoped-cache-invalidation).
 
 #### audit_log
 
@@ -1778,6 +1788,84 @@ db.hypernodes.getIndexes()
 db.hyperedges.getIndexes()
 db.query_cache.getIndexes()
 ```
+
+### Performance
+
+#### Concurrent mesh fan-out
+
+All mesh fan-out operations use `asyncio.gather` so server calls run in parallel rather than sequentially. This affects:
+
+| Function | Before | After |
+|---|---|---|
+| `ping_mesh` | N servers × 10 s timeout | ~10 s regardless of N |
+| `sync_mesh_graphs` | N servers × fetch time | ~1× fetch time |
+| `federated_hql` | N servers × query time | ~1× query time |
+| `federated_shql` | N servers × query time | ~1× query time |
+| `execute_dot_refs` | N servers × query time | ~1× query time |
+| `resolve_dot_refs` | Sequential mesh + graph lookups | Concurrent mesh lookups + concurrent graph fetches |
+
+Within each function the pattern is:
+
+1. **Graph resolution** — `asyncio.gather(*[_graphs_for_server(s) for s in servers])` fetches cached or live graph lists from all servers at once.
+2. **Query execution** — `asyncio.gather(*[_query_server(s, ...) for s in active], return_exceptions=True)` dispatches queries concurrently; `return_exceptions=True` means a single unreachable server does not cancel the others.
+3. **Result merge** — items from all servers are collected and returned in the response; failures appear in the `errors` list.
+
+The local server is always handled by a direct engine call (no HTTP), so it adds near-zero latency regardless of which mesh it is registered under.
+
+#### Graph-scoped cache invalidation
+
+Every cached query result stores the list of local hypergraph IDs it queried:
+
+```json
+{
+  "cache_key": "abc123...",
+  "graph_ids": ["stooges-graph", "classics-graph"],
+  "result": { ... },
+  "expires_at": "2026-04-06T12:00:00Z"
+}
+```
+
+When a hypernode or hyperedge in graph `stooges-graph` is written (create, update, delete), `invalidate_cache("stooges-graph")` runs `delete_many({"graph_ids": "stooges-graph"})` — removing only entries that queried that graph. Cached results for `classics-graph` and all other graphs remain intact.
+
+A full flush (no argument) still runs `delete_many({})` and is used when a hypergraph itself is created, updated, or deleted.
+
+**Scope of `graph_ids` per cache entry:**
+
+| Query type | `graph_ids` stored | Invalidation behaviour |
+|---|---|---|
+| Local query (`from: my-graph`) | `["my-graph"]` | Evicted when `my-graph` is mutated |
+| Multi-graph (`from: [a, b]`) | `["a", "b"]` | Evicted when either `a` or `b` is mutated |
+| Dot-notation remote ref | `[]` (no local graphs) | Never evicted by graph mutation; expires via TTL |
+| Dot-notation with local ref | `["local-graph"]` | Evicted when `local-graph` is mutated |
+| Logical graph expansion | Resolved physical IDs | Evicted when any composed graph is mutated |
+
+Dot-notation refs that point to fully remote graphs cannot be graph-scoped (the local server has no visibility into remote mutations), so those entries expire naturally via the TTL index.
+
+#### Shared HTTP client
+
+All outbound mesh HTTP calls use a single `httpx.AsyncClient` instance defined in `hgai_module_mesh/engine.py` rather than creating and tearing down a new client per request.
+
+```
+Before: each call → new TCP handshake → TLS negotiation → request → close connection
+After:  each call → reuse pooled connection → request  (TCP/TLS cost paid once)
+```
+
+**Connection pool settings** (configurable in `engine.py`):
+
+| Parameter | Value | Meaning |
+|---|---|---|
+| `max_connections` | 100 | Total concurrent connections across all mesh servers |
+| `max_keepalive_connections` | 20 | Idle keep-alive connections held open for reuse |
+| `keepalive_expiry` | 30 s | How long an idle connection is kept before closing |
+| `timeout` | 10 s | Per-request timeout (connect + read) |
+
+**Lifecycle** — the client is created lazily on first use by `get_http_client()`, and explicitly closed at application shutdown by `close_http_client()` which is called from the FastAPI lifespan in `hgai/main.py`. If the mesh module is not installed, the shutdown hook is skipped silently.
+
+**Thread safety** — `httpx.AsyncClient` is safe to share across concurrent coroutines. With `asyncio.gather` fan-out, multiple server queries share the same client and its connection pool simultaneously.
+
+#### MongoDB indexes
+
+See [MongoDB Indexes](#mongodb-indexes) above. Indexes are the single highest-impact change for query latency — without them every query performs a full collection scan regardless of concurrent fan-out.
 
 ---
 
