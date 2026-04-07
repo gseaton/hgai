@@ -328,6 +328,104 @@ hql:
     as: edges_containing_moe_et
 ```
 
+### Space-scoped Graph References
+
+Graphs owned by a space are referenced with a slash separator: `space_id/graph_id`. This distinguishes space-scoped graphs from unowned graphs and from mesh dot-notation refs.
+
+| `from:` value | Meaning |
+|---|---|
+| `my-graph` | Unowned local graph (`space_id` is null) |
+| `alpha/alpha-hg` | Graph `alpha-hg` scoped to space `alpha` |
+
+Query all nodes in a space-scoped graph:
+
+```yaml
+hql:
+  from: alpha/alpha-hg
+  match:
+    type: hypernode
+  return:
+    - id
+    - label
+    - type
+    - attributes
+```
+
+Query edges by relation in a space-scoped graph:
+
+```yaml
+hql:
+  from: alpha/alpha-hg
+  match:
+    type: hyperedge
+    relation: has-member
+  return:
+    - id
+    - relation
+    - members
+    - attributes
+```
+
+Multi-graph query across two spaces:
+
+```yaml
+hql:
+  from:
+    - alpha/alpha-hg
+    - beta/beta-hg
+  match:
+    type: hypernode
+    node_type: Person
+  return:
+    - id
+    - label
+    - attributes
+```
+
+Mix a space-scoped graph with an unowned global graph:
+
+```yaml
+hql:
+  from:
+    - hello-world
+    - alpha/alpha-hg
+  match:
+    type: hypernode
+  return:
+    - id
+    - label
+    - type
+```
+
+Point-in-time query on a space-scoped graph:
+
+```yaml
+hql:
+  from: alpha/alpha-hg
+  at: "1940-06-01T00:00:00Z"
+  match:
+    type: hyperedge
+    relation: has-member
+  return:
+    - members
+    - attributes
+    - valid_from
+    - valid_to
+```
+
+For remote graphs on a mesh server, use the 4-component dot-notation `mesh.server.space.graph`:
+
+```yaml
+hql:
+  from: my-mesh.remote-server.alpha.alpha-hg
+  match:
+    type: hypernode
+  return:
+    - id
+    - label
+    - _mesh_server_id
+```
+
 ---
 
 ## Architecture
@@ -1401,7 +1499,28 @@ shql:
 
 ### Mesh HQL
 
-Like Mesh SHQL, all servers are queried **concurrently**. Dot-notation refs (`mesh.server.graph`) also fan out concurrently within the same `asyncio.gather` call.
+Like Mesh SHQL, all servers are queried **concurrently**. Dot-notation refs also fan out concurrently within the same `asyncio.gather` call.
+
+#### Dot-notation `from:` reference formats
+
+| Format | Meaning |
+|--------|---------|
+| `mesh.server.graph` | Unowned graph on a specific server |
+| `mesh.server.space.graph` | Space-scoped graph on a specific server |
+| `mesh.*.graph` | Unowned graph on all servers in the mesh |
+| `mesh.*.space.graph` | Space-scoped graph on all servers in the mesh |
+| `mesh.server.*` | All unowned graphs on a specific server |
+
+Dots are prohibited in all ID fields, so splitting on `.` is unambiguous. The third component is the space ID for 4-part refs or the graph ID for 3-part refs.
+
+**Local graph notation in HQL/SHQL `from:`:**
+
+| Format | Meaning |
+|--------|---------|
+| `graph_id` | Unowned local graph (`space_id` is null) |
+| `space_id/graph_id` | Space-scoped local graph (slash separator) |
+
+The slash separator is used for local space refs; dots remain reserved for mesh routing only.
 
 ```yaml
 hql:
@@ -1652,6 +1771,123 @@ shql:
   as: stooges_in_1940
 ```
 
+### Space-scoped Graph References
+
+Space-scoped graphs use the same slash-separator syntax as HQL: `space_id/graph_id`. Unowned graphs are referenced by bare `graph_id`.
+
+| `from:` value | Meaning |
+|---|---|
+| `my-graph` | Unowned local graph (`space_id` is null) |
+| `alpha/alpha-hg` | Graph `alpha-hg` scoped to space `alpha` |
+
+#### 8. Find all nodes in a space-scoped graph
+
+```yaml
+shql:
+  from: alpha/alpha-hg
+  select:
+    - ?person.id
+    - ?person.label
+    - ?person.attributes
+  where:
+    - node:
+        bind: ?person
+        type: Person
+  order_by: ?person.label
+  as: space_people
+```
+
+#### 9. Multi-hop join across a space-scoped graph
+
+```yaml
+shql:
+  from: alpha/alpha-hg
+  select:
+    - ?person.label
+    - ?membership.id
+    - ?membership.relation
+  where:
+    - node:
+        bind: ?person
+        type: Person
+    - edge:
+        bind: ?membership
+        relation: has-member
+        members:
+          - node: { bind: ?person }
+  as: space_memberships
+```
+
+#### 10. Multi-graph query across two spaces
+
+```yaml
+shql:
+  from:
+    - alpha/alpha-hg
+    - beta/beta-hg
+  select:
+    - ?n.id
+    - ?n.label
+    - ?n.type
+  where:
+    - node:
+        bind: ?n
+        type: Person
+  order_by: ?n.label
+  as: cross_space_people
+```
+
+#### 11. Mix a space-scoped graph with an unowned global graph
+
+```yaml
+shql:
+  from:
+    - hello-world
+    - alpha/alpha-hg
+  select:
+    - ?n.id
+    - ?n.label
+    - ?n.type
+  where:
+    - node:
+        bind: ?n
+  as: global_and_space
+```
+
+#### 12. Point-in-time query on a space-scoped graph
+
+```yaml
+shql:
+  from: alpha/alpha-hg
+  at: "1940-06-01T00:00:00Z"
+  select:
+    - ?stooge.label
+    - ?edge.attributes
+  where:
+    - edge:
+        bind: ?edge
+        relation: has-member
+        members:
+          - node: { bind: ?stooge, type: Person }
+  as: space_stooges_in_1940
+```
+
+For remote graphs on a mesh server, use the 4-component dot-notation `mesh.server.space.graph`:
+
+```yaml
+shql:
+  from: my-mesh.remote-server.alpha.alpha-hg
+  select:
+    - ?n.id
+    - ?n.label
+    - ?n._mesh_server_id
+  where:
+    - node:
+        bind: ?n
+        type: Person
+  as: remote_space_people
+```
+
 ### Module Location
 
 ```
@@ -1697,6 +1933,75 @@ Modules are mounted conditionally in `hgai/main.py` — a missing or broken modu
 | `user` | Read/write access to permitted hypergraphs |
 | `agent` | API/MCP-only access for AI agents |
 | `readonly` | Read-only access |
+
+### Spaces (Multi-Tenant Namespaces)
+
+**Spaces** group hypergraphs for multi-tenant deployments. Each space has members with roles:
+
+| Space Role | Permitted Operations |
+|------------|---------------------|
+| `owner` | read, write, delete, admin, query, export, import + manage space |
+| `admin` | read, write, delete, query, export, import + manage members |
+| `member` | read, write, query, export, import |
+| `viewer` | read, query, export |
+
+Access is resolved in priority order: global admin → direct account permissions → space membership.
+
+Because graph uniqueness is enforced per-space, `team-a` and `team-b` can each have a graph named `my-graph` with no conflict. Flat `/graphs/*` routes address only unowned graphs (`space_id` is null). Space-owned graphs are addressed via `/spaces/{space_id}/graphs/{graph_id}`.
+
+```bash
+# Create a space
+curl -X POST http://localhost:8000/api/v1/spaces \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"id": "my-team", "label": "My Team"}'
+
+# Add a member
+curl -X POST http://localhost:8000/api/v1/spaces/my-team/members \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice", "role": "member"}'
+
+# Create a graph inside the space (same ID can exist in other spaces)
+curl -X POST http://localhost:8000/api/v1/spaces/my-team/graphs \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"id": "my-graph", "label": "My Graph"}'
+
+# Get a space-scoped graph
+curl http://localhost:8000/api/v1/spaces/my-team/graphs/my-graph \
+  -H "Authorization: Bearer <token>"
+
+# Full node/edge CRUD under a space
+curl http://localhost:8000/api/v1/spaces/my-team/graphs/my-graph/nodes \
+  -H "Authorization: Bearer <token>"
+```
+
+**HQL/SHQL `from:` for space-scoped graphs** use slash notation:
+
+```yaml
+hql:
+  from: my-team/my-graph       # space-scoped
+  match:
+    type: hyperedge
+```
+
+```yaml
+hql:
+  from:
+    - my-team/my-graph         # space-scoped
+    - other-team/my-graph      # same graph ID, different space
+    - unowned-graph            # unowned (no space)
+```
+
+**Mesh dot-notation for space-scoped remote graphs** uses 4 components:
+
+```yaml
+hql:
+  from: alpha-bravo-mesh.server-a.my-team.my-graph
+```
+
+MCP tools for spaces: `hgai_space_list`, `hgai_space_get`, `hgai_space_create`, `hgai_space_add_member`, `hgai_space_list_graphs`.
 
 ### Backup
 ```bash

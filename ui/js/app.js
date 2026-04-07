@@ -12,6 +12,8 @@ const State = {
   edgePageSize: 50,
   confirmCallback: null,
   editorCM: null,
+  graphsCache: {},       // id -> graph object (includes space_id)
+  activeSpaceDetailId: null,
 };
 
 // ── Utilities ──────────────────────────────────────────────────────────────
@@ -87,8 +89,8 @@ function showScreen(name) {
 
   const titles = {
     dashboard: 'Dashboard', graphs: 'Hypergraphs', nodes: 'Hypernodes',
-    edges: 'Hyperedges', query: 'HQL Query', shql: 'SHQL Query', accounts: 'Accounts',
-    meshes: 'Meshes', system: 'System',
+    edges: 'Hyperedges', query: 'HQL Query', shql: 'SHQL Query',
+    spaces: 'Spaces', accounts: 'Accounts', meshes: 'Meshes', system: 'System',
   };
   document.getElementById('topbar-screen-title').textContent = titles[name] || name;
   State.currentScreen = name;
@@ -101,6 +103,7 @@ function showScreen(name) {
     edges: () => { State.edgesPage = 0; populateEdgesGraphSelect(); loadEdges(); },
     query: initQueryEditor,
     shql: initShqlEditor,
+    spaces: loadSpaces,
     accounts: loadAccounts,
     meshes: loadMeshes,
     system: loadSystem,
@@ -148,14 +151,27 @@ document.getElementById('active-graph-select').addEventListener('change', functi
   if (State.currentScreen === 'edges') { State.edgesPage = 0; loadEdges(); }
 });
 
+// Returns space_id for the given graph ID (or active graph) using the cache
+function graphSpaceId(graphId) {
+  const gid = graphId || State.activeGraphId;
+  return gid ? (State.graphsCache[gid]?.space_id || null) : null;
+}
+
+async function _fetchAndCacheGraphs() {
+  const resp = await HGAI_API.listGraphs({ status: 'active', limit: 200 });
+  (resp.items || []).forEach(g => { State.graphsCache[g.id] = g; });
+  return resp.items || [];
+}
+
 async function populateGraphSelector() {
   const sel = document.getElementById('active-graph-select');
   try {
-    const resp = await HGAI_API.listGraphs({ status: 'active', limit: 200 });
+    const items = await _fetchAndCacheGraphs();
     sel.innerHTML = '<option value="">— Select Graph —</option>';
-    (resp.items || []).forEach(g => {
+    items.forEach(g => {
       const opt = document.createElement('option');
-      opt.value = g.id; opt.textContent = `${g.label} (${g.id})`;
+      opt.value = g.id;
+      opt.textContent = g.space_id ? `${g.label} (${g.space_id}/${g.id})` : `${g.label} (${g.id})`;
       if (g.id === State.activeGraphId) opt.selected = true;
       sel.appendChild(opt);
     });
@@ -166,11 +182,12 @@ async function populateNodesGraphSelect(selectedId) {
   const sel = document.getElementById('nodes-graph-select');
   const pick = selectedId !== undefined ? selectedId : (sel.value || State.activeGraphId);
   try {
-    const resp = await HGAI_API.listGraphs({ status: 'active', limit: 200 });
+    const items = await _fetchAndCacheGraphs();
     sel.innerHTML = '<option value="">— Select Hypergraph —</option>';
-    (resp.items || []).forEach(g => {
+    items.forEach(g => {
       const opt = document.createElement('option');
-      opt.value = g.id; opt.textContent = `${g.label} (${g.id})`;
+      opt.value = g.id;
+      opt.textContent = g.space_id ? `${g.label} (${g.space_id}/${g.id})` : `${g.label} (${g.id})`;
       if (g.id === pick) opt.selected = true;
       sel.appendChild(opt);
     });
@@ -189,11 +206,12 @@ async function populateEdgesGraphSelect(selectedId) {
   const sel = document.getElementById('edges-graph-select');
   const pick = selectedId !== undefined ? selectedId : (sel.value || State.activeGraphId);
   try {
-    const resp = await HGAI_API.listGraphs({ status: 'active', limit: 200 });
+    const items = await _fetchAndCacheGraphs();
     sel.innerHTML = '<option value="">— Select Hypergraph —</option>';
-    (resp.items || []).forEach(g => {
+    items.forEach(g => {
       const opt = document.createElement('option');
-      opt.value = g.id; opt.textContent = `${g.label} (${g.id})`;
+      opt.value = g.id;
+      opt.textContent = g.space_id ? `${g.label} (${g.space_id}/${g.id})` : `${g.label} (${g.id})`;
       if (g.id === pick) opt.selected = true;
       sel.appendChild(opt);
     });
@@ -326,46 +344,73 @@ async function loadDashboard() {
 // ── Hypergraphs ────────────────────────────────────────────────────────────
 async function loadGraphs() {
   const tbody = document.getElementById('tbody-graphs');
-  tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
   try {
     const resp = await HGAI_API.listGraphs({ status: '', limit: 200 });
     tbody.innerHTML = '';
+    State.graphsCache = {};
     if (!resp.items || !resp.items.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No hypergraphs found</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">No hypergraphs found</td></tr>';
       return;
     }
     resp.items.forEach(g => {
+      State.graphsCache[g.id] = g;
+      const spaceLabel = g.space_id
+        ? `<span class="badge bg-info text-dark">${g.space_id}</span>`
+        : '<span class="text-muted small">—</span>';
+      const sid = g.space_id ? `'${g.space_id}'` : 'null';
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><code>${g.id}</code></td>
         <td>${g.label}</td>
         <td><span class="badge bg-light text-dark">${g.type}</span></td>
+        <td>${spaceLabel}</td>
         <td>${g.node_count||0}</td>
         <td>${g.edge_count||0}</td>
         <td>${statusBadge(g.status)}</td>
         <td>${tagBadges(g.tags)}</td>
         <td class="text-end">
-          <button class="btn btn-xs btn-outline-secondary me-1" onclick="viewGraph('${g.id}')"><i class="bi bi-eye"></i></button>
-          <button class="btn btn-xs btn-outline-primary me-1" onclick="editGraph('${g.id}')"><i class="bi bi-pencil"></i></button>
-          <button class="btn btn-xs btn-outline-danger" onclick="deleteGraph('${g.id}')"><i class="bi bi-trash"></i></button>
+          <button class="btn btn-xs btn-outline-secondary me-1" onclick="viewGraph('${g.id}', ${sid})"><i class="bi bi-eye"></i></button>
+          <button class="btn btn-xs btn-outline-primary me-1" onclick="editGraph('${g.id}', ${sid})"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-xs btn-outline-danger" onclick="deleteGraph('${g.id}', ${sid})"><i class="bi bi-trash"></i></button>
         </td>`;
       tbody.appendChild(tr);
     });
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="8" class="text-danger text-center">${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="text-danger text-center">${err.message}</td></tr>`;
   }
 }
 
 document.getElementById('btn-create-graph').addEventListener('click', () => openGraphModal());
 
-async function openGraphModal(graphId = null) {
-  const modal = new bootstrap.Modal(document.getElementById('modal-graph'));
-  document.getElementById('graph-form-mode').value = graphId ? 'edit' : 'create';
-  document.getElementById('modal-graph-title').textContent = graphId ? 'Edit Hypergraph' : 'New Hypergraph';
+async function _populateSpaceSelect(selectedSpaceId = null, locked = false) {
+  const sel = document.getElementById('graph-space-id');
+  sel.innerHTML = '<option value="">— None (global) —</option>';
+  sel.disabled = locked;
+  try {
+    const resp = await HGAI_API.listSpaces({ status: 'active', limit: 200 });
+    (resp.items || []).forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id; opt.textContent = `${s.label} (${s.id})`;
+      if (s.id === selectedSpaceId) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  } catch {}
+}
 
-  if (graphId) {
+async function openGraphModal(graphId = null, spaceId = null) {
+  const modal = new bootstrap.Modal(document.getElementById('modal-graph'));
+  const isEdit = !!graphId;
+  document.getElementById('graph-form-mode').value = isEdit ? 'edit' : 'create';
+  document.getElementById('modal-graph-title').textContent = isEdit ? 'Edit Hypergraph' : 'New Hypergraph';
+  document.getElementById('graph-space-id-hidden').value = spaceId || '';
+
+  if (isEdit) {
     try {
-      const g = await HGAI_API.getGraph(graphId);
+      const g = spaceId
+        ? await HGAI_API.getSpaceGraph(spaceId, graphId)
+        : await HGAI_API.getGraph(graphId);
+      await _populateSpaceSelect(g.space_id, true);  // locked on edit
       document.getElementById('graph-id').value = g.id;
       document.getElementById('graph-id').readOnly = true;
       document.getElementById('graph-label').value = g.label || '';
@@ -378,20 +423,27 @@ async function openGraphModal(graphId = null) {
     document.getElementById('form-graph').reset();
     document.getElementById('graph-id').readOnly = false;
     document.getElementById('graph-attributes').value = '{}';
+    await _populateSpaceSelect(null, false);
   }
   modal.show();
 }
 
-window.editGraph = (id) => openGraphModal(id);
-window.viewGraph = async (id) => {
-  const g = await HGAI_API.getGraph(id).catch(()=>null);
-  const stats = await HGAI_API.getGraphStats(id).catch(()=>null);
-  showDetail(`Hypergraph: ${id}`, { ...g, stats });
+window.editGraph = (id, spaceId) => openGraphModal(id, spaceId || null);
+window.viewGraph = async (id, spaceId) => {
+  const g = spaceId
+    ? await HGAI_API.getSpaceGraph(spaceId, id).catch(()=>null)
+    : await HGAI_API.getGraph(id).catch(()=>null);
+  const stats = spaceId ? null : await HGAI_API.getGraphStats(id).catch(()=>null);
+  showDetail(`Hypergraph: ${id}`, stats ? { ...g, stats } : g);
 };
-window.deleteGraph = (id) => {
+window.deleteGraph = (id, spaceId) => {
   confirmDelete(`Delete hypergraph "${id}" and ALL its nodes and edges?`, async () => {
     try {
-      await HGAI_API.deleteGraph(id);
+      if (spaceId) {
+        await HGAI_API.deleteSpaceGraph(spaceId, id);
+      } else {
+        await HGAI_API.deleteGraph(id);
+      }
       toast(`Hypergraph "${id}" deleted`);
       loadGraphs();
       populateGraphSelector();
@@ -402,6 +454,10 @@ window.deleteGraph = (id) => {
 document.getElementById('btn-save-graph').addEventListener('click', async () => {
   const mode = document.getElementById('graph-form-mode').value;
   const id = document.getElementById('graph-id').value.trim();
+  // On create, use the dropdown; on edit, use the hidden field (locked)
+  const spaceId = mode === 'create'
+    ? (document.getElementById('graph-space-id').value || null)
+    : (document.getElementById('graph-space-id-hidden').value || null);
   const data = {
     id,
     label: document.getElementById('graph-label').value.trim(),
@@ -412,10 +468,18 @@ document.getElementById('btn-save-graph').addEventListener('click', async () => 
   };
   try {
     if (mode === 'create') {
-      await HGAI_API.createGraph(data);
+      if (spaceId) {
+        await HGAI_API.createSpaceGraph(spaceId, data);
+      } else {
+        await HGAI_API.createGraph(data);
+      }
       toast('Hypergraph created');
     } else {
-      await HGAI_API.updateGraph(id, data);
+      if (spaceId) {
+        await HGAI_API.updateSpaceGraph(spaceId, id, data);
+      } else {
+        await HGAI_API.updateGraph(id, data);
+      }
       toast('Hypergraph updated');
     }
     bootstrap.Modal.getInstance(document.getElementById('modal-graph'))?.hide();
@@ -444,8 +508,11 @@ async function loadNodes() {
     search: document.getElementById('node-search').value.trim() || undefined,
   };
 
+  const spaceId = graphSpaceId(State.activeGraphId);
   try {
-    const resp = await HGAI_API.listNodes(State.activeGraphId, params);
+    const resp = spaceId
+      ? await HGAI_API.listSpaceNodes(spaceId, State.activeGraphId, params)
+      : await HGAI_API.listNodes(State.activeGraphId, params);
     tbody.innerHTML = '';
     if (!resp.items || !resp.items.length) {
       tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No hypernodes found</td></tr>';
@@ -521,12 +588,13 @@ async function openNodeModal(nodeId = null) {
     graphDisplayRow.classList.add('d-none');
     // Populate graph dropdown for create
     try {
-      const resp = await HGAI_API.listGraphs({ status: 'active', limit: 200 });
+      const items = await _fetchAndCacheGraphs();
       const sel = document.getElementById('node-graph-id');
       sel.innerHTML = '<option value="">— Select Hypergraph —</option>';
-      (resp.items || []).forEach(g => {
+      items.forEach(g => {
         const opt = document.createElement('option');
-        opt.value = g.id; opt.textContent = `${g.label} (${g.id})`;
+        opt.value = g.id;
+        opt.textContent = g.space_id ? `${g.label} (${g.space_id}/${g.id})` : `${g.label} (${g.id})`;
         if (g.id === State.activeGraphId) opt.selected = true;
         sel.appendChild(opt);
       });
@@ -535,7 +603,10 @@ async function openNodeModal(nodeId = null) {
 
   if (isEdit && State.activeGraphId) {
     try {
-      const n = await HGAI_API.getNode(State.activeGraphId, nodeId);
+      const spaceId = graphSpaceId(State.activeGraphId);
+      const n = spaceId
+        ? await HGAI_API.getSpaceNode(spaceId, State.activeGraphId, nodeId)
+        : await HGAI_API.getNode(State.activeGraphId, nodeId);
       document.getElementById('node-graph-display').textContent = n.hypergraph_id || State.activeGraphId;
       document.getElementById('node-id').value = n.id; document.getElementById('node-id').readOnly = true;
       document.getElementById('node-label').value = n.label || '';
@@ -558,13 +629,21 @@ async function openNodeModal(nodeId = null) {
 
 window.editNode = (id) => openNodeModal(id);
 window.viewNode = async (id) => {
-  const n = await HGAI_API.getNode(State.activeGraphId, id).catch(()=>null);
+  const spaceId = graphSpaceId(State.activeGraphId);
+  const n = spaceId
+    ? await HGAI_API.getSpaceNode(spaceId, State.activeGraphId, id).catch(()=>null)
+    : await HGAI_API.getNode(State.activeGraphId, id).catch(()=>null);
   showDetail(`Hypernode: ${id}`, n);
 };
 window.deleteNode = (id) => {
   confirmDelete(`Delete hypernode "${id}"?`, async () => {
     try {
-      await HGAI_API.deleteNode(State.activeGraphId, id);
+      const spaceId = graphSpaceId(State.activeGraphId);
+      if (spaceId) {
+        await HGAI_API.deleteSpaceNode(spaceId, State.activeGraphId, id);
+      } else {
+        await HGAI_API.deleteNode(State.activeGraphId, id);
+      }
       toast(`Hypernode "${id}" deleted`);
       loadNodes();
     } catch (err) { toast(err.message, 'danger'); }
@@ -593,9 +672,14 @@ document.getElementById('btn-save-node').addEventListener('click', async () => {
     attributes: parseJSON(document.getElementById('node-attributes').value),
   };
 
+  const targetSpaceId = graphSpaceId(targetGraphId);
   try {
     if (mode === 'create') {
-      await HGAI_API.createNode(targetGraphId, data);
+      if (targetSpaceId) {
+        await HGAI_API.createSpaceNode(targetSpaceId, targetGraphId, data);
+      } else {
+        await HGAI_API.createNode(targetGraphId, data);
+      }
       // If we just created in a different graph, update the active graph so the table refreshes correctly
       if (targetGraphId !== State.activeGraphId) {
         State.activeGraphId = targetGraphId;
@@ -604,7 +688,11 @@ document.getElementById('btn-save-node').addEventListener('click', async () => {
       }
       toast('Hypernode created');
     } else {
-      await HGAI_API.updateNode(targetGraphId, id, data);
+      if (targetSpaceId) {
+        await HGAI_API.updateSpaceNode(targetSpaceId, targetGraphId, id, data);
+      } else {
+        await HGAI_API.updateNode(targetGraphId, id, data);
+      }
       toast('Hypernode updated');
     }
     bootstrap.Modal.getInstance(document.getElementById('modal-node'))?.hide();
@@ -631,8 +719,11 @@ async function loadEdges() {
     node_id: document.getElementById('edge-node-filter').value.trim() || undefined,
   };
 
+  const spaceId = graphSpaceId(State.activeGraphId);
   try {
-    const resp = await HGAI_API.listEdges(State.activeGraphId, params);
+    const resp = spaceId
+      ? await HGAI_API.listSpaceEdges(spaceId, State.activeGraphId, params)
+      : await HGAI_API.listEdges(State.activeGraphId, params);
     tbody.innerHTML = '';
     if (!resp.items || !resp.items.length) {
       tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No hyperedges found</td></tr>';
@@ -702,12 +793,13 @@ async function openEdgeModal(edgeId = null) {
     graphSelectRow.classList.remove('d-none');
     graphDisplayRow.classList.add('d-none');
     try {
-      const resp = await HGAI_API.listGraphs({ status: 'active', limit: 200 });
+      const items = await _fetchAndCacheGraphs();
       const sel = document.getElementById('edge-graph-id');
       sel.innerHTML = '<option value="">— Select Hypergraph —</option>';
-      (resp.items || []).forEach(g => {
+      items.forEach(g => {
         const opt = document.createElement('option');
-        opt.value = g.id; opt.textContent = `${g.label} (${g.id})`;
+        opt.value = g.id;
+        opt.textContent = g.space_id ? `${g.label} (${g.space_id}/${g.id})` : `${g.label} (${g.id})`;
         if (g.id === State.activeGraphId) opt.selected = true;
         sel.appendChild(opt);
       });
@@ -716,7 +808,10 @@ async function openEdgeModal(edgeId = null) {
 
   if (isEdit && State.activeGraphId) {
     try {
-      const e = await HGAI_API.getEdge(State.activeGraphId, edgeId);
+      const spaceId = graphSpaceId(State.activeGraphId);
+      const e = spaceId
+        ? await HGAI_API.getSpaceEdge(spaceId, State.activeGraphId, edgeId)
+        : await HGAI_API.getEdge(State.activeGraphId, edgeId);
       document.getElementById('edge-graph-display').textContent = e.hypergraph_id || State.activeGraphId;
       document.getElementById('edge-id').value = e.id || '';
       document.getElementById('edge-id').readOnly = true;
@@ -742,13 +837,21 @@ async function openEdgeModal(edgeId = null) {
 
 window.editEdge = (id) => openEdgeModal(id);
 window.viewEdge = async (id) => {
-  const e = await HGAI_API.getEdge(State.activeGraphId, id).catch(()=>null);
+  const spaceId = graphSpaceId(State.activeGraphId);
+  const e = spaceId
+    ? await HGAI_API.getSpaceEdge(spaceId, State.activeGraphId, id).catch(()=>null)
+    : await HGAI_API.getEdge(State.activeGraphId, id).catch(()=>null);
   showDetail(`Hyperedge: ${id}`, e);
 };
 window.deleteEdge = (id) => {
   confirmDelete(`Delete hyperedge "${id}"?`, async () => {
     try {
-      await HGAI_API.deleteEdge(State.activeGraphId, id);
+      const spaceId = graphSpaceId(State.activeGraphId);
+      if (spaceId) {
+        await HGAI_API.deleteSpaceEdge(spaceId, State.activeGraphId, id);
+      } else {
+        await HGAI_API.deleteEdge(State.activeGraphId, id);
+      }
       toast(`Hyperedge deleted`);
       loadEdges();
     } catch (err) { toast(err.message, 'danger'); }
@@ -786,9 +889,14 @@ document.getElementById('btn-save-edge').addEventListener('click', async () => {
     members,
   };
 
+  const targetSpaceId = graphSpaceId(targetGraphId);
   try {
     if (mode === 'create') {
-      await HGAI_API.createEdge(targetGraphId, data);
+      if (targetSpaceId) {
+        await HGAI_API.createSpaceEdge(targetSpaceId, targetGraphId, data);
+      } else {
+        await HGAI_API.createEdge(targetGraphId, data);
+      }
       if (targetGraphId !== State.activeGraphId) {
         State.activeGraphId = targetGraphId;
         document.getElementById('active-graph-select').value = targetGraphId;
@@ -797,7 +905,11 @@ document.getElementById('btn-save-edge').addEventListener('click', async () => {
       }
       toast('Hyperedge created');
     } else {
-      await HGAI_API.updateEdge(targetGraphId, id, data);
+      if (targetSpaceId) {
+        await HGAI_API.updateSpaceEdge(targetSpaceId, targetGraphId, id, data);
+      } else {
+        await HGAI_API.updateEdge(targetGraphId, id, data);
+      }
       toast('Hyperedge updated');
     }
     bootstrap.Modal.getInstance(document.getElementById('modal-edge'))?.hide();
@@ -881,6 +993,26 @@ const HQL_EXAMPLES = [
   {
     title: 'Mesh — mix local and mesh graphs',
     hql: `hql:\n  from:\n    - hello-world\n    - bauhaus-strix.bauhaus.stooges-graph\n  match:\n    type: hypernode\n  return:\n    - id\n    - label\n    - "_mesh_server_id"`
+  },
+  {
+    title: 'Space — query all nodes in a space graph',
+    hql: `hql:\n  from: alpha/alpha-hg\n  match:\n    type: hypernode\n  return:\n    - id\n    - label\n    - type\n    - attributes`
+  },
+  {
+    title: 'Space — query edges by relation in a space graph',
+    hql: `hql:\n  from: alpha/alpha-hg\n  match:\n    type: hyperedge\n    relation: has-member\n  return:\n    - id\n    - relation\n    - members\n    - attributes`
+  },
+  {
+    title: 'Space — multi-graph across two spaces',
+    hql: `hql:\n  from:\n    - alpha/alpha-hg\n    - beta/beta-hg\n  match:\n    type: hypernode\n    node_type: Person\n  return:\n    - id\n    - label\n    - attributes`
+  },
+  {
+    title: 'Space — mix space graph and global graph',
+    hql: `hql:\n  from:\n    - hello-world\n    - alpha/alpha-hg\n  match:\n    type: hypernode\n  return:\n    - id\n    - label\n    - type`
+  },
+  {
+    title: 'Space — mesh dot-notation (space-scoped remote graph)',
+    hql: `hql:\n  from: bauhaus-strix.bauhaus.alpha.alpha-hg\n  match:\n    type: hypernode\n  return:\n    - id\n    - label\n    - "_mesh_server_id"`
   },
 ];
 
@@ -1018,6 +1150,26 @@ const SHQL_EXAMPLES = [
   {
     title: 'Mesh — mix local and mesh graphs',
     shql: `shql:\n  from:\n    - hello-world\n    - bauhaus-strix.bauhaus.stooges-graph\n  where:\n    - node: ?n\n      node_type: Person\n  select:\n    - ?n.id\n    - ?n.label`
+  },
+  {
+    title: 'Space — find all nodes in a space graph',
+    shql: `shql:\n  from: alpha/alpha-hg\n  where:\n    - node: ?n\n      node_type: Person\n  select:\n    - ?n.id\n    - ?n.label\n    - ?n.attributes`
+  },
+  {
+    title: 'Space — join nodes through edge in a space graph',
+    shql: `shql:\n  from: alpha/alpha-hg\n  where:\n    - node: ?person\n      node_type: Person\n    - edge: ?membership\n      relation: has-member\n      members:\n        - node_id: ?person\n  select:\n    - ?person.label\n    - ?membership.id\n    - ?membership.relation`
+  },
+  {
+    title: 'Space — multi-graph across two spaces',
+    shql: `shql:\n  from:\n    - alpha/alpha-hg\n    - beta/beta-hg\n  where:\n    - node: ?n\n      node_type: Person\n  select:\n    - ?n.id\n    - ?n.label\n    - ?n.attributes`
+  },
+  {
+    title: 'Space — mix space graph and global graph',
+    shql: `shql:\n  from:\n    - hello-world\n    - alpha/alpha-hg\n  where:\n    - node: ?n\n  select:\n    - ?n.id\n    - ?n.label\n    - ?n.type`
+  },
+  {
+    title: 'Space — mesh dot-notation (space-scoped remote graph)',
+    shql: `shql:\n  from: bauhaus-strix.bauhaus.alpha.alpha-hg\n  where:\n    - node: ?n\n      node_type: Person\n  select:\n    - ?n.id\n    - ?n.label\n    - ?n._mesh_server_id`
   },
 ];
 
@@ -1470,6 +1622,199 @@ window.deleteMesh = (id) => {
   confirmDelete(`Delete mesh "${id}"?`, async () => {
     try { await HGAI_API.deleteMesh(id); toast(`Mesh "${id}" deleted`); loadMeshes(); }
     catch (err) { toast(err.message, 'danger'); }
+  });
+};
+
+// ── Spaces ─────────────────────────────────────────────────────────────────
+async function loadSpaces() {
+  const tbody = document.getElementById('tbody-spaces');
+  tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  document.getElementById('space-detail-panel').classList.add('d-none');
+  State.activeSpaceDetailId = null;
+  try {
+    const resp = await HGAI_API.listSpaces({ limit: 200 });
+    tbody.innerHTML = '';
+    if (!resp.items || !resp.items.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No spaces found</td></tr>';
+      return;
+    }
+    resp.items.forEach(s => {
+      const tr = document.createElement('tr');
+      tr.className = 'cursor-pointer';
+      tr.innerHTML = `
+        <td><code>${s.id}</code></td>
+        <td>${s.label||'—'}</td>
+        <td class="text-muted small">${truncate(s.description||'', 50)}</td>
+        <td><span class="badge bg-secondary">${(s.members||[]).length}</span></td>
+        <td>${statusBadge(s.status)}</td>
+        <td>${tagBadges(s.tags)}</td>
+        <td class="text-end">
+          <button class="btn btn-xs btn-outline-primary me-1" title="Edit" onclick="event.stopPropagation();editSpace('${s.id}')"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-xs btn-outline-danger" title="Delete" onclick="event.stopPropagation();deleteSpace('${s.id}')"><i class="bi bi-trash"></i></button>
+        </td>`;
+      tr.addEventListener('click', () => openSpaceDetail(s.id));
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-danger text-center">${err.message}</td></tr>`;
+  }
+}
+
+async function openSpaceDetail(spaceId) {
+  State.activeSpaceDetailId = spaceId;
+  document.getElementById('space-detail-id').textContent = spaceId;
+  document.getElementById('space-member-space-id').value = spaceId;
+  const panel = document.getElementById('space-detail-panel');
+  panel.classList.remove('d-none');
+  await _loadSpaceMembers(spaceId);
+}
+
+async function _loadSpaceMembers(spaceId) {
+  const tbody = document.getElementById('tbody-space-members');
+  tbody.innerHTML = '<tr><td colspan="3" class="text-center py-3"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  try {
+    const members = await HGAI_API.listSpaceMembers(spaceId);
+    tbody.innerHTML = '';
+    if (!members || !members.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">No members</td></tr>';
+      return;
+    }
+    members.forEach(m => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong>${m.username}</strong></td>
+        <td>
+          <select class="form-select form-select-sm" style="width:110px"
+            onchange="updateSpaceMemberRole('${spaceId}', '${m.username}', this.value)">
+            <option ${m.role==='viewer'?'selected':''} value="viewer">viewer</option>
+            <option ${m.role==='member'?'selected':''} value="member">member</option>
+            <option ${m.role==='admin'?'selected':''} value="admin">admin</option>
+            <option ${m.role==='owner'?'selected':''} value="owner">owner</option>
+          </select>
+        </td>
+        <td class="text-end">
+          <button class="btn btn-xs btn-outline-danger" onclick="removeSpaceMember('${spaceId}', '${m.username}')">
+            <i class="bi bi-person-x"></i>
+          </button>
+        </td>`;
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="3" class="text-danger text-center">${err.message}</td></tr>`;
+  }
+}
+
+document.getElementById('btn-space-detail-close').addEventListener('click', () => {
+  document.getElementById('space-detail-panel').classList.add('d-none');
+  State.activeSpaceDetailId = null;
+});
+
+document.getElementById('btn-create-space').addEventListener('click', () => openSpaceModal());
+
+window.editSpace = (id) => openSpaceModal(id);
+
+async function openSpaceModal(spaceId = null) {
+  const modal = new bootstrap.Modal(document.getElementById('modal-space'));
+  document.getElementById('space-form-mode').value = spaceId ? 'edit' : 'create';
+  document.getElementById('modal-space-title').textContent = spaceId ? `Edit Space: ${spaceId}` : 'New Space';
+
+  if (spaceId) {
+    try {
+      const s = await HGAI_API.getSpace(spaceId);
+      document.getElementById('space-id').value = s.id;
+      document.getElementById('space-id').readOnly = true;
+      document.getElementById('space-label').value = s.label || '';
+      document.getElementById('space-status').value = s.status || 'active';
+      document.getElementById('space-tags').value = (s.tags || []).join(', ');
+      document.getElementById('space-description').value = s.description || '';
+    } catch {}
+  } else {
+    document.getElementById('space-id').value = '';
+    document.getElementById('space-id').readOnly = false;
+    document.getElementById('space-label').value = '';
+    document.getElementById('space-status').value = 'active';
+    document.getElementById('space-tags').value = '';
+    document.getElementById('space-description').value = '';
+  }
+  modal.show();
+}
+
+document.getElementById('btn-save-space').addEventListener('click', async () => {
+  const mode = document.getElementById('space-form-mode').value;
+  const id = document.getElementById('space-id').value.trim();
+  if (!id) { toast('Space ID is required', 'warning'); return; }
+  const data = {
+    id,
+    label: document.getElementById('space-label').value.trim() || id,
+    status: document.getElementById('space-status').value,
+    tags: parseTags(document.getElementById('space-tags').value),
+    description: document.getElementById('space-description').value.trim() || null,
+  };
+  try {
+    if (mode === 'create') {
+      await HGAI_API.createSpace(data);
+      toast(`Space "${id}" created`);
+    } else {
+      await HGAI_API.updateSpace(id, data);
+      toast(`Space "${id}" updated`);
+    }
+    bootstrap.Modal.getInstance(document.getElementById('modal-space'))?.hide();
+    loadSpaces();
+  } catch (err) { toast(err.message, 'danger'); }
+});
+
+window.deleteSpace = (id) => {
+  confirmDelete(`Delete space "${id}"? Graphs within the space will be unaffected.`, async () => {
+    try {
+      await HGAI_API.deleteSpace(id);
+      toast(`Space "${id}" deleted`);
+      loadSpaces();
+    } catch (err) { toast(err.message, 'danger'); }
+  });
+};
+
+document.getElementById('btn-add-space-member').addEventListener('click', () => {
+  const spaceId = State.activeSpaceDetailId;
+  if (!spaceId) return;
+  document.getElementById('space-member-mode').value = 'add';
+  document.getElementById('modal-space-member-title').textContent = `Add Member to ${spaceId}`;
+  document.getElementById('space-member-space-id').value = spaceId;
+  document.getElementById('space-member-username').value = '';
+  document.getElementById('space-member-username').readOnly = false;
+  document.getElementById('space-member-role').value = 'member';
+  new bootstrap.Modal(document.getElementById('modal-space-member')).show();
+});
+
+document.getElementById('btn-save-space-member').addEventListener('click', async () => {
+  const spaceId = document.getElementById('space-member-space-id').value;
+  const username = document.getElementById('space-member-username').value.trim();
+  const role = document.getElementById('space-member-role').value;
+  if (!username) { toast('Username is required', 'warning'); return; }
+  try {
+    await HGAI_API.addSpaceMember(spaceId, username, { role });
+    toast(`Added "${username}" to space "${spaceId}"`);
+    bootstrap.Modal.getInstance(document.getElementById('modal-space-member'))?.hide();
+    if (State.activeSpaceDetailId === spaceId) await _loadSpaceMembers(spaceId);
+  } catch (err) { toast(err.message, 'danger'); }
+});
+
+window.updateSpaceMemberRole = async (spaceId, username, role) => {
+  try {
+    await HGAI_API.updateSpaceMemberRole(spaceId, username, { role });
+    toast(`Updated role for "${username}"`);
+  } catch (err) {
+    toast(err.message, 'danger');
+    if (State.activeSpaceDetailId === spaceId) await _loadSpaceMembers(spaceId);
+  }
+};
+
+window.removeSpaceMember = (spaceId, username) => {
+  confirmDelete(`Remove "${username}" from space "${spaceId}"?`, async () => {
+    try {
+      await HGAI_API.removeSpaceMember(spaceId, username);
+      toast(`Removed "${username}" from space`);
+      await _loadSpaceMembers(spaceId);
+    } catch (err) { toast(err.message, 'danger'); }
   });
 };
 

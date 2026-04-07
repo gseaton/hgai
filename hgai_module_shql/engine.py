@@ -776,9 +776,10 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
         select_fields = [select_fields]
 
     # Partition from: values into dot-notation mesh refs and plain local refs
+    # 2-dot = mesh.server.graph (unowned), 3-dot = mesh.server.space.graph (space-scoped)
     raw_ids = [from_field] if isinstance(from_field, str) else list(from_field)
-    dot_refs   = [r for r in raw_ids if r.count(".") == 2]
-    plain_refs = [r for r in raw_ids if r.count(".") != 2]
+    dot_refs   = [r for r in raw_ids if r.count(".") in (2, 3)]
+    plain_refs = [r for r in raw_ids if r.count(".") not in (2, 3)]
 
     # Handle dot-notation mesh refs (mesh_id.server_id.graph_id)
     dot_items: List[Dict] = []
@@ -791,28 +792,43 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
             from .parser import SHQLError
             raise SHQLError("Mesh dot-notation requires hgai_module_mesh to be installed")
 
-    # Resolve local graph IDs (expand logical graphs; detect bare mesh IDs)
+    # Resolve local graph IDs to hypergraph_id refs used in node/edge queries.
+    # Supports "graph_id" (unowned) and "space_id/graph_id" (space-scoped) formats.
+    # Returns composite refs matching what is stored as hypergraph_id on node/edge documents.
+    from hgai.core.engine import _hypergraph_ref
     graph_ids: List[str] = []
-    for gid in plain_refs:
-        doc = await col_hypergraphs().find_one({"id": gid})
-        if not doc:
-            # Check if it's a bare mesh ID — route to federation
-            from hgai.db.mongodb import col_meshes
-            if await col_meshes().find_one({"id": gid}):
-                try:
-                    from hgai_module_mesh.engine import federated_shql
-                    fed = await federated_shql(gid, shql_text, use_cache=use_cache)
-                    dot_items.extend(fed["items"])
-                    continue
-                except ImportError:
-                    from .parser import SHQLError
-                    raise SHQLError("Mesh federation requires hgai_module_mesh to be installed")
-            from .parser import SHQLError
-            raise SHQLError(f"Hypergraph not found: '{gid}'")
-        if doc.get("type") == "logical" and doc.get("composition"):
-            graph_ids.extend(doc["composition"])
+    for ref in plain_refs:
+        if "/" in ref:
+            space_part, gid = ref.split("/", 1)
+            doc = await col_hypergraphs().find_one({"id": gid, "space_id": space_part})
         else:
-            graph_ids.append(gid)
+            gid = ref
+            doc = await col_hypergraphs().find_one({"id": gid, "space_id": None})
+            if not doc:
+                # Check if it's a bare mesh ID — route to federation
+                from hgai.db.mongodb import col_meshes
+                if await col_meshes().find_one({"id": gid}):
+                    try:
+                        from hgai_module_mesh.engine import federated_shql
+                        fed = await federated_shql(gid, shql_text, use_cache=use_cache)
+                        dot_items.extend(fed["items"])
+                        continue
+                    except ImportError:
+                        from .parser import SHQLError
+                        raise SHQLError("Mesh federation requires hgai_module_mesh to be installed")
+        if not doc:
+            from .parser import SHQLError
+            raise SHQLError(f"Hypergraph not found: {ref!r}")
+        if doc.get("type") == "logical" and doc.get("composition"):
+            # Logical graph composition: resolve each member graph
+            for member_id in doc["composition"]:
+                member_doc = await col_hypergraphs().find_one({"id": member_id})
+                if member_doc:
+                    graph_ids.append(
+                        _hypergraph_ref(member_doc["id"], member_doc.get("space_id"))
+                    )
+        else:
+            graph_ids.append(_hypergraph_ref(doc["id"], doc.get("space_id")))
     graph_ids = list(set(graph_ids))
 
     # Parse point-in-time

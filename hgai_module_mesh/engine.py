@@ -93,14 +93,17 @@ async def ping_server(server: MeshServer) -> Dict[str, Any]:
         return {"server_id": server.server_id, "reachable": False, "detail": str(e)}
 
 
-async def fetch_remote_graphs(server: MeshServer) -> List[str]:
-    """Fetch the list of graph IDs available on a remote hgai server."""
+async def fetch_remote_graphs(server: MeshServer, space_id: Optional[str] = None) -> List[str]:
+    """Fetch the list of graph IDs available on a remote hgai server.
+
+    When space_id is given, fetches only graphs within that space.
+    """
     try:
-        r = await get_http_client().get(
-            f"{server.url.rstrip('/')}/api/v1/graphs",
-            headers=_headers(server),
-            params={"limit": 500},
-        )
+        if space_id:
+            url = f"{server.url.rstrip('/')}/api/v1/spaces/{space_id}/graphs"
+        else:
+            url = f"{server.url.rstrip('/')}/api/v1/graphs"
+        r = await get_http_client().get(url, headers=_headers(server), params={"limit": 500})
         r.raise_for_status()
         data = r.json()
         return [g["id"] for g in data.get("items", [])]
@@ -205,15 +208,38 @@ async def _query_server(
 
 
 def _parse_dot_ref(ref: str) -> Optional[tuple]:
-    """Parse a dot-notation from: ref.
+    """Parse a dot-notation from: ref into a uniform 4-tuple.
 
-    Returns (mesh_id, server_id_or_*, graph_id_or_*) when the string
-    contains exactly two dots, otherwise None (treated as a local graph ID).
+    Formats:
+      mesh.server.graph       → (mesh, server, None, graph)   — unowned graph
+      mesh.server.space.graph → (mesh, server, space, graph)  — space-scoped graph
+      mesh.*.graph            → (mesh, *, None, graph)         — wildcard server, unowned
+      mesh.*.space.graph      → (mesh, *, space, graph)        — wildcard server, space-scoped
+      mesh.server.*           → (mesh, server, None, *)        — all unowned graphs on server
+
+    Returns None for anything else (treated as a local or space/graph ref).
     """
     parts = ref.split(".")
     if len(parts) == 3:
-        return (parts[0], parts[1], parts[2])
+        return (parts[0], parts[1], None, parts[2])
+    if len(parts) == 4:
+        return (parts[0], parts[1], parts[2], parts[3])
     return None
+
+
+async def _graphs_for_server_scoped(
+    server: MeshServer, space_id: Optional[str]
+) -> List[str]:
+    """Return graph IDs for a server, optionally scoped to a space."""
+    if space_id:
+        if _is_local(server):
+            from hgai.db.mongodb import col_hypergraphs as _col
+            cursor = _col().find(
+                {"status": "active", "space_id": space_id}, {"id": 1}
+            )
+            return [doc["id"] async for doc in cursor]
+        return await fetch_remote_graphs(server, space_id=space_id)
+    return await _graphs_for_server(server)
 
 
 async def resolve_dot_refs(
@@ -221,14 +247,20 @@ async def resolve_dot_refs(
 ) -> Tuple[List[str], List[Tuple[MeshServer, List[str]]]]:
     """Resolve dot-notation from: refs into a local-ID list and a mesh routing list.
 
-    Returns (local_graph_ids, [(MeshServer, [graph_ids]), ...])
+    Returns (local_graph_ids, [(MeshServer, [graph_ids_or_space/graph_ids]), ...])
+
+    Formats handled:
+      mesh.server.graph        — unowned graph on specific server
+      mesh.server.space.graph  — space-scoped graph on specific server
+      mesh.*.graph / mesh.*.space.graph — wildcard server expansion
+      mesh.server.*            — all (unowned) graphs on server
 
     Wildcards ('*') are expanded against the server's known graph list.
-    Mesh document lookups and per-server graph fetches both run concurrently.
+    Mesh document lookups and per-server graph fetches run concurrently.
     Multiple refs that resolve to the same server are merged.
     """
     local_ids: List[str] = []
-    parsed_refs: List[Tuple[str, Tuple[str, str, str]]] = []
+    parsed_refs: List[Tuple[str, Tuple[str, str, Optional[str], str]]] = []
 
     for ref in refs:
         parsed = _parse_dot_ref(ref)
@@ -249,11 +281,11 @@ async def resolve_dot_refs(
         mid: doc for mid, doc in zip(unique_mesh_ids, mesh_docs) if doc
     }
 
-    # Expand refs into unique servers that need graph resolution
-    server_map: Dict[str, MeshServer] = {}       # server_id -> MeshServer
-    expansions: List[Tuple[str, str]] = []        # (server_id, graph_pat)
+    # Expand refs into unique (server_id, space_id) pairs that need graph resolution
+    server_map: Dict[str, MeshServer] = {}
+    expansions: List[Tuple[str, Optional[str], str]] = []  # (server_id, space_id, graph_pat)
 
-    for ref, (mesh_id, server_pat, graph_pat) in parsed_refs:
+    for ref, (mesh_id, server_pat, space_id, graph_pat) in parsed_refs:
         mesh_doc = mesh_map.get(mesh_id)
         if not mesh_doc:
             logger.warning(f"Mesh not found for dot-ref '{ref}' — skipped")
@@ -263,31 +295,38 @@ async def resolve_dot_refs(
             if server_pat != "*" and server.server_id != server_pat:
                 continue
             server_map[server.server_id] = server
-            expansions.append((server.server_id, graph_pat))
+            expansions.append((server.server_id, space_id, graph_pat))
 
     if not server_map:
         return local_ids, []
 
-    # Fetch graphs for all unique servers concurrently
-    server_ids = list(server_map.keys())
+    # Fetch graphs for all unique (server, space) combos concurrently
+    unique_combos = list({(sid, sp) for sid, sp, _ in expansions})
     graph_lists = await asyncio.gather(
-        *[_graphs_for_server(server_map[sid]) for sid in server_ids]
+        *[_graphs_for_server_scoped(server_map[sid], sp) for sid, sp in unique_combos]
     )
-    resolved: Dict[str, List[str]] = dict(zip(server_ids, graph_lists))
+    combo_graphs: Dict[Tuple[str, Optional[str]], List[str]] = dict(
+        zip(unique_combos, graph_lists)
+    )
 
-    # Build routing table, applying graph_pat filter and merging duplicates
+    # Build routing table: graph refs are "space/graph" for space-scoped, plain for unowned
     routing: Dict[str, Tuple[MeshServer, List[str]]] = {}
-    for server_id, graph_pat in expansions:
-        available = resolved[server_id]
-        graphs = available if graph_pat == "*" else [g for g in available if g == graph_pat]
-        if not graphs:
+    for server_id, space_id, graph_pat in expansions:
+        available = combo_graphs[(server_id, space_id)]
+        matched = available if graph_pat == "*" else [g for g in available if g == graph_pat]
+        if not matched:
             continue
+        # Encode space context into the graph ref for _rewrite_from
+        refs_to_add = [
+            f"{space_id}/{g}" if space_id else g
+            for g in matched
+        ]
         if server_id not in routing:
             routing[server_id] = (server_map[server_id], [])
         existing = routing[server_id][1]
-        for g in graphs:
-            if g not in existing:
-                existing.append(g)
+        for r in refs_to_add:
+            if r not in existing:
+                existing.append(r)
 
     return local_ids, list(routing.values())
 

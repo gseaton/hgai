@@ -45,13 +45,13 @@ async def create_node(
     data: HypernodeCreate,
     account: AccountInDB = Depends(require_graph_access("write")),
 ):
-    existing = await engine.get_hypernode(graph_id, data.id)
+    existing = await engine.get_hypernode(graph_id, data.id, space_id=None)
     if existing:
         raise HTTPException(status_code=409, detail=f"Node '{data.id}' already exists in graph '{graph_id}'")
-    graph = await engine.get_hypergraph(graph_id)
+    graph = await engine.get_hypergraph(graph_id, space_id=None)
     if not graph:
         raise HTTPException(status_code=404, detail=f"Hypergraph '{graph_id}' not found")
-    node = await engine.create_hypernode(graph_id, data, created_by=account.username)
+    node = await engine.create_hypernode(graph_id, data, created_by=account.username, space_id=None)
     return HypernodeResponse(**node.model_dump())
 
 
@@ -74,7 +74,7 @@ async def update_node(
     data: HypernodeUpdate,
     account: AccountInDB = Depends(require_graph_access("write")),
 ):
-    node = await engine.update_hypernode(graph_id, node_id, data, updated_by=account.username)
+    node = await engine.update_hypernode(graph_id, node_id, data, updated_by=account.username, space_id=None)
     if not node:
         raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")
     return HypernodeResponse(**node.model_dump())
@@ -86,6 +86,6 @@ async def delete_node(
     node_id: str,
     account: AccountInDB = Depends(require_graph_access("delete")),
 ):
-    deleted = await engine.delete_hypernode(graph_id, node_id)
+    deleted = await engine.delete_hypernode(graph_id, node_id, space_id=None)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")

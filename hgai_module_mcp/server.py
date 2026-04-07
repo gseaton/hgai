@@ -579,6 +579,110 @@ async def hgai_mesh_query(mesh_id: str, query_yaml: str, use_cache: bool = True)
         return json.dumps({"error": str(e), "type": "ExecutionError"})
 
 
+# ─── Space Tools ──────────────────────────────────────────────────────────────
+
+@mcp.tool()
+async def hgai_space_list() -> str:
+    """List all HypergraphAI spaces (tenant namespaces)."""
+    from hgai.core.space_engine import list_spaces
+    total, spaces = await list_spaces(limit=200)
+    return json.dumps({
+        "total": total,
+        "spaces": [
+            {
+                "id": s.id,
+                "label": s.label,
+                "description": s.description,
+                "member_count": len(s.members),
+                "status": s.status,
+            }
+            for s in spaces
+        ],
+    }, indent=2, default=str)
+
+
+@mcp.tool()
+async def hgai_space_get(space_id: str) -> str:
+    """Get a space by ID, including its members.
+
+    Args:
+        space_id: The space identifier
+    """
+    from hgai.core.space_engine import get_space
+    space = await get_space(space_id)
+    if not space:
+        return json.dumps({"error": f"Space '{space_id}' not found"})
+    return json.dumps(space.model_dump(), indent=2, default=str)
+
+
+@mcp.tool()
+async def hgai_space_create(
+    id: str,
+    label: str,
+    description: str = "",
+) -> str:
+    """Create a new space (tenant namespace) for organizing hypergraphs.
+
+    Args:
+        id: Unique space identifier (no dots allowed)
+        label: Human-readable display label
+        description: Optional description
+    """
+    from hgai.core.space_engine import create_space, get_space
+    from hgai.models.space import SpaceCreate
+    try:
+        existing = await get_space(id)
+        if existing:
+            return json.dumps({"error": f"Space '{id}' already exists"})
+        data = SpaceCreate(id=id, label=label, description=description or None)
+        space = await create_space(data, created_by="mcp-agent")
+        return json.dumps({"success": True, "space": space.model_dump()}, indent=2, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def hgai_space_add_member(space_id: str, username: str, role: str = "member") -> str:
+    """Add or update a member in a space.
+
+    Args:
+        space_id: The space identifier
+        username: Account username to add
+        role: Space role — 'owner', 'admin', 'member', or 'viewer' (default: 'member')
+    """
+    from hgai.core.space_engine import add_member
+    try:
+        space = await add_member(space_id, username, role)
+        if not space:
+            return json.dumps({"error": f"Space '{space_id}' not found"})
+        return json.dumps({"success": True, "space": space.model_dump()}, indent=2, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def hgai_space_list_graphs(space_id: str, limit: int = 100) -> str:
+    """List all hypergraphs belonging to a space.
+
+    Args:
+        space_id: The space identifier
+        limit: Maximum number of graphs to return (default 100)
+    """
+    from hgai.core.space_engine import list_space_graphs
+    try:
+        total, graphs = await list_space_graphs(space_id, limit=limit)
+        return json.dumps({
+            "total": total,
+            "graphs": [
+                {"id": g.id, "label": g.label, "type": g.type,
+                 "node_count": g.node_count, "edge_count": g.edge_count}
+                for g in graphs
+            ],
+        }, indent=2, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 def create_mcp_server():
     """Create and return the MCP ASGI app for mounting in FastAPI."""
     return mcp.streamable_http_app()

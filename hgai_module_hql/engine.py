@@ -179,7 +179,18 @@ def _project_fields(doc: Dict, return_fields: List[str]) -> Dict:
 
 
 async def _resolve_graph_ids(from_field: Any) -> List[str]:
-    """Resolve from field to list of physical graph IDs (handles logical graphs)."""
+    """Resolve from field to a list of hypergraph_id refs used in node/edge queries.
+
+    Supports two ref formats:
+      - ``graph_id``            — unowned graph (space_id is null)
+      - ``space_id/graph_id``   — space-scoped graph (slash separator)
+
+    Returns composite refs matching the hypergraph_id stored in node/edge documents:
+      - Unowned graph:      ``"graph_id"``
+      - Space-scoped graph: ``"space_id/graph_id"``
+    """
+    from hgai.core.engine import _hypergraph_ref
+
     if isinstance(from_field, str):
         graph_ids = [from_field]
     elif isinstance(from_field, list):
@@ -189,18 +200,30 @@ async def _resolve_graph_ids(from_field: Any) -> List[str]:
 
     # Expand logical graphs
     resolved = []
-    for gid in graph_ids:
-        doc = await col_hypergraphs().find_one({"id": gid})
-        if not doc:
-            # Check if it's a mesh ID — signal federation to the caller
-            from hgai.db.mongodb import col_meshes
-            if await col_meshes().find_one({"id": gid}):
-                raise _MeshRedirect(gid)
-            raise HQLError(f"Hypergraph not found: {gid}")
-        if doc.get("type") == "logical" and doc.get("composition"):
-            resolved.extend(doc["composition"])
+    for ref in graph_ids:
+        if "/" in ref:
+            space_part, gid = ref.split("/", 1)
+            doc = await col_hypergraphs().find_one({"id": gid, "space_id": space_part})
         else:
-            resolved.append(gid)
+            gid = ref
+            doc = await col_hypergraphs().find_one({"id": gid, "space_id": None})
+            if not doc:
+                # Check if it's a mesh ID — signal federation to the caller
+                from hgai.db.mongodb import col_meshes
+                if await col_meshes().find_one({"id": gid}):
+                    raise _MeshRedirect(gid)
+        if not doc:
+            raise HQLError(f"Hypergraph not found: {ref!r}")
+        if doc.get("type") == "logical" and doc.get("composition"):
+            # Logical graph composition: resolve each member graph
+            for member_id in doc["composition"]:
+                member_doc = await col_hypergraphs().find_one({"id": member_id})
+                if member_doc:
+                    resolved.append(
+                        _hypergraph_ref(member_doc["id"], member_doc.get("space_id"))
+                    )
+        else:
+            resolved.append(_hypergraph_ref(doc["id"], doc.get("space_id")))
 
     return list(set(resolved))
 
@@ -232,8 +255,9 @@ async def execute_hql(hql_text: str, use_cache: bool = True) -> HQLResult:
 
     from_field = hql["from"]
     raw_ids = [from_field] if isinstance(from_field, str) else list(from_field)
-    dot_refs   = [r for r in raw_ids if r.count(".") == 2]
-    plain_refs = [r for r in raw_ids if r.count(".") != 2]
+    # 2-dot = mesh.server.graph (unowned), 3-dot = mesh.server.space.graph (space-scoped)
+    dot_refs   = [r for r in raw_ids if r.count(".") in (2, 3)]
+    plain_refs = [r for r in raw_ids if r.count(".") not in (2, 3)]
 
     match = hql.get("match", {})
     where = hql.get("where", {})

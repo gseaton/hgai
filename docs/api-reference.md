@@ -38,14 +38,17 @@ Get current authenticated user info.
 
 ## Hypergraphs
 
+> **Routing note:** The flat `/graphs/*` endpoints operate on **unowned graphs** only (graphs with no `space_id`). For space-scoped graphs use the nested routes under `/spaces/{space_id}/graphs/*`. The same graph ID may exist in multiple spaces without conflict.
+
 ### GET /graphs
 
-List hypergraphs.
+List unowned hypergraphs.
 
 | Query Param | Type | Default | Description |
 |-------------|------|---------|-------------|
 | `status` | string | `active` | Filter by status |
 | `tags` | string[] | - | Filter by tags |
+| `space_id` | string | - | Filter by owning space |
 | `skip` | int | `0` | Pagination offset |
 | `limit` | int | `50` | Max results (max 500) |
 
@@ -348,6 +351,118 @@ http://localhost:8000/mcp/
 | `hgai_hyperedge_delete` | Delete a hyperedge |
 | `hgai_query_execute` | Execute an HQL query |
 | `hgai_query_validate` | Validate an HQL query |
+
+---
+
+## Spaces
+
+Spaces are multi-tenant namespaces for organizing hypergraphs. Members are assigned roles (`owner`, `admin`, `member`, `viewer`) that control permitted operations.
+
+### GET /spaces
+
+List spaces. Admins see all spaces; other users see only spaces they are members of.
+
+| Query Param | Type | Default | Description |
+|-------------|------|---------|-------------|
+| `skip` | int | `0` | Pagination offset |
+| `limit` | int | `50` | Max results (max 500) |
+
+### POST /spaces
+
+Create a new space. The creator is automatically added as `owner`.
+
+```json
+{ "id": "research-team", "label": "Research Team", "description": "..." }
+```
+
+### GET /spaces/{space_id}
+
+Get space details including member list. Requires `viewer` role or higher.
+
+### PUT /spaces/{space_id}
+
+Update space metadata (`label`, `description`, `tags`, `attributes`, `status`). Requires `admin` role or higher.
+
+### DELETE /spaces/{space_id}
+
+Delete a space. Requires `owner` role.
+
+| Query Param | Type | Default | Description |
+|-------------|------|---------|-------------|
+| `delete_graphs` | bool | `false` | Also delete all graphs in the space |
+
+### GET /spaces/{space_id}/members
+
+List space members with their roles. Requires `viewer` role or higher.
+
+### POST /spaces/{space_id}/members
+
+Add or update a member. Requires `admin` role or higher.
+
+```json
+{ "username": "alice", "role": "member" }
+```
+
+### PUT /spaces/{space_id}/members/{username}
+
+Update a member's role. Requires `admin` role or higher.
+
+```json
+{ "role": "admin" }
+```
+
+### DELETE /spaces/{space_id}/members/{username}
+
+Remove a member from a space. Requires `admin` role or higher.
+
+### GET /spaces/{space_id}/graphs
+
+List all hypergraphs in the space. Requires `viewer` role or higher.
+
+| Query Param | Type | Default | Description |
+|-------------|------|---------|-------------|
+| `skip` | int | `0` | Pagination offset |
+| `limit` | int | `50` | Max results (max 500) |
+
+### POST /spaces/{space_id}/graphs
+
+Create a hypergraph scoped to the space. The same graph ID may be reused across different spaces. Requires `member` role or higher. The `space_id` field in the request body is ignored — the path parameter always wins.
+
+### GET /spaces/{space_id}/graphs/{graph_id}
+
+Get a space-scoped hypergraph. Requires `viewer` role or higher.
+
+### PUT /spaces/{space_id}/graphs/{graph_id}
+
+Update a space-scoped hypergraph. Requires `write` permission or `member` space role or higher.
+
+### DELETE /spaces/{space_id}/graphs/{graph_id}
+
+Delete a space-scoped hypergraph and all its nodes/edges. Requires `delete` permission or `admin` space role or higher.
+
+### GET /spaces/{space_id}/graphs/{graph_id}/stats
+
+Stats for a space-scoped hypergraph.
+
+### POST /spaces/{space_id}/graphs/{graph_id}/export / import
+
+Export or import nodes/edges for a space-scoped hypergraph.
+
+### GET /spaces/{space_id}/graphs/{graph_id}/nodes
+
+### POST /spaces/{space_id}/graphs/{graph_id}/nodes
+
+### GET|PUT|DELETE /spaces/{space_id}/graphs/{graph_id}/nodes/{node_id}
+
+Full node CRUD mirroring `/graphs/{graph_id}/nodes/*` but scoped to a space-owned graph.
+
+### GET /spaces/{space_id}/graphs/{graph_id}/edges
+
+### POST /spaces/{space_id}/graphs/{graph_id}/edges
+
+### GET|PUT|DELETE /spaces/{space_id}/graphs/{graph_id}/edges/{edge_id}
+
+Full edge CRUD mirroring `/graphs/{graph_id}/edges/*` but scoped to a space-owned graph.
 
 ---
 

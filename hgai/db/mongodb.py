@@ -19,9 +19,29 @@ async def ensure_indexes() -> None:
     """Create all collection indexes. Safe to call on every startup — idempotent."""
 
     # ── hypergraphs ───────────────────────────────────────────────────────────
+    # Drop the old global unique index if it still exists (idempotent migration).
+    try:
+        await col_hypergraphs().drop_index("id_unique")
+    except Exception:
+        pass  # index doesn't exist — safe to continue
+
     await col_hypergraphs().create_indexes([
-        IndexModel([("id", ASCENDING)], unique=True, name="id_unique"),
+        # Unowned graphs (space_id is null): id must be globally unique.
+        IndexModel(
+            [("id", ASCENDING)],
+            unique=True,
+            name="id_unowned_unique",
+            partialFilterExpression={"space_id": {"$eq": None}},
+        ),
+        # Space-owned graphs: (id, space_id) pair must be unique.
+        IndexModel(
+            [("id", ASCENDING), ("space_id", ASCENDING)],
+            unique=True,
+            name="id_space_unique",
+            partialFilterExpression={"space_id": {"$exists": True, "$type": "string"}},
+        ),
         IndexModel([("status", ASCENDING)], name="status"),
+        IndexModel([("space_id", ASCENDING)], name="space_id", sparse=True),
     ])
 
     # ── hypernodes ────────────────────────────────────────────────────────────
@@ -71,6 +91,13 @@ async def ensure_indexes() -> None:
             name="graph_pit",
             sparse=True,
         ),
+    ])
+
+    # ── spaces ────────────────────────────────────────────────────────────────
+    await col_spaces().create_indexes([
+        IndexModel([("id", ASCENDING)], unique=True, name="id_unique"),
+        IndexModel([("members.username", ASCENDING)], name="members_username"),
+        IndexModel([("status", ASCENDING)], name="status"),
     ])
 
     # ── meshes ────────────────────────────────────────────────────────────────
@@ -142,6 +169,10 @@ def col_hyperedges():
 
 def col_accounts():
     return get_db()["accounts"]
+
+
+def col_spaces():
+    return get_db()["spaces"]
 
 
 def col_meshes():

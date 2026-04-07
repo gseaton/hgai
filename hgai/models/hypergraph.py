@@ -26,6 +26,7 @@ class HypergraphBase(TimestampedModel):
 
     id: str = Field(..., description="Unique hypergraph identifier")
     label: str = Field(..., description="Display label")
+    space_id: Optional[str] = Field(default=None, description="Owning space ID")
 
     @field_validator("id")
     @classmethod

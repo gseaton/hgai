@@ -126,21 +126,54 @@ async def require_admin(account: AccountInDB = Depends(get_current_account)) -> 
     return account
 
 
-def can_access_graph(account: AccountInDB, graph_id: str) -> bool:
-    """Check if account can access a specific graph."""
+async def can_access_graph(
+    account: AccountInDB, graph_id: str, space_id: Optional[str] = None
+) -> bool:
+    """Check if account can access a specific graph (includes space membership).
+
+    space_id should be passed when known to avoid ambiguous lookups when the
+    same graph_id exists in multiple spaces.
+    """
     if "admin" in account.roles:
         return True
     perms = account.permissions
     if "*" in perms.graphs or graph_id in perms.graphs:
         return True
+    # Space membership path
+    from hgai.core.space_engine import get_space_for_graph, get_member_role
+    resolved_space_id = space_id or await get_space_for_graph(graph_id)
+    if resolved_space_id:
+        role = await get_member_role(resolved_space_id, account.username)
+        return role is not None
     return False
 
 
-def can_perform(account: AccountInDB, operation: str) -> bool:
-    """Check if account can perform a specific operation."""
+async def can_perform(
+    account: AccountInDB,
+    operation: str,
+    graph_id: Optional[str] = None,
+    space_id: Optional[str] = None,
+) -> bool:
+    """Check if account can perform an operation.
+
+    When graph_id is given, also checks the caller's space role for that graph
+    in case they lack the operation in their direct account permissions.
+    space_id should be passed when known to avoid ambiguous lookups.
+    """
     if "admin" in account.roles:
         return True
-    return operation in account.permissions.operations
+    if operation in account.permissions.operations:
+        return True
+    # Space role path
+    if graph_id:
+        from hgai.core.space_engine import get_space_for_graph, get_member_role
+        from hgai.models.space import SPACE_ROLE_OPERATIONS
+        resolved_space_id = space_id or await get_space_for_graph(graph_id)
+        if resolved_space_id:
+            role = await get_member_role(resolved_space_id, account.username)
+            if role and operation in SPACE_ROLE_OPERATIONS.get(role, set()):
+                return True
+    return False
 
 
 async def bootstrap_admin(username: str, password: str, email: str) -> bool:

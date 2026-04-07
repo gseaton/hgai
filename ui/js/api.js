@@ -100,6 +100,12 @@ const HGAI_API = (() => {
   async function createNode(graphId, data) { return request('POST', `/graphs/${graphId}/nodes`, data); }
   async function updateNode(graphId, nodeId, data) { return request('PUT', `/graphs/${graphId}/nodes/${nodeId}`, data); }
   async function deleteNode(graphId, nodeId) { return request('DELETE', `/graphs/${graphId}/nodes/${nodeId}`); }
+  // Space-scoped variants
+  async function listSpaceNodes(spaceId, graphId, params = {}) { return request('GET', `/spaces/${spaceId}/graphs/${graphId}/nodes`, null, params); }
+  async function getSpaceNode(spaceId, graphId, nodeId) { return request('GET', `/spaces/${spaceId}/graphs/${graphId}/nodes/${nodeId}`); }
+  async function createSpaceNode(spaceId, graphId, data) { return request('POST', `/spaces/${spaceId}/graphs/${graphId}/nodes`, data); }
+  async function updateSpaceNode(spaceId, graphId, nodeId, data) { return request('PUT', `/spaces/${spaceId}/graphs/${graphId}/nodes/${nodeId}`, data); }
+  async function deleteSpaceNode(spaceId, graphId, nodeId) { return request('DELETE', `/spaces/${spaceId}/graphs/${graphId}/nodes/${nodeId}`); }
 
   // ── Hyperedges ────────────────────────────────────────────────────────────
   async function listEdges(graphId, params = {}) { return request('GET', `/graphs/${graphId}/edges`, null, params); }
@@ -107,6 +113,12 @@ const HGAI_API = (() => {
   async function createEdge(graphId, data) { return request('POST', `/graphs/${graphId}/edges`, data); }
   async function updateEdge(graphId, edgeId, data) { return request('PUT', `/graphs/${graphId}/edges/${edgeId}`, data); }
   async function deleteEdge(graphId, edgeId) { return request('DELETE', `/graphs/${graphId}/edges/${edgeId}`); }
+  // Space-scoped variants
+  async function listSpaceEdges(spaceId, graphId, params = {}) { return request('GET', `/spaces/${spaceId}/graphs/${graphId}/edges`, null, params); }
+  async function getSpaceEdge(spaceId, graphId, edgeId) { return request('GET', `/spaces/${spaceId}/graphs/${graphId}/edges/${edgeId}`); }
+  async function createSpaceEdge(spaceId, graphId, data) { return request('POST', `/spaces/${spaceId}/graphs/${graphId}/edges`, data); }
+  async function updateSpaceEdge(spaceId, graphId, edgeId, data) { return request('PUT', `/spaces/${spaceId}/graphs/${graphId}/edges/${edgeId}`, data); }
+  async function deleteSpaceEdge(spaceId, graphId, edgeId) { return request('DELETE', `/spaces/${spaceId}/graphs/${graphId}/edges/${edgeId}`); }
 
   // ── Query (HQL) ───────────────────────────────────────────────────────────
   async function runQuery(hql, useCache = true) {
@@ -140,6 +152,22 @@ const HGAI_API = (() => {
   async function syncMesh(id) { return request('POST', `/meshes/${id}/sync`); }
   async function queryMesh(id, body) { return request('POST', `/meshes/${id}/query`, body); }
 
+  // ── Spaces ────────────────────────────────────────────────────────────────
+  async function listSpaces(params = {}) { return request('GET', '/spaces', null, params); }
+  async function getSpace(id) { return request('GET', `/spaces/${id}`); }
+  async function createSpace(data) { return request('POST', '/spaces', data); }
+  async function updateSpace(id, data) { return request('PUT', `/spaces/${id}`, data); }
+  async function deleteSpace(id) { return request('DELETE', `/spaces/${id}`); }
+  async function listSpaceMembers(id) { return request('GET', `/spaces/${id}/members`); }
+  async function addSpaceMember(spaceId, username, data) { return request('POST', `/spaces/${spaceId}/members/${username}`, data); }
+  async function updateSpaceMemberRole(spaceId, username, data) { return request('PUT', `/spaces/${spaceId}/members/${username}`, data); }
+  async function removeSpaceMember(spaceId, username) { return request('DELETE', `/spaces/${spaceId}/members/${username}`); }
+  async function listSpaceGraphs(spaceId, params = {}) { return request('GET', `/spaces/${spaceId}/graphs`, null, params); }
+  async function getSpaceGraph(spaceId, graphId) { return request('GET', `/spaces/${spaceId}/graphs/${graphId}`); }
+  async function createSpaceGraph(spaceId, data) { return request('POST', `/spaces/${spaceId}/graphs`, data); }
+  async function updateSpaceGraph(spaceId, graphId, data) { return request('PUT', `/spaces/${spaceId}/graphs/${graphId}`, data); }
+  async function deleteSpaceGraph(spaceId, graphId) { return request('DELETE', `/spaces/${spaceId}/graphs/${graphId}`); }
+
   return {
     // session
     getToken, getUsername, getRoles, isAdmin, setSession, clearSession,
@@ -151,8 +179,10 @@ const HGAI_API = (() => {
     listGraphs, getGraph, createGraph, updateGraph, deleteGraph, getGraphStats, exportGraph, importGraph,
     // nodes
     listNodes, getNode, createNode, updateNode, deleteNode,
+    listSpaceNodes, getSpaceNode, createSpaceNode, updateSpaceNode, deleteSpaceNode,
     // edges
     listEdges, getEdge, createEdge, updateEdge, deleteEdge,
+    listSpaceEdges, getSpaceEdge, createSpaceEdge, updateSpaceEdge, deleteSpaceEdge,
     // query (HQL)
     runQuery, validateQuery, flushCache,
     // query (SHQL)
@@ -161,5 +191,9 @@ const HGAI_API = (() => {
     listAccounts, getAccount, createAccount, updateAccount, deleteAccount,
     // meshes
     listMeshes, getMesh, createMesh, updateMesh, deleteMesh, pingMesh, syncMesh, queryMesh,
+    // spaces
+    listSpaces, getSpace, createSpace, updateSpace, deleteSpace,
+    listSpaceMembers, addSpaceMember, updateSpaceMemberRole, removeSpaceMember,
+    listSpaceGraphs, getSpaceGraph, createSpaceGraph, updateSpaceGraph, deleteSpaceGraph,
   };
 })();

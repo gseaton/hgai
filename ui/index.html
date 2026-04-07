@@ -62,6 +62,7 @@
     <a class="sidebar-link" data-screen="shql" href="#"><i class="bi bi-braces"></i> Query (SHQL)</a>
 
     <div class="sidebar-section-label admin-only">Administration</div>
+    <a class="sidebar-link admin-only" data-screen="spaces" href="#"><i class="bi bi-collection-fill"></i> Spaces</a>
     <a class="sidebar-link admin-only" data-screen="accounts" href="#"><i class="bi bi-people-fill"></i> Accounts</a>
     <a class="sidebar-link admin-only" data-screen="meshes" href="#"><i class="bi bi-hdd-network-fill"></i> Meshes</a>
     <a class="sidebar-link admin-only" data-screen="system" href="#"><i class="bi bi-gear-fill"></i> System</a>
@@ -163,7 +164,7 @@
             <table class="table table-hover mb-0" id="table-graphs">
               <thead>
                 <tr>
-                  <th>ID</th><th>Label</th><th>Type</th>
+                  <th>ID</th><th>Label</th><th>Type</th><th>Space</th>
                   <th>Nodes</th><th>Edges</th><th>Status</th><th>Tags</th><th></th>
                 </tr>
               </thead>
@@ -381,6 +382,53 @@
         </div>
       </div>
 
+      <!-- ─── SPACES (admin) ────────────────────────────────────────── -->
+      <div id="screen-spaces" class="screen d-none admin-only">
+        <div class="screen-header">
+          <h4><i class="bi bi-collection-fill text-warning me-2"></i>Spaces</h4>
+          <button class="btn btn-warning btn-sm text-dark" id="btn-create-space">
+            <i class="bi bi-plus-lg me-1"></i>New Space
+          </button>
+        </div>
+        <div class="card mb-3">
+          <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+              <thead>
+                <tr>
+                  <th>ID</th><th>Label</th><th>Description</th>
+                  <th>Members</th><th>Status</th><th>Tags</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="tbody-spaces"></tbody>
+            </table>
+          </div>
+        </div>
+        <!-- Space detail / members panel -->
+        <div id="space-detail-panel" class="d-none">
+          <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <span class="fw-semibold"><i class="bi bi-people me-1"></i>Members of <code id="space-detail-id"></code></span>
+              <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-primary" id="btn-add-space-member">
+                  <i class="bi bi-person-plus me-1"></i>Add Member
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" id="btn-space-detail-close">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </div>
+            </div>
+            <div class="card-body p-0">
+              <table class="table table-sm mb-0">
+                <thead>
+                  <tr><th>Username</th><th>Role</th><th></th></tr>
+                </thead>
+                <tbody id="tbody-space-members"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ─── ACCOUNTS (admin) ────────────────────────────────────────── -->
       <div id="screen-accounts" class="screen d-none admin-only">
         <div class="screen-header">
@@ -516,11 +564,19 @@
       <div class="modal-body">
         <form id="form-graph">
           <input type="hidden" id="graph-form-mode" value="create"/>
+          <input type="hidden" id="graph-space-id-hidden" value=""/>
           <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Space <span class="text-muted small">(optional)</span></label>
+              <select id="graph-space-id" class="form-select">
+                <option value="">— None (global) —</option>
+              </select>
+              <div class="form-text">Assign this graph to a tenant space</div>
+            </div>
             <div class="col-md-6">
               <label class="form-label">ID <span class="text-danger">*</span></label>
               <input type="text" id="graph-id" class="form-control" placeholder="my-graph" required/>
-              <div class="form-text">Unique slug identifier</div>
+              <div class="form-text">Unique within the selected space</div>
             </div>
             <div class="col-md-6">
               <label class="form-label">Label <span class="text-danger">*</span></label>
@@ -838,6 +894,86 @@
   </div>
   <div class="offcanvas-body">
     <div id="shql-examples-list"></div>
+  </div>
+</div>
+
+<!-- Space Create/Edit Modal -->
+<div class="modal fade" id="modal-space" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modal-space-title">New Space</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="space-form-mode" value="create"/>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">ID <span class="text-danger">*</span></label>
+            <input type="text" id="space-id" class="form-control font-monospace" placeholder="my-space"/>
+            <div class="form-text">Unique slug — no dots allowed</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Label <span class="text-danger">*</span></label>
+            <input type="text" id="space-label" class="form-control" placeholder="My Space"/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Status</label>
+            <select id="space-status" class="form-select">
+              <option value="active">active</option>
+              <option value="inactive">inactive</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Tags</label>
+            <input type="text" id="space-tags" class="form-control" placeholder="tag1, tag2"/>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Description</label>
+            <input type="text" id="space-description" class="form-control"/>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-warning text-dark" id="btn-save-space">
+          <i class="bi bi-floppy me-1"></i>Save Space
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Space Member Modal -->
+<div class="modal fade" id="modal-space-member" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modal-space-member-title">Add Member</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="space-member-mode" value="add"/>
+        <input type="hidden" id="space-member-space-id" value=""/>
+        <div class="mb-3">
+          <label class="form-label">Username <span class="text-danger">*</span></label>
+          <input type="text" id="space-member-username" class="form-control" placeholder="username"/>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Role</label>
+          <select id="space-member-role" class="form-select">
+            <option value="viewer">viewer</option>
+            <option value="member" selected>member</option>
+            <option value="admin">admin</option>
+            <option value="owner">owner</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btn-save-space-member">Save</button>
+      </div>
+    </div>
   </div>
 </div>
 

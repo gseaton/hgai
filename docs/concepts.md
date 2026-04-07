@@ -315,3 +315,76 @@ Available MCP tool groups:
 - `hgai_hypernode_*` — Node CRUD
 - `hgai_hyperedge_*` — Edge CRUD
 - `hgai_query_*` — HQL query execution
+- `hgai_space_*` — Space management
+
+---
+
+## Spaces (Multi-Tenant Namespaces)
+
+**Spaces** are organizational containers that group hypergraphs for multi-tenant deployments. Each space has a set of **members** with assigned roles that control what operations they can perform.
+
+### Space Roles
+
+| Role     | Operations Permitted                                              |
+|----------|------------------------------------------------------------------|
+| `owner`  | read, write, delete, admin, query, export, import + manage space |
+| `admin`  | read, write, delete, query, export, import + manage members      |
+| `member` | read, write, query, export, import                               |
+| `viewer` | read, query, export                                              |
+
+### Access Resolution
+
+When a request arrives, access is checked in this order:
+
+1. **Global admin role** — full access to everything
+2. **Direct account permissions** — `permissions.graphs` list or `"*"` wildcard
+3. **Space membership** — if the graph belongs to a space where the account is a member
+
+This means a user with no direct graph permissions can still access graphs in spaces they belong to.
+
+Graph IDs are unique **within a space**. Two spaces can both contain a graph named `my-graph` with no conflict. The flat `/graphs/*` endpoints address only unowned graphs. Space-scoped graphs live at `/spaces/{space_id}/graphs/{graph_id}`.
+
+### Example: Creating Space-Scoped Graphs
+
+```bash
+# Create a space
+curl -X POST /api/v1/spaces \
+  -H "Authorization: Bearer <token>" \
+  -d '{"id": "research-team", "label": "Research Team"}'
+
+# Add a member
+curl -X POST /api/v1/spaces/research-team/members \
+  -d '{"username": "alice", "role": "member"}'
+
+# Create a graph inside the space
+curl -X POST /api/v1/spaces/research-team/graphs \
+  -d '{"id": "my-graph", "label": "Research Graph"}'
+
+# Full node/edge CRUD
+curl /api/v1/spaces/research-team/graphs/my-graph/nodes
+```
+
+### Querying Space-Scoped Graphs
+
+Use `space_id/graph_id` slash notation in HQL and SHQL `from:` fields:
+
+```yaml
+hql:
+  from: research-team/my-graph
+  match:
+    type: hyperedge
+```
+
+```yaml
+hql:
+  from:
+    - research-team/my-graph
+    - engineering/my-graph    # same ID, different space
+    - shared-graph            # unowned graph
+```
+
+For remote space-scoped graphs via mesh dot-notation, use 4 components:
+
+```
+mesh.server.research-team.my-graph
+```

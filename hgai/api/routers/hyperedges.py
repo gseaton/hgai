@@ -47,18 +47,18 @@ async def create_edge(
     data: HyperedgeCreate,
     account: AccountInDB = Depends(require_graph_access("write")),
 ):
-    graph = await engine.get_hypergraph(graph_id)
+    graph = await engine.get_hypergraph(graph_id, space_id=None)
     if not graph:
         raise HTTPException(status_code=404, detail=f"Hypergraph '{graph_id}' not found")
 
     if data.id:
-        existing = await engine.get_hyperedge(graph_id, data.id)
+        existing = await engine.get_hyperedge(graph_id, data.id, space_id=None)
         if existing:
             raise HTTPException(
                 status_code=409, detail=f"Edge '{data.id}' already exists in graph '{graph_id}'"
             )
 
-    edge = await engine.create_hyperedge(graph_id, data, created_by=account.username)
+    edge = await engine.create_hyperedge(graph_id, data, created_by=account.username, space_id=None)
     return HyperedgeResponse(**edge.model_dump())
 
 
@@ -81,7 +81,7 @@ async def update_edge(
     data: HyperedgeUpdate,
     account: AccountInDB = Depends(require_graph_access("write")),
 ):
-    edge = await engine.update_hyperedge(graph_id, edge_id, data, updated_by=account.username)
+    edge = await engine.update_hyperedge(graph_id, edge_id, data, updated_by=account.username, space_id=None)
     if not edge:
         raise HTTPException(status_code=404, detail=f"Edge '{edge_id}' not found")
     return HyperedgeResponse(**edge.model_dump())
@@ -93,6 +93,6 @@ async def delete_edge(
     edge_id: str,
     account: AccountInDB = Depends(require_graph_access("delete")),
 ):
-    deleted = await engine.delete_hyperedge(graph_id, edge_id)
+    deleted = await engine.delete_hyperedge(graph_id, edge_id, space_id=None)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Edge '{edge_id}' not found")
