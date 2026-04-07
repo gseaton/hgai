@@ -129,23 +129,28 @@ async def require_admin(account: AccountInDB = Depends(get_current_account)) -> 
 async def can_access_graph(
     account: AccountInDB, graph_id: str, space_id: Optional[str] = None
 ) -> bool:
-    """Check if account can access a specific graph (includes space membership).
+    """Check if account can access a specific graph.
 
-    space_id should be passed when known to avoid ambiguous lookups when the
-    same graph_id exists in multiple spaces.
+    For space-scoped graphs, space membership is the sole gate —
+    permissions.graphs wildcards do NOT grant access to another tenant's space.
+    For unowned (non-space) graphs, permissions.graphs is used as before.
+
+    space_id should be passed when known to avoid an extra DB lookup.
     """
     if "admin" in account.roles:
         return True
-    perms = account.permissions
-    if "*" in perms.graphs or graph_id in perms.graphs:
-        return True
-    # Space membership path
+
     from hgai.core.space_engine import get_space_for_graph, get_member_role
     resolved_space_id = space_id or await get_space_for_graph(graph_id)
+
     if resolved_space_id:
+        # Space-scoped graph: membership is the only gate
         role = await get_member_role(resolved_space_id, account.username)
         return role is not None
-    return False
+
+    # Unowned graph: fall through to permissions.graphs
+    perms = account.permissions
+    return "*" in perms.graphs or graph_id in perms.graphs
 
 
 async def can_perform(

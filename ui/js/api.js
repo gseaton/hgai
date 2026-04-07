@@ -141,6 +141,9 @@ const HGAI_API = (() => {
   async function createAccount(data) { return request('POST', '/accounts', data); }
   async function updateAccount(username, data) { return request('PUT', `/accounts/${username}`, data); }
   async function deleteAccount(username) { return request('DELETE', `/accounts/${username}`); }
+  async function listAccountSpaces(username, params = {}) { return request('GET', `/accounts/${username}/spaces`, null, params); }
+  async function assignAccountToSpace(username, spaceId, data) { return request('POST', `/accounts/${username}/spaces/${spaceId}`, data); }
+  async function removeAccountFromSpace(username, spaceId) { return request('DELETE', `/accounts/${username}/spaces/${spaceId}`); }
 
   // ── Meshes ────────────────────────────────────────────────────────────────
   async function listMeshes(params = {}) { return request('GET', '/meshes', null, params); }
@@ -189,6 +192,7 @@ const HGAI_API = (() => {
     runShqlQuery, validateShqlQuery,
     // accounts
     listAccounts, getAccount, createAccount, updateAccount, deleteAccount,
+    listAccountSpaces, assignAccountToSpace, removeAccountFromSpace,
     // meshes
     listMeshes, getMesh, createMesh, updateMesh, deleteMesh, pingMesh, syncMesh, queryMesh,
     // spaces

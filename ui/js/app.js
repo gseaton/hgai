@@ -1281,11 +1281,18 @@ document.getElementById('btn-create-account').addEventListener('click', () => op
 
 async function openAccountModal(username = null) {
   const modal = new bootstrap.Modal(document.getElementById('modal-account'));
-  document.getElementById('account-form-mode').value = username ? 'edit' : 'create';
-  document.getElementById('modal-account-title').textContent = username ? `Edit: ${username}` : 'New Account';
-  document.getElementById('pw-required').style.display = username ? 'none' : '';
+  const isEdit = !!username;
+  document.getElementById('account-form-mode').value = isEdit ? 'edit' : 'create';
+  document.getElementById('modal-account-title').textContent = isEdit ? `Edit: ${username}` : 'New Account';
+  document.getElementById('pw-required').style.display = isEdit ? 'none' : '';
+  // Show Space Memberships tab only in edit mode
+  document.getElementById('account-spaces-tab-item').style.display = isEdit ? '' : 'none';
+  // Always start on Details tab
+  const detailsTabEl = document.querySelector('#account-modal-tabs .nav-link:first-child');
+  bootstrap.Tab.getOrCreateInstance(detailsTabEl).show();
+  document.getElementById('account-assign-space-form').classList.add('d-none');
 
-  if (username) {
+  if (isEdit) {
     try {
       const a = await HGAI_API.getAccount(username);
       document.getElementById('account-username').value = a.username;
@@ -1299,6 +1306,7 @@ async function openAccountModal(username = null) {
         document.getElementById(`role-${r}`).checked = (a.roles || []).includes(r);
       });
     } catch {}
+    loadAccountSpaces(username);
   } else {
     document.getElementById('form-account').reset();
     document.getElementById('account-username').readOnly = false;
@@ -1306,6 +1314,97 @@ async function openAccountModal(username = null) {
   }
   modal.show();
 }
+
+async function loadAccountSpaces(username) {
+  const tbody = document.getElementById('tbody-account-spaces');
+  tbody.innerHTML = '<tr><td colspan="4" class="text-center py-3"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  try {
+    const resp = await HGAI_API.listAccountSpaces(username, { limit: 200 });
+    tbody.innerHTML = '';
+    if (!resp.items || !resp.items.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">No space memberships</td></tr>';
+      return;
+    }
+    resp.items.forEach(s => {
+      const member = (s.members || []).find(m => m.username === username);
+      const role = member?.role || '—';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><code>${s.id}</code></td>
+        <td>${s.label || '—'}</td>
+        <td>
+          <select class="form-select form-select-sm" style="width:110px"
+            onchange="updateAccountSpaceRole('${username}', '${s.id}', this.value)">
+            <option ${role==='viewer'?'selected':''} value="viewer">viewer</option>
+            <option ${role==='member'?'selected':''} value="member">member</option>
+            <option ${role==='admin'?'selected':''} value="admin">admin</option>
+            <option ${role==='owner'?'selected':''} value="owner">owner</option>
+          </select>
+        </td>
+        <td class="text-end">
+          <button class="btn btn-xs btn-outline-danger" onclick="removeAccountSpace('${username}', '${s.id}')">
+            <i class="bi bi-x-circle"></i>
+          </button>
+        </td>`;
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="4" class="text-danger text-center py-2">${err.message}</td></tr>`;
+  }
+}
+
+window.updateAccountSpaceRole = async (username, spaceId, role) => {
+  try {
+    await HGAI_API.assignAccountToSpace(username, spaceId, { role });
+    toast(`Role updated to "${role}"`);
+  } catch (err) {
+    toast(err.message, 'danger');
+    loadAccountSpaces(username);
+  }
+};
+
+window.removeAccountSpace = (username, spaceId) => {
+  confirmDelete(`Remove "${username}" from space "${spaceId}"?`, async () => {
+    try {
+      await HGAI_API.removeAccountFromSpace(username, spaceId);
+      toast(`Removed from space "${spaceId}"`);
+      loadAccountSpaces(username);
+    } catch (err) { toast(err.message, 'danger'); }
+  });
+};
+
+document.getElementById('btn-account-assign-space').addEventListener('click', async () => {
+  const form = document.getElementById('account-assign-space-form');
+  form.classList.remove('d-none');
+  // Populate space select
+  const sel = document.getElementById('account-space-select');
+  sel.innerHTML = '<option value="">— Select Space —</option>';
+  try {
+    const resp = await HGAI_API.listSpaces({ limit: 200 });
+    (resp.items || []).forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id; opt.textContent = `${s.label} (${s.id})`;
+      sel.appendChild(opt);
+    });
+  } catch {}
+});
+
+document.getElementById('btn-account-space-cancel').addEventListener('click', () => {
+  document.getElementById('account-assign-space-form').classList.add('d-none');
+});
+
+document.getElementById('btn-account-space-confirm').addEventListener('click', async () => {
+  const username = document.getElementById('account-username').value;
+  const spaceId = document.getElementById('account-space-select').value;
+  const role = document.getElementById('account-space-role').value;
+  if (!spaceId) { toast('Select a space first', 'warning'); return; }
+  try {
+    await HGAI_API.assignAccountToSpace(username, spaceId, { role });
+    toast(`Assigned "${username}" to space "${spaceId}" as ${role}`);
+    document.getElementById('account-assign-space-form').classList.add('d-none');
+    loadAccountSpaces(username);
+  } catch (err) { toast(err.message, 'danger'); }
+});
 
 window.editAccount = (username) => openAccountModal(username);
 window.deleteAccount = (username) => {

@@ -1945,7 +1945,50 @@ Modules are mounted conditionally in `hgai/main.py` — a missing or broken modu
 | `member` | read, write, query, export, import |
 | `viewer` | read, query, export |
 
-Access is resolved in priority order: global admin → direct account permissions → space membership.
+#### Access Control Model
+
+Space membership is the **sole gate** for space-scoped graphs. `permissions.graphs` wildcards (e.g. `["*"]`) do **not** grant access to graphs in a space the account is not a member of. Access is resolved in this exact order:
+
+1. **Global admin** — accounts with `"admin"` in `roles` bypass all checks.
+2. **Space membership** — when the graph belongs to a space, the account must be a member of that space. Non-members are rejected regardless of `permissions.graphs`.
+3. **`permissions.graphs`** — applies only to unowned (non-space) graphs.
+
+This ensures that a `["*"]` permissions wildcard cannot leak across tenant boundaries.
+
+#### Space Membership Management
+
+Members can be managed from the **space perspective** (via the space itself) or the **account perspective** (admin shortcut routes on the account):
+
+```bash
+# From the space: add alice as a member
+curl -X POST http://localhost:8000/api/v1/spaces/my-team/members/alice \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"role": "member"}'
+
+# From the account: assign alice to a space (admin only)
+curl -X POST http://localhost:8000/api/v1/accounts/alice/spaces/my-team \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"role": "member"}'
+
+# List all spaces alice belongs to (admin only)
+curl http://localhost:8000/api/v1/accounts/alice/spaces \
+  -H "Authorization: Bearer <token>"
+
+# Remove alice from a space (admin only)
+curl -X DELETE http://localhost:8000/api/v1/accounts/alice/spaces/my-team \
+  -H "Authorization: Bearer <token>"
+```
+
+When an account is deleted, it is automatically removed from all space `members` arrays.
+
+#### Space Membership in the Admin UI
+
+In the **Accounts** admin screen, editing any account shows a **Space Memberships** tab listing every space the user belongs to. From this tab, an admin can:
+- Change a member's role using an inline dropdown
+- Remove a member from a space
+- Assign the account to a new space (with role selection)
 
 Because graph uniqueness is enforced per-space, `team-a` and `team-b` can each have a graph named `my-graph` with no conflict. Flat `/graphs/*` routes address only unowned graphs (`space_id` is null). Space-owned graphs are addressed via `/spaces/{space_id}/graphs/{graph_id}`.
 
