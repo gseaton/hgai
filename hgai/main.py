@@ -181,10 +181,10 @@ def cli_main():
 
     parser = argparse.ArgumentParser(description="HypergraphAI server")
     parser.add_argument("--port", type=int, default=None, help="Port to listen on")
-    parser.add_argument("--mongo-connection", default=None, help="MongoDB connection URI (overrides HGAI_MONGO_URI)")
-    parser.add_argument("--mongo-db", default=None, help="MongoDB database name (overrides HGAI_MONGO_DB)")
-    parser.add_argument("--server-id", default=None, help="Server identifier (overrides HGAI_SERVER_ID)")
-    parser.add_argument("--server-name", default=None, help="Server display name (overrides HGAI_SERVER_NAME)")
+    parser.add_argument("--mongo-connection", "--mongo_connection", default=None, help="MongoDB connection URI (overrides HGAI_MONGO_URI)")
+    parser.add_argument("--mongo-db", "--mongo_db", default=None, help="MongoDB database name (overrides HGAI_MONGO_DB)")
+    parser.add_argument("--server-id", "--server_id", default=None, help="Server identifier (overrides HGAI_SERVER_ID)")
+    parser.add_argument("--server-name", "--server_name", default=None, help="Server display name (overrides HGAI_SERVER_NAME)")
     args = parser.parse_args()
 
     # Set env vars then clear the lru_cache so get_settings() re-reads them.
