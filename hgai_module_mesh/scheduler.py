@@ -10,15 +10,15 @@ _sync_task: asyncio.Task = None
 
 async def _sync_loop(interval_seconds: int) -> None:
     """Periodically sync graph lists for all active meshes."""
-    from hgai.db.mongodb import col_meshes
+    from hgai.db.storage import get_storage
     from .engine import sync_mesh_graphs
 
     logger.info(f"Mesh sync scheduler started (interval: {interval_seconds}s)")
     while True:
         await asyncio.sleep(interval_seconds)
         try:
-            cursor = col_meshes().find({"status": "active"})
-            async for doc in cursor:
+            active_meshes = await get_storage().meshes.list_active()
+            for doc in active_meshes:
                 mesh_id = doc.get("id")
                 if mesh_id:
                     try:

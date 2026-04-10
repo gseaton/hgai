@@ -5,7 +5,8 @@ SKOS inferencing via hyperedge hub relations is a planned future implementation.
 
 from typing import Any, Dict, List, Set
 
-from hgai.db.mongodb import col_hyperedges, col_hypernodes
+from hgai.db.storage import get_storage
+from hgai_module_storage.filters import TransitiveSearchFilter
 
 
 async def infer_inverse_edges(
@@ -25,13 +26,8 @@ async def infer_inverse_edges(
             continue
 
         # Look for a relation type node with inverse defined
-        rel_node = await col_hypernodes().find_one(
-            {
-                "id": relation,
-                "hypergraph_id": graph_id,
-                "type": "RelationType",
-            },
-            {"attributes.inverse": 1},
+        rel_node = await get_storage().hypernodes.find_relation_node(
+            relation=relation, hypergraph_id=graph_id
         )
         if not rel_node:
             continue
@@ -73,16 +69,13 @@ async def check_transitive_relation(
         depth += 1
 
         # Find all hyperedges where current nodes appear as members with given relation
-        cursor = col_hyperedges().find(
-            {
-                "hypergraph_id": {"$in": graph_ids},
-                "relation": relation,
-                "members.node_id": {"$in": current_batch},
-                "status": "active",
-            },
-            {"members": 1},
+        tsf = TransitiveSearchFilter(
+            hypergraph_ids=graph_ids,
+            relation=relation,
+            member_node_ids=current_batch,
         )
-        async for doc in cursor:
+        docs = await get_storage().hyperedges.find_for_transitive(tsf)
+        for doc in docs:
             for member in doc.get("members", []):
                 mid = member.get("node_id")
                 if mid == end_id:

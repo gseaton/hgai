@@ -1,6 +1,5 @@
 """Authentication API endpoints."""
 
-from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,9 +10,8 @@ from hgai.core.auth import (
     create_access_token,
     get_current_account,
 )
-from hgai.db.mongodb import col_accounts
+from hgai.db.storage import get_storage
 from hgai.models.account import AccountResponse, TokenResponse
-from hgai.models.common import now_utc
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -30,10 +28,7 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
     token, expires_in = create_access_token(account.username, account.roles)
 
     # Update last_login
-    await col_accounts().update_one(
-        {"username": account.username},
-        {"$set": {"last_login": now_utc()}},
-    )
+    await get_storage().accounts.record_login(account.username)
 
     return TokenResponse(
         access_token=token,

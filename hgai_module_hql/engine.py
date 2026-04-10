@@ -24,7 +24,8 @@ from typing import Any, Dict, List, Optional, Union
 
 import yaml
 
-from hgai.db.mongodb import col_hyperedges, col_hypernodes, col_hypergraphs
+from hgai.db.storage import get_storage
+from hgai_module_storage.filters import HyperedgeSearchFilters, HypernodeSearchFilters
 
 _SKOS_FIELDS = ("skos_broader", "skos_narrower", "skos_related")
 
@@ -89,56 +90,85 @@ def validate_hql(hql: Dict) -> List[str]:
     return errors
 
 
-def _build_mongo_query(
+def _build_node_search_filters(
     graph_ids: List[str],
     match: Dict,
     where: Dict,
     pit: Optional[datetime] = None,
-) -> Dict:
-    """Build MongoDB query from HQL match/where clauses."""
-    query: Dict[str, Any] = {"hypergraph_id": {"$in": graph_ids}, "status": "active"}
+) -> HypernodeSearchFilters:
+    """Build HypernodeSearchFilters from HQL match/where clauses."""
+    node_type = match.get("node_type")
+    # Derive status from where if present
+    status = where.get("status", "active")
+    tags = None
+    attributes: Dict[str, Any] = {}
 
-    # match conditions
-    if match.get("relation"):
-        query["relation"] = match["relation"]
-    if match.get("node_type"):
-        query["type"] = match["node_type"]
-    if match.get("flavor"):
-        query["flavor"] = match["flavor"]
-    if match.get("id"):
-        query["id"] = match["id"]
+    node_id = match.get("id")
+
+    for key, value in where.items():
+        if key == "tags":
+            tags = value if isinstance(value, list) else [value]
+        elif key == "status":
+            pass  # already handled above
+        else:
+            # dot-delimited attribute paths go into attributes filter
+            attributes[key] = value
+
+    return HypernodeSearchFilters(
+        hypergraph_ids=graph_ids,
+        node_type=node_type,
+        status=status,
+        tags=tags,
+        pit=pit,
+        node_ids_in=[node_id] if node_id else None,
+        attributes=attributes if attributes else None,
+    )
+
+
+def _build_edge_search_filters(
+    graph_ids: List[str],
+    match: Dict,
+    where: Dict,
+    pit: Optional[datetime] = None,
+) -> HyperedgeSearchFilters:
+    """Build HyperedgeSearchFilters from HQL match/where clauses."""
+    relation = match.get("relation")
+    flavor = match.get("flavor")
+    status = where.get("status", "active")
+    tags = None
+    attributes: Dict[str, Any] = {}
+    member_node_ids_all: Optional[List[str]] = None
 
     # member filter (for hyperedges)
     if match.get("nodes"):
         node_ids = match["nodes"] if isinstance(match["nodes"], list) else [match["nodes"]]
-        query["members.node_id"] = {"$all": node_ids}
+        member_node_ids_all = node_ids
 
-    # where conditions (dot-delimited attribute paths supported)
+    # extra filters from where (pass-through for members.* and other dot-paths)
+    extra_filters: Dict[str, Any] = {}
     for key, value in where.items():
         if key == "tags":
             tags = value if isinstance(value, list) else [value]
-            query["tags"] = {"$all": tags}
         elif key == "status":
-            query["status"] = value
+            pass
         elif key == "members":
-            # e.g. where.members.node_id: some-id
             if isinstance(value, dict):
                 for mk, mv in value.items():
-                    query[f"members.{mk}"] = mv
+                    extra_filters[f"members.{mk}"] = mv
         else:
-            # Support dot-delimited paths: attributes.city -> attributes.city
-            query[key] = value
+            extra_filters[key] = value
 
-    # Point-in-time filter
-    if pit:
-        pit_filter = [
-            {"$or": [{"valid_from": None}, {"valid_from": {"$lte": pit}}]},
-            {"$or": [{"valid_to": None}, {"valid_to": {"$gte": pit}}]},
-        ]
-        existing_and = query.pop("$and", [])
-        query["$and"] = existing_and + pit_filter
-
-    return query
+    return HyperedgeSearchFilters(
+        hypergraph_ids=graph_ids,
+        relation=relation,
+        flavor=flavor,
+        status=status,
+        tags=tags,
+        member_node_ids_all=member_node_ids_all,
+        pit=pit,
+        attributes=attributes if attributes else None,
+        extra_filters=extra_filters if extra_filters else None,
+    )
 
 
 def _project_fields(doc: Dict, return_fields: List[str]) -> Dict:
@@ -203,27 +233,27 @@ async def _resolve_graph_ids(from_field: Any) -> List[str]:
     for ref in graph_ids:
         if "/" in ref:
             space_part, gid = ref.split("/", 1)
-            doc = await col_hypergraphs().find_one({"id": gid, "space_id": space_part})
+            doc = await get_storage().hypergraphs.get(gid, space_id=space_part)
         else:
             gid = ref
-            doc = await col_hypergraphs().find_one({"id": gid, "space_id": None})
+            doc = await get_storage().hypergraphs.get(gid, space_id=None)
             if not doc:
                 # Check if it's a mesh ID — signal federation to the caller
-                from hgai.db.mongodb import col_meshes
-                if await col_meshes().find_one({"id": gid}):
+                mesh_doc = await get_storage().meshes.get(gid)
+                if mesh_doc:
                     raise _MeshRedirect(gid)
         if not doc:
             raise HQLError(f"Hypergraph not found: {ref!r}")
-        if doc.get("type") == "logical" and doc.get("composition"):
+        if doc.type == "logical" and doc.composition:
             # Logical graph composition: resolve each member graph
-            for member_id in doc["composition"]:
-                member_doc = await col_hypergraphs().find_one({"id": member_id})
+            for member_id in doc.composition:
+                member_doc = await get_storage().hypergraphs.find_composition_member(member_id)
                 if member_doc:
                     resolved.append(
-                        _hypergraph_ref(member_doc["id"], member_doc.get("space_id"))
+                        _hypergraph_ref(member_doc.id, member_doc.space_id)
                     )
         else:
-            resolved.append(_hypergraph_ref(doc["id"], doc.get("space_id")))
+            resolved.append(_hypergraph_ref(doc.id, doc.space_id))
 
     return list(set(resolved))
 
@@ -306,12 +336,9 @@ async def execute_hql(hql_text: str, use_cache: bool = True) -> HQLResult:
 
     if graph_ids:
         if match_type in ("hypernode", "any"):
-            query = _build_mongo_query(graph_ids, match, where, pit)
-            # Remove hyperedge-only fields from query
-            node_query = {k: v for k, v in query.items() if k not in ("relation", "flavor", "members.node_id")}
-            cursor = col_hypernodes().find(node_query).skip(skip).limit(limit)
-            async for doc in cursor:
-                doc.pop("_id", None)
+            node_filters = _build_node_search_filters(graph_ids, match, where, pit)
+            docs = await get_storage().hypernodes.search(node_filters, skip=skip, limit=limit)
+            for doc in docs:
                 for _f in _SKOS_FIELDS:
                     doc.pop(_f, None)
                 doc["_entity_type"] = "hypernode"
@@ -319,12 +346,9 @@ async def execute_hql(hql_text: str, use_cache: bool = True) -> HQLResult:
                 all_items.append(projected)
 
         if match_type in ("hyperedge", "any"):
-            query = _build_mongo_query(graph_ids, match, where, pit)
-            # Remove hypernode-only fields
-            edge_query = {k: v for k, v in query.items() if k not in ("type",)}
-            cursor = col_hyperedges().find(edge_query).skip(skip).limit(limit)
-            async for doc in cursor:
-                doc.pop("_id", None)
+            edge_filters = _build_edge_search_filters(graph_ids, match, where, pit)
+            docs = await get_storage().hyperedges.search(edge_filters, skip=skip, limit=limit)
+            for doc in docs:
                 for _f in _SKOS_FIELDS:
                     doc.pop(_f, None)
                 doc["_entity_type"] = "hyperedge"

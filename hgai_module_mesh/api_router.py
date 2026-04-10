@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from hgai.core.auth import require_admin
-from hgai.db.mongodb import col_meshes
+from hgai.db.storage import get_storage
 from hgai.models.common import PaginatedResponse, now_utc
 
 from .models import MeshCreate, MeshResponse, MeshUpdate
@@ -21,35 +21,34 @@ async def list_meshes(
     limit: int = Query(default=50, ge=1, le=200),
     _admin=Depends(require_admin),
 ):
-    total = await col_meshes().count_documents({})
-    cursor = col_meshes().find({}).skip(skip).limit(limit).sort("system_created", -1)
-    docs = await cursor.to_list(length=limit)
-    meshes = []
-    for doc in docs:
-        doc.pop("_id", None)
-        meshes.append(doc)
-    return PaginatedResponse(total=total, skip=skip, limit=limit, items=meshes)
+    from hgai_module_storage.filters import MeshFilters
+    total, docs = await get_storage().meshes.list(MeshFilters(), skip=skip, limit=limit)
+    return PaginatedResponse(total=total, skip=skip, limit=limit, items=docs)
 
 
 @router.post("", response_model=MeshResponse, status_code=status.HTTP_201_CREATED)
 async def create_mesh(data: MeshCreate, admin=Depends(require_admin)):
-    existing = await col_meshes().find_one({"id": data.id})
+    existing = await get_storage().meshes.get(data.id)
     if existing:
         raise HTTPException(status_code=409, detail=f"Mesh '{data.id}' already exists")
 
     now = now_utc()
-    doc = {**data.model_dump(), "system_created": now, "system_updated": now, "created_by": admin.username, "version": 1}
-    await col_meshes().insert_one(doc)
-    doc.pop("_id", None)
-    return MeshResponse(**doc)
+    doc = {
+        **data.model_dump(),
+        "system_created": now,
+        "system_updated": now,
+        "created_by": admin.username,
+        "version": 1,
+    }
+    result = await get_storage().meshes.create(doc)
+    return MeshResponse(**result)
 
 
 @router.get("/{mesh_id}", response_model=MeshResponse)
 async def get_mesh(mesh_id: str, _admin=Depends(require_admin)):
-    doc = await col_meshes().find_one({"id": mesh_id})
+    doc = await get_storage().meshes.get(mesh_id)
     if not doc:
         raise HTTPException(status_code=404, detail=f"Mesh '{mesh_id}' not found")
-    doc.pop("_id", None)
     return MeshResponse(**doc)
 
 
@@ -57,21 +56,16 @@ async def get_mesh(mesh_id: str, _admin=Depends(require_admin)):
 async def update_mesh(mesh_id: str, data: MeshUpdate, admin=Depends(require_admin)):
     update_fields = {k: v for k, v in data.model_dump(exclude_none=True).items() if k != "version"}
     update_fields["system_updated"] = now_utc()
-    result = await col_meshes().find_one_and_update(
-        {"id": mesh_id},
-        {"$set": update_fields, "$inc": {"version": 1}},
-        return_document=True,
-    )
+    result = await get_storage().meshes.update(mesh_id, update_fields)
     if not result:
         raise HTTPException(status_code=404, detail=f"Mesh '{mesh_id}' not found")
-    result.pop("_id", None)
     return MeshResponse(**result)
 
 
 @router.delete("/{mesh_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_mesh(mesh_id: str, _admin=Depends(require_admin)):
-    result = await col_meshes().delete_one({"id": mesh_id})
-    if not result.deleted_count:
+    deleted = await get_storage().meshes.delete(mesh_id)
+    if not deleted:
         raise HTTPException(status_code=404, detail=f"Mesh '{mesh_id}' not found")
 
 

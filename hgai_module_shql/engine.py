@@ -29,7 +29,8 @@ from typing import Any, Dict, List, Optional, Set
 
 import yaml
 
-from hgai.db.mongodb import col_hyperedges, col_hypernodes, col_hypergraphs
+from hgai.db.storage import get_storage
+from hgai_module_storage.filters import HyperedgeSearchFilters, HypernodeSearchFilters
 
 _SKOS_FIELDS = ("skos_broader", "skos_narrower", "skos_related")
 
@@ -181,30 +182,26 @@ async def _eval_node_pattern(
             result.append(binding)
             continue
 
-        # Build MongoDB query
-        q: Dict[str, Any] = {"hypergraph_id": {"$in": graph_ids}}
-        if status:
-            q["status"] = status
-        if node_type:
-            q["type"] = node_type
+        # Build node search filters
+        node_ids_in = None
         if node_id is not None:
             resolved_id = _resolve_var(node_id, binding) if _is_var(str(node_id)) else node_id
             if resolved_id is None:
                 continue
-            q["id"] = resolved_id
-        if tags:
-            q["tags"] = {"$all": (tags if isinstance(tags, list) else [tags])}
-        for k, v in attributes.items():
-            q[f"attributes.{k}"] = v
-        if pit:
-            q["$and"] = [
-                {"$or": [{"valid_from": None}, {"valid_from": {"$lte": pit}}]},
-                {"$or": [{"valid_to": None}, {"valid_to": {"$gte": pit}}]},
-            ]
+            node_ids_in = [resolved_id]
 
-        cursor = col_hypernodes().find(q).limit(2000)
-        async for doc in cursor:
-            doc.pop("_id", None)
+        filters = HypernodeSearchFilters(
+            hypergraph_ids=graph_ids,
+            node_type=node_type,
+            status=status,
+            tags=tags if not tags or isinstance(tags, list) else [tags],
+            pit=pit,
+            node_ids_in=node_ids_in,
+            attributes=attributes if attributes else None,
+        )
+        docs = await get_storage().hypernodes.search(filters, skip=0, limit=2000)
+
+        for doc in docs:
             for _f in _SKOS_FIELDS:
                 doc.pop(_f, None)
             new_binding = dict(binding)
@@ -243,27 +240,12 @@ async def _eval_edge_pattern(
             result.append(binding)
             continue
 
-        # Build base MongoDB query
-        q: Dict[str, Any] = {"hypergraph_id": {"$in": graph_ids}}
-        if status:
-            q["status"] = status
+        # Resolve relation variable if needed
+        resolved_rel = None
         if relation:
             resolved_rel = _resolve_var(relation, binding) if _is_var(str(relation)) else relation
-            if resolved_rel:
-                q["relation"] = resolved_rel
-        if flavor:
-            q["flavor"] = flavor
-        if tags:
-            q["tags"] = {"$all": (tags if isinstance(tags, list) else [tags])}
-        for k, v in attributes.items():
-            q[f"attributes.{k}"] = v
-        if pit:
-            q["$and"] = [
-                {"$or": [{"valid_from": None}, {"valid_from": {"$lte": pit}}]},
-                {"$or": [{"valid_to": None}, {"valid_to": {"$gte": pit}}]},
-            ]
 
-        # Add member constraints from already-bound variables to narrow the DB query
+        # Add member constraints from already-bound variables to narrow the query
         bound_node_ids: List[str] = []
         for pat in member_patterns:
             np = (
@@ -285,12 +267,19 @@ async def _eval_edge_pattern(
                 if resolved:
                     bound_node_ids.append(resolved)
 
-        if bound_node_ids:
-            q["members.node_id"] = {"$all": bound_node_ids}
+        filters = HyperedgeSearchFilters(
+            hypergraph_ids=graph_ids,
+            relation=resolved_rel,
+            flavor=flavor,
+            status=status,
+            tags=tags if not tags or isinstance(tags, list) else [tags],
+            pit=pit,
+            member_node_ids_all=bound_node_ids if bound_node_ids else None,
+            attributes=attributes if attributes else None,
+        )
+        docs = await get_storage().hyperedges.search(filters, skip=0, limit=2000)
 
-        cursor = col_hyperedges().find(q).limit(2000)
-        async for doc in cursor:
-            doc.pop("_id", None)
+        for doc in docs:
             for _f in _SKOS_FIELDS:
                 doc.pop(_f, None)
             edge_members = doc.get("members", [])
@@ -516,12 +505,11 @@ async def _resolve_node_bindings(
     if not ids_needed:
         return bindings
 
-    node_map: Dict[str, Dict] = {}
-    cursor = col_hypernodes().find(
-        {"id": {"$in": list(ids_needed)}, "hypergraph_id": {"$in": graph_ids}}
+    docs = await get_storage().hypernodes.find_by_ids(
+        list(ids_needed), graph_ids
     )
-    async for doc in cursor:
-        doc.pop("_id", None)
+    node_map: Dict[str, Dict] = {}
+    for doc in docs:
         for _f in _SKOS_FIELDS:
             doc.pop(_f, None)
         node_map[doc["id"]] = doc
@@ -794,20 +782,19 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
 
     # Resolve local graph IDs to hypergraph_id refs used in node/edge queries.
     # Supports "graph_id" (unowned) and "space_id/graph_id" (space-scoped) formats.
-    # Returns composite refs matching what is stored as hypergraph_id on node/edge documents.
     from hgai.core.engine import _hypergraph_ref
     graph_ids: List[str] = []
     for ref in plain_refs:
         if "/" in ref:
             space_part, gid = ref.split("/", 1)
-            doc = await col_hypergraphs().find_one({"id": gid, "space_id": space_part})
+            doc = await get_storage().hypergraphs.get(gid, space_id=space_part)
         else:
             gid = ref
-            doc = await col_hypergraphs().find_one({"id": gid, "space_id": None})
+            doc = await get_storage().hypergraphs.get(gid, space_id=None)
             if not doc:
                 # Check if it's a bare mesh ID — route to federation
-                from hgai.db.mongodb import col_meshes
-                if await col_meshes().find_one({"id": gid}):
+                mesh_doc = await get_storage().meshes.get(gid)
+                if mesh_doc:
                     try:
                         from hgai_module_mesh.engine import federated_shql
                         fed = await federated_shql(gid, shql_text, use_cache=use_cache)
@@ -819,16 +806,16 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
         if not doc:
             from .parser import SHQLError
             raise SHQLError(f"Hypergraph not found: {ref!r}")
-        if doc.get("type") == "logical" and doc.get("composition"):
+        if doc.type == "logical" and doc.composition:
             # Logical graph composition: resolve each member graph
-            for member_id in doc["composition"]:
-                member_doc = await col_hypergraphs().find_one({"id": member_id})
+            for member_id in doc.composition:
+                member_doc = await get_storage().hypergraphs.find_composition_member(member_id)
                 if member_doc:
                     graph_ids.append(
-                        _hypergraph_ref(member_doc["id"], member_doc.get("space_id"))
+                        _hypergraph_ref(member_doc.id, member_doc.space_id)
                     )
         else:
-            graph_ids.append(_hypergraph_ref(doc["id"], doc.get("space_id")))
+            graph_ids.append(_hypergraph_ref(doc.id, doc.space_id))
     graph_ids = list(set(graph_ids))
 
     # Parse point-in-time

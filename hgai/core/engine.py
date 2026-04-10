@@ -9,16 +9,20 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from hgai.db.mongodb import (
-    col_hyperedges,
-    col_hypergraphs,
-    col_hypernodes,
-)
+from hgai.db.storage import get_storage
 from hgai.core.cache import invalidate_cache
 from hgai.models.common import Status, now_utc
 from hgai.models.hyperedge import HyperedgeCreate, HyperedgeInDB, HyperedgeUpdate
 from hgai.models.hypergraph import HypergraphCreate, HypergraphInDB, HypergraphUpdate
 from hgai.models.hypernode import HypernodeCreate, HypernodeInDB, HypernodeUpdate
+from hgai_module_storage.filters import (
+    HyperedgeFilters,
+    HyperedgePatch,
+    HypergraphFilters,
+    HypergraphPatch,
+    HypernodeFilters,
+    HypernodePatch,
+)
 
 
 # ─── Hyperkey Generation ──────────────────────────────────────────────────────
@@ -52,10 +56,9 @@ def _hypergraph_ref(graph_id: str, space_id: Optional[str]) -> str:
 
 
 def _graph_filter(graph_id: str, space_id: Optional[str]) -> Dict[str, Any]:
-    """Build a MongoDB filter that matches a graph by (id, space_id) exactly.
+    """Build a filter dict for a graph by (id, space_id).
 
-    space_id=None targets unowned graphs (space_id is null in the document).
-    Pass an explicit space_id string to target a space-owned graph.
+    Kept for backwards compatibility in places that still pass this to the store.
     """
     return {"id": graph_id, "space_id": space_id}
 
@@ -67,11 +70,7 @@ async def find_hypergraph_by_id(graph_id: str) -> Optional[HypergraphInDB]:
     space context. Prefer get_hypergraph(..., space_id=...) when the space
     is known to avoid ambiguity when the same graph_id exists in multiple spaces.
     """
-    doc = await col_hypergraphs().find_one({"id": graph_id})
-    if not doc:
-        return None
-    doc.pop("_id", None)
-    return HypergraphInDB(**doc)
+    return await get_storage().hypergraphs.find_by_id_unscoped(graph_id)
 
 
 async def create_hypergraph(data: HypergraphCreate, created_by: str) -> HypergraphInDB:
@@ -85,16 +84,11 @@ async def create_hypergraph(data: HypergraphCreate, created_by: str) -> Hypergra
         node_count=0,
         edge_count=0,
     )
-    await col_hypergraphs().insert_one(doc)
-    return HypergraphInDB(**doc)
+    return await get_storage().hypergraphs.create(doc)
 
 
 async def get_hypergraph(graph_id: str, space_id: Optional[str] = None) -> Optional[HypergraphInDB]:
-    doc = await col_hypergraphs().find_one(_graph_filter(graph_id, space_id))
-    if not doc:
-        return None
-    doc.pop("_id", None)
-    return HypergraphInDB(**doc)
+    return await get_storage().hypergraphs.get(graph_id, space_id)
 
 
 async def list_hypergraphs(
@@ -104,69 +98,43 @@ async def list_hypergraphs(
     skip: int = 0,
     limit: int = 50,
 ) -> Tuple[int, List[HypergraphInDB]]:
-    query: Dict[str, Any] = {}
-    if status:
-        query["status"] = status
-    if tags:
-        query["tags"] = {"$all": tags}
-    if space_id is not None:
-        query["space_id"] = space_id
-
-    total = await col_hypergraphs().count_documents(query)
-    cursor = col_hypergraphs().find(query).skip(skip).limit(limit).sort("system_created", -1)
-    docs = await cursor.to_list(length=limit)
-    graphs = []
-    for doc in docs:
-        doc.pop("_id", None)
-        graphs.append(HypergraphInDB(**doc))
-    return total, graphs
+    filters = HypergraphFilters(status=status, tags=tags, space_id=space_id)
+    return await get_storage().hypergraphs.list(filters, skip=skip, limit=limit)
 
 
 async def update_hypergraph(
     graph_id: str, data: HypergraphUpdate, updated_by: str, space_id: Optional[str] = None
 ) -> Optional[HypergraphInDB]:
-    update_fields = {k: v for k, v in data.model_dump(exclude_none=True).items() if k != "version"}
-    update_fields["system_updated"] = now_utc()
-    update_fields["updated_by"] = updated_by
-
-    result = await col_hypergraphs().find_one_and_update(
-        _graph_filter(graph_id, space_id),
-        {"$set": update_fields, "$inc": {"version": 1}},
-        return_document=True,
+    dumped = {k: v for k, v in data.model_dump(exclude_none=True).items() if k != "version"}
+    patch = HypergraphPatch(
+        label=dumped.get("label"),
+        description=dumped.get("description"),
+        status=dumped.get("status"),
+        tags=dumped.get("tags"),
+        attributes=dumped.get("attributes"),
+        composition=dumped.get("composition"),
+        remote_refs=dumped.get("remote_refs"),
+        updated_by=updated_by,
     )
-    if not result:
-        return None
-    result.pop("_id", None)
-    await invalidate_cache(graph_id)
-    return HypergraphInDB(**result)
+    result = await get_storage().hypergraphs.update(graph_id, patch, space_id=space_id)
+    if result:
+        await invalidate_cache(graph_id)
+    return result
 
 
 async def delete_hypergraph(graph_id: str, space_id: Optional[str] = None) -> bool:
-    result = await col_hypergraphs().delete_one(_graph_filter(graph_id, space_id))
-    if result.deleted_count:
+    deleted = await get_storage().hypergraphs.delete(graph_id, space_id)
+    if deleted:
         ref = _hypergraph_ref(graph_id, space_id)
-        await col_hypernodes().delete_many({"hypergraph_id": ref})
-        await col_hyperedges().delete_many({"hypergraph_id": ref})
+        await get_storage().hypernodes.delete_by_graph(ref)
+        await get_storage().hyperedges.delete_by_graph(ref)
         await invalidate_cache(graph_id)
         return True
     return False
 
 
 async def get_hypergraph_stats(graph_id: str, space_id: Optional[str] = None) -> Dict[str, Any]:
-    ref = _hypergraph_ref(graph_id, space_id)
-    node_count = await col_hypernodes().count_documents({"hypergraph_id": ref, "status": "active"})
-    edge_count = await col_hyperedges().count_documents({"hypergraph_id": ref, "status": "active"})
-
-    rel_types = await col_hyperedges().distinct("relation", {"hypergraph_id": ref})
-    node_types = await col_hypernodes().distinct("type", {"hypergraph_id": ref})
-
-    return {
-        "graph_id": graph_id,
-        "node_count": node_count,
-        "edge_count": edge_count,
-        "relation_types": sorted(rel_types),
-        "node_types": sorted(node_types),
-    }
+    return await get_storage().hypergraphs.stats(graph_id, space_id)
 
 
 # ─── Hypernode Engine ─────────────────────────────────────────────────────────
@@ -183,25 +151,19 @@ async def create_hypernode(
         created_by=created_by,
         version=1,
     )
-    await col_hypernodes().insert_one(doc)
-    await col_hypergraphs().update_one(
-        _graph_filter(graph_id, space_id), {"$inc": {"node_count": 1}}
-    )
-    doc.pop("_id", None)
+    node = await get_storage().hypernodes.create(doc)
+    await get_storage().hypergraphs.increment_counts(graph_id, space_id, node_delta=1)
     await invalidate_cache(graph_id)
-    return HypernodeInDB(**doc)
+    return node
 
 
 async def get_hypernode(
     graph_id: str, node_id: str, space_id: Optional[str] = None
 ) -> Optional[HypernodeInDB]:
-    doc = await col_hypernodes().find_one(
-        {"id": node_id, "hypergraph_id": _hypergraph_ref(graph_id, space_id)}
+    return await get_storage().hypernodes.get(
+        hypergraph_id=_hypergraph_ref(graph_id, space_id),
+        node_id=node_id,
     )
-    if not doc:
-        return None
-    doc.pop("_id", None)
-    return HypernodeInDB(**doc)
 
 
 async def list_hypernodes(
@@ -215,59 +177,50 @@ async def list_hypernodes(
     pit: Optional[datetime] = None,
     space_id: Optional[str] = None,
 ) -> Tuple[int, List[HypernodeInDB]]:
-    query: Dict[str, Any] = {"hypergraph_id": _hypergraph_ref(graph_id, space_id)}
-    if status:
-        query["status"] = status
-    if node_type:
-        query["type"] = node_type
-    if tags:
-        query["tags"] = {"$all": tags}
-    if search:
-        query["label"] = {"$regex": search, "$options": "i"}
-    if pit:
-        query["$and"] = [
-            {"$or": [{"valid_from": None}, {"valid_from": {"$lte": pit}}]},
-            {"$or": [{"valid_to": None}, {"valid_to": {"$gte": pit}}]},
-        ]
-
-    total = await col_hypernodes().count_documents(query)
-    cursor = col_hypernodes().find(query).skip(skip).limit(limit).sort("system_created", -1)
-    docs = await cursor.to_list(length=limit)
-    nodes = []
-    for doc in docs:
-        doc.pop("_id", None)
-        nodes.append(HypernodeInDB(**doc))
-    return total, nodes
+    filters = HypernodeFilters(
+        hypergraph_id=_hypergraph_ref(graph_id, space_id),
+        node_type=node_type,
+        status=status,
+        tags=tags,
+        search=search,
+        pit=pit,
+    )
+    return await get_storage().hypernodes.list(filters, skip=skip, limit=limit)
 
 
 async def update_hypernode(
     graph_id: str, node_id: str, data: HypernodeUpdate, updated_by: str,
     space_id: Optional[str] = None,
 ) -> Optional[HypernodeInDB]:
-    update_fields = {k: v for k, v in data.model_dump(exclude_none=True).items() if k != "version"}
-    update_fields["system_updated"] = now_utc()
-    update_fields["updated_by"] = updated_by
-
-    result = await col_hypernodes().find_one_and_update(
-        {"id": node_id, "hypergraph_id": _hypergraph_ref(graph_id, space_id)},
-        {"$set": update_fields, "$inc": {"version": 1}},
-        return_document=True,
+    dumped = {k: v for k, v in data.model_dump(exclude_none=True).items() if k != "version"}
+    patch = HypernodePatch(
+        label=dumped.get("label"),
+        description=dumped.get("description"),
+        type=dumped.get("type"),
+        status=dumped.get("status"),
+        tags=dumped.get("tags"),
+        attributes=dumped.get("attributes"),
+        valid_from=dumped.get("valid_from"),
+        valid_to=dumped.get("valid_to"),
+        updated_by=updated_by,
     )
-    if not result:
-        return None
-    result.pop("_id", None)
-    await invalidate_cache(graph_id)
-    return HypernodeInDB(**result)
+    result = await get_storage().hypernodes.update(
+        hypergraph_id=_hypergraph_ref(graph_id, space_id),
+        node_id=node_id,
+        patch=patch,
+    )
+    if result:
+        await invalidate_cache(graph_id)
+    return result
 
 
 async def delete_hypernode(graph_id: str, node_id: str, space_id: Optional[str] = None) -> bool:
-    result = await col_hypernodes().delete_one(
-        {"id": node_id, "hypergraph_id": _hypergraph_ref(graph_id, space_id)}
+    deleted = await get_storage().hypernodes.delete(
+        hypergraph_id=_hypergraph_ref(graph_id, space_id),
+        node_id=node_id,
     )
-    if result.deleted_count:
-        await col_hypergraphs().update_one(
-            _graph_filter(graph_id, space_id), {"$inc": {"node_count": -1}}
-        )
+    if deleted:
+        await get_storage().hypergraphs.increment_counts(graph_id, space_id, node_delta=-1)
         await invalidate_cache(graph_id)
         return True
     return False
@@ -296,26 +249,19 @@ async def create_hyperedge(
         created_by=created_by,
         version=1,
     )
-    await col_hyperedges().insert_one(doc)
-    await col_hypergraphs().update_one(
-        _graph_filter(graph_id, space_id), {"$inc": {"edge_count": 1}}
-    )
-    doc.pop("_id", None)
+    edge = await get_storage().hyperedges.create(doc)
+    await get_storage().hypergraphs.increment_counts(graph_id, space_id, edge_delta=1)
     await invalidate_cache(graph_id)
-    return HyperedgeInDB(**doc)
+    return edge
 
 
 async def get_hyperedge(
     graph_id: str, edge_id: str, space_id: Optional[str] = None
 ) -> Optional[HyperedgeInDB]:
-    doc = await col_hyperedges().find_one(
-        {"$or": [{"id": edge_id}, {"hyperkey": edge_id}],
-         "hypergraph_id": _hypergraph_ref(graph_id, space_id)}
+    return await get_storage().hyperedges.get_by_id_or_hyperkey(
+        hypergraph_id=_hypergraph_ref(graph_id, space_id),
+        edge_id=edge_id,
     )
-    if not doc:
-        return None
-    doc.pop("_id", None)
-    return HyperedgeInDB(**doc)
 
 
 async def list_hyperedges(
@@ -330,71 +276,80 @@ async def list_hyperedges(
     pit: Optional[datetime] = None,
     space_id: Optional[str] = None,
 ) -> Tuple[int, List[HyperedgeInDB]]:
-    query: Dict[str, Any] = {"hypergraph_id": _hypergraph_ref(graph_id, space_id)}
-    if status:
-        query["status"] = status
-    if relation:
-        query["relation"] = relation
-    if flavor:
-        query["flavor"] = flavor
-    if tags:
-        query["tags"] = {"$all": tags}
-    if node_id:
-        query["members.node_id"] = node_id
-    if pit:
-        query["$and"] = [
-            {"$or": [{"valid_from": None}, {"valid_from": {"$lte": pit}}]},
-            {"$or": [{"valid_to": None}, {"valid_to": {"$gte": pit}}]},
-        ]
-
-    total = await col_hyperedges().count_documents(query)
-    cursor = col_hyperedges().find(query).skip(skip).limit(limit).sort("system_created", -1)
-    docs = await cursor.to_list(length=limit)
-    edges = []
-    for doc in docs:
-        doc.pop("_id", None)
-        edges.append(HyperedgeInDB(**doc))
-    return total, edges
+    filters = HyperedgeFilters(
+        hypergraph_id=_hypergraph_ref(graph_id, space_id),
+        relation=relation,
+        flavor=flavor,
+        status=status,
+        tags=tags,
+        member_node_id=node_id,
+        pit=pit,
+    )
+    return await get_storage().hyperedges.list(filters, skip=skip, limit=limit)
 
 
 async def update_hyperedge(
     graph_id: str, edge_id: str, data: HyperedgeUpdate, updated_by: str,
     space_id: Optional[str] = None,
 ) -> Optional[HyperedgeInDB]:
-    update_fields = {k: v for k, v in data.model_dump(exclude_none=True).items() if k != "version"}
-    update_fields["system_updated"] = now_utc()
-    update_fields["updated_by"] = updated_by
-
     ref = _hypergraph_ref(graph_id, space_id)
+    dumped = {k: v for k, v in data.model_dump(exclude_none=True).items() if k != "version"}
+
     # Regenerate hyperkey if members or relation changed
     existing = await get_hyperedge(graph_id, edge_id, space_id=space_id)
     if existing:
-        relation = update_fields.get("relation", existing.relation)
-        members = update_fields.get("members", [m.model_dump() for m in existing.members])
+        relation = dumped.get("relation", existing.relation)
+        members = dumped.get("members", [m.model_dump() for m in existing.members])
         member_ids = [m["node_id"] if isinstance(m, dict) else m.node_id for m in members]
-        update_fields["hyperkey"] = generate_hyperkey(relation, member_ids, ref)
+        dumped["hyperkey"] = generate_hyperkey(relation, member_ids, ref)
 
-    result = await col_hyperedges().find_one_and_update(
-        {"$or": [{"id": edge_id}, {"hyperkey": edge_id}], "hypergraph_id": ref},
-        {"$set": update_fields, "$inc": {"version": 1}},
-        return_document=True,
+    patch = HyperedgePatch(
+        label=dumped.get("label"),
+        description=dumped.get("description"),
+        relation=dumped.get("relation"),
+        flavor=dumped.get("flavor"),
+        status=dumped.get("status"),
+        tags=dumped.get("tags"),
+        attributes=dumped.get("attributes"),
+        members=dumped.get("members"),
+        valid_from=dumped.get("valid_from"),
+        valid_to=dumped.get("valid_to"),
+        skos_broader=dumped.get("skos_broader"),
+        skos_narrower=dumped.get("skos_narrower"),
+        skos_related=dumped.get("skos_related"),
+        updated_by=updated_by,
     )
-    if not result:
-        return None
-    result.pop("_id", None)
-    await invalidate_cache(graph_id)
-    return HyperedgeInDB(**result)
+    # Pass the regenerated hyperkey as an extra field to the store.
+    extra_fields = {"hyperkey": dumped["hyperkey"]} if "hyperkey" in dumped else None
+
+    from hgai_module_storage_mongodb.stores.hyperedges import MongoHyperedgeStore
+    mongo_store = get_storage().hyperedges
+    if isinstance(mongo_store, MongoHyperedgeStore):
+        result = await mongo_store.update(
+            hypergraph_id=ref,
+            edge_id=edge_id,
+            patch=patch,
+            extra_fields=extra_fields,
+        )
+    else:
+        result = await get_storage().hyperedges.update(
+            hypergraph_id=ref,
+            edge_id=edge_id,
+            patch=patch,
+        )
+
+    if result:
+        await invalidate_cache(graph_id)
+    return result
 
 
 async def delete_hyperedge(graph_id: str, edge_id: str, space_id: Optional[str] = None) -> bool:
-    result = await col_hyperedges().delete_one(
-        {"$or": [{"id": edge_id}, {"hyperkey": edge_id}],
-         "hypergraph_id": _hypergraph_ref(graph_id, space_id)}
+    deleted = await get_storage().hyperedges.delete(
+        hypergraph_id=_hypergraph_ref(graph_id, space_id),
+        edge_id=edge_id,
     )
-    if result.deleted_count:
-        await col_hypergraphs().update_one(
-            _graph_filter(graph_id, space_id), {"$inc": {"edge_count": -1}}
-        )
+    if deleted:
+        await get_storage().hypergraphs.increment_counts(graph_id, space_id, edge_delta=-1)
         await invalidate_cache(graph_id)
         return True
     return False

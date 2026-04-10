@@ -9,7 +9,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from hgai.config import get_settings
-from hgai.db.mongodb import col_accounts
+from hgai.db.storage import get_storage
 from hgai.models.account import AccountInDB, AccountPermissions, TokenData
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -67,11 +67,10 @@ def create_access_token(username: str, roles: List[str]) -> tuple[str, int]:
 
 
 async def get_account_by_username(username: str) -> Optional[AccountInDB]:
-    doc = await col_accounts().find_one({"username": username})
-    if not doc:
+    raw = await get_storage().accounts.get_by_username(username)
+    if not raw:
         return None
-    doc.pop("_id", None)
-    return AccountInDB(**doc)
+    return AccountInDB(**raw)
 
 
 async def authenticate_account(username: str, password: str) -> Optional[AccountInDB]:
@@ -183,8 +182,7 @@ async def can_perform(
 
 async def bootstrap_admin(username: str, password: str, email: str) -> bool:
     """Create admin account if it does not exist. Returns True if created."""
-    existing = await col_accounts().find_one({"username": username})
-    if existing:
+    if await get_storage().accounts.exists(username):
         return False
 
     from hgai.models.common import now_utc
@@ -210,5 +208,5 @@ async def bootstrap_admin(username: str, password: str, email: str) -> bool:
         "description": "System administrator account",
         "attributes": {}
     }
-    await col_accounts().insert_one(doc)
+    await get_storage().accounts.create(doc)
     return True

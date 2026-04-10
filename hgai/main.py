@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 
 from hgai.config import get_settings
-from hgai.db.mongodb import connect_db, close_db
+from hgai.db.storage import init_storage, close_storage
 from hgai.core.auth import bootstrap_admin
 from hgai.api.routers import auth, hypergraphs, hypernodes, hyperedges, accounts, spaces
 
@@ -24,10 +24,14 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     logger.info(f"Starting HypergraphAI server: {settings.server_name} ({settings.server_id})")
 
-    # Connect to MongoDB
-    await connect_db()
-    logger.info(f"Connected to MongoDB: {settings.mongo_db}")
-    print(f"MongoDB database: {settings.mongo_db}")
+    # Connect to storage backend
+    await init_storage(
+        settings.storage_backend,
+        mongo_uri=settings.mongo_uri,
+        mongo_db=settings.mongo_db,
+    )
+    logger.info(f"Storage backend '{settings.storage_backend}' connected (db: {settings.mongo_db})")
+    print(f"Storage backend: {settings.storage_backend}, database: {settings.mongo_db}")
 
     # Bootstrap admin account on first run
     created = await bootstrap_admin(
@@ -65,7 +69,7 @@ async def lifespan(app: FastAPI):
     except ImportError:
         pass
 
-    await close_db()
+    await close_storage()
     logger.info("HypergraphAI server shutdown complete")
 
 

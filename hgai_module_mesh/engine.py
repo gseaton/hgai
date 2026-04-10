@@ -8,7 +8,7 @@ import httpx
 import yaml
 
 from hgai.config import get_settings
-from hgai.db.mongodb import col_hypergraphs, col_meshes
+from hgai.db.storage import get_storage
 from hgai.models.common import now_utc
 
 from .models import MeshServer
@@ -69,9 +69,12 @@ def _is_local(server: MeshServer) -> bool:
 
 
 async def _local_graph_ids() -> List[str]:
-    """Return all active instantiated graph IDs from the local MongoDB."""
-    cursor = col_hypergraphs().find({"status": "active"}, {"id": 1})
-    return [doc["id"] async for doc in cursor]
+    """Return all active instantiated graph IDs from the local storage."""
+    from hgai_module_storage.filters import HypergraphFilters
+    _, graphs = await get_storage().hypergraphs.list(
+        HypergraphFilters(status="active"), skip=0, limit=10000
+    )
+    return [g.id for g in graphs]
 
 
 def _headers(server: MeshServer) -> Dict[str, str]:
@@ -117,7 +120,7 @@ async def sync_mesh_graphs(mesh_id: str) -> Dict[str, Any]:
 
     All remote fetches run concurrently via asyncio.gather.
     """
-    doc = await col_meshes().find_one({"id": mesh_id})
+    doc = await get_storage().meshes.get(mesh_id)
     if not doc:
         raise ValueError(f"Mesh not found: {mesh_id}")
 
@@ -131,16 +134,13 @@ async def sync_mesh_graphs(mesh_id: str) -> Dict[str, Any]:
         srv_data["graphs"] = graphs
         updated_servers.append(srv_data)
 
-    await col_meshes().update_one(
-        {"id": mesh_id},
-        {"$set": {"servers": updated_servers, "system_updated": now_utc()}},
-    )
+    await get_storage().meshes.update_servers(mesh_id, updated_servers)
     return {"mesh_id": mesh_id, "servers_synced": len(updated_servers)}
 
 
 async def ping_mesh(mesh_id: str) -> List[Dict[str, Any]]:
     """Health-check all servers in a mesh concurrently. Returns a status list."""
-    doc = await col_meshes().find_one({"id": mesh_id})
+    doc = await get_storage().meshes.get(mesh_id)
     if not doc:
         raise ValueError(f"Mesh not found: {mesh_id}")
 
@@ -233,11 +233,11 @@ async def _graphs_for_server_scoped(
     """Return graph IDs for a server, optionally scoped to a space."""
     if space_id:
         if _is_local(server):
-            from hgai.db.mongodb import col_hypergraphs as _col
-            cursor = _col().find(
-                {"status": "active", "space_id": space_id}, {"id": 1}
+            from hgai_module_storage.filters import HypergraphFilters
+            _, graphs = await get_storage().hypergraphs.list(
+                HypergraphFilters(status="active", space_id=space_id), skip=0, limit=10000
             )
-            return [doc["id"] async for doc in cursor]
+            return [g.id for g in graphs]
         return await fetch_remote_graphs(server, space_id=space_id)
     return await _graphs_for_server(server)
 
@@ -275,7 +275,7 @@ async def resolve_dot_refs(
     # Fetch all unique mesh docs concurrently
     unique_mesh_ids = list({p[1][0] for p in parsed_refs})
     mesh_docs = await asyncio.gather(
-        *[col_meshes().find_one({"id": mid}) for mid in unique_mesh_ids]
+        *[get_storage().meshes.get(mid) for mid in unique_mesh_ids]
     )
     mesh_map: Dict[str, Any] = {
         mid: doc for mid, doc in zip(unique_mesh_ids, mesh_docs) if doc
@@ -367,7 +367,7 @@ async def execute_dot_refs(
 
 async def federated_shql(mesh_id: str, shql_text: str, use_cache: bool = True) -> Dict[str, Any]:
     """Fan out an SHQL query to all servers in a mesh concurrently and merge results."""
-    doc = await col_meshes().find_one({"id": mesh_id})
+    doc = await get_storage().meshes.get(mesh_id)
     if not doc:
         raise ValueError(f"Mesh not found: {mesh_id}")
 
@@ -414,7 +414,7 @@ async def proxy_request(
     params: Dict[str, str] = None,
 ) -> Dict[str, Any]:
     """Forward a request to a specific server in a mesh and return the response."""
-    doc = await col_meshes().find_one({"id": mesh_id})
+    doc = await get_storage().meshes.get(mesh_id)
     if not doc:
         raise ValueError(f"Mesh not found: {mesh_id}")
 
@@ -444,7 +444,7 @@ async def proxy_request(
 
 async def federated_hql(mesh_id: str, hql_text: str, use_cache: bool = True) -> Dict[str, Any]:
     """Fan out an HQL query to all servers in a mesh concurrently and merge results."""
-    doc = await col_meshes().find_one({"id": mesh_id})
+    doc = await get_storage().meshes.get(mesh_id)
     if not doc:
         raise ValueError(f"Mesh not found: {mesh_id}")
 

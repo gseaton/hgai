@@ -5,10 +5,11 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from hgai.core.auth import hash_password, require_admin
-from hgai.db.mongodb import col_accounts, col_spaces
+from hgai.db.storage import get_storage
 from hgai.models.account import AccountCreate, AccountInDB, AccountResponse, AccountUpdate
 from hgai.models.common import PaginatedResponse, now_utc
 from hgai.models.space import SpaceRole, UpdateMemberRoleRequest
+from hgai_module_storage.filters import AccountFilters
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -20,15 +21,10 @@ async def list_accounts(
     limit: int = Query(default=50, ge=1, le=200),
     _admin=Depends(require_admin),
 ):
-    query = {}
-    if status:
-        query["status"] = status
-    total = await col_accounts().count_documents(query)
-    cursor = col_accounts().find(query).skip(skip).limit(limit).sort("system_created", -1)
-    docs = await cursor.to_list(length=limit)
+    filters = AccountFilters(status=status)
+    total, docs = await get_storage().accounts.list(filters, skip=skip, limit=limit)
     accounts = []
     for doc in docs:
-        doc.pop("_id", None)
         doc.pop("password_hash", None)
         accounts.append(doc)
     return PaginatedResponse(total=total, skip=skip, limit=limit, items=accounts)
@@ -39,8 +35,7 @@ async def create_account(
     data: AccountCreate,
     admin=Depends(require_admin),
 ):
-    existing = await col_accounts().find_one({"username": data.username})
-    if existing:
+    if await get_storage().accounts.exists(data.username):
         raise HTTPException(status_code=409, detail=f"Account '{data.username}' already exists")
 
     now = now_utc()
@@ -53,18 +48,16 @@ async def create_account(
         "version": 1,
         "last_login": None,
     }
-    await col_accounts().insert_one(doc)
-    doc.pop("_id", None)
-    doc.pop("password_hash", None)
-    return AccountResponse(**doc)
+    result = await get_storage().accounts.create(doc)
+    result.pop("password_hash", None)
+    return AccountResponse(**result)
 
 
 @router.get("/{username}", response_model=AccountResponse)
 async def get_account(username: str, _admin=Depends(require_admin)):
-    doc = await col_accounts().find_one({"username": username})
+    doc = await get_storage().accounts.get_by_username(username)
     if not doc:
         raise HTTPException(status_code=404, detail=f"Account '{username}' not found")
-    doc.pop("_id", None)
     doc.pop("password_hash", None)
     return AccountResponse(**doc)
 
@@ -81,14 +74,9 @@ async def update_account(
     update_fields["system_updated"] = now_utc()
     update_fields["updated_by"] = admin.username
 
-    result = await col_accounts().find_one_and_update(
-        {"username": username},
-        {"$set": update_fields, "$inc": {"version": 1}},
-        return_document=True,
-    )
+    result = await get_storage().accounts.update(username, update_fields)
     if not result:
         raise HTTPException(status_code=404, detail=f"Account '{username}' not found")
-    result.pop("_id", None)
     result.pop("password_hash", None)
     return AccountResponse(**result)
 
@@ -100,14 +88,11 @@ async def delete_account(
 ):
     if username == admin.username:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
-    result = await col_accounts().delete_one({"username": username})
-    if not result.deleted_count:
+    deleted = await get_storage().accounts.delete(username)
+    if not deleted:
         raise HTTPException(status_code=404, detail=f"Account '{username}' not found")
     # Remove deleted user from all space member arrays
-    await col_spaces().update_many(
-        {"members.username": username},
-        {"$pull": {"members": {"username": username}}},
-    )
+    await get_storage().spaces.remove_user_from_all_spaces(username)
 
 
 @router.get("/{username}/spaces", response_model=PaginatedResponse)
@@ -118,8 +103,7 @@ async def list_account_spaces(
     _admin=Depends(require_admin),
 ):
     """List all spaces the account is a member of."""
-    doc = await col_accounts().find_one({"username": username}, {"_id": 0, "username": 1})
-    if not doc:
+    if not await get_storage().accounts.exists(username):
         raise HTTPException(status_code=404, detail=f"Account '{username}' not found")
     from hgai.core.space_engine import list_spaces
     total, spaces = await list_spaces(username=username, skip=skip, limit=limit)
@@ -137,7 +121,7 @@ async def assign_account_to_space(
     _admin=Depends(require_admin),
 ):
     """Assign an account to a space with the given role (admin shortcut)."""
-    if not await col_accounts().find_one({"username": username}, {"_id": 1}):
+    if not await get_storage().accounts.exists(username):
         raise HTTPException(status_code=404, detail=f"Account '{username}' not found")
     from hgai.core.space_engine import add_member, get_space
     if not await get_space(space_id):

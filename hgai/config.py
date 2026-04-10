@@ -16,6 +16,12 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # Storage backend
+    storage_backend: str = Field(
+        default="mongodb",
+        description="Storage backend name (e.g. 'mongodb'). Env: HGAI_STORAGE_BACKEND",
+    )
+
     # MongoDB
     mongo_uri: str = Field(
         default="mongodb://localhost:27017", description="MongoDB connection URI"

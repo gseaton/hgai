@@ -435,10 +435,22 @@ hgai/
 ├── hgai/                        # Core Python package
 │   ├── main.py                  # FastAPI app, lifespan, module mounts
 │   ├── config.py                # pydantic-settings (HGAI_ prefix)
-│   ├── db/mongodb.py            # motor async connection + collection accessors
+│   ├── db/storage.py            # storage backend accessor (get_storage, init_storage)
 │   ├── models/                  # Pydantic models: hypernode, hyperedge, hypergraph, account
 │   ├── core/                    # Core engine: CRUD, inference, auth, cache
 │   └── api/routers/             # auth, hypergraphs, hypernodes, hyperedges, accounts
+│
+├── hgai_module_storage/         # Storage abstraction — backend ABCs and filter types
+│   ├── backend.py               # StorageBackend ABC + per-entity Store ABCs
+│   ├── filters.py               # Typed filter/patch dataclasses
+│   ├── exceptions.py            # StorageError, NotFoundError, ConflictError
+│   └── registry.py              # Backend registration and discovery
+│
+├── hgai_module_storage_mongodb/ # MongoDB storage backend (default)
+│   ├── backend.py               # MongoStorageBackend(StorageBackend)
+│   ├── connection.py            # AsyncIOMotorClient lifecycle
+│   ├── indexes.py               # All collection index definitions
+│   └── stores/                  # Per-entity store implementations
 │
 ├── hgai_module_hql/             # HQL — Hypergraph Query Language module
 │   ├── engine.py                # HQL parser + executor (YAML, PIT, multi-graph, aggregation)
@@ -468,6 +480,34 @@ hgai/
 ├── shell.sh                     # Start the hgai interactive shell
 └── docs/                        # Documentation
 ```
+
+### Storage Backends
+
+HypergraphAI uses a pluggable storage backend system. The default backend is MongoDB, implemented in `hgai_module_storage_mongodb`. All storage access goes through the abstract interface in `hgai_module_storage` — no module outside the storage modules imports MongoDB or Motor directly.
+
+**Built-in backends:**
+
+| Backend name | Module | Description |
+|---|---|---|
+| `mongodb` | `hgai_module_storage_mongodb` | Default. MongoDB 7+ via Motor async driver. |
+
+**Selecting a backend:**
+```bash
+HGAI_STORAGE_BACKEND=mongodb   # (default)
+```
+
+**Implementing a custom backend:**
+
+Create a Python package that:
+1. Defines a class inheriting from `hgai_module_storage.backend.StorageBackend`
+2. Implements all per-entity Store ABCs (`HypergraphStore`, `HypernodeStore`, etc.)
+3. Calls `register_backend("myname", MyBackend)` from `hgai_module_storage.registry` on import
+
+Then set `HGAI_STORAGE_BACKEND=myname` and ensure your module is imported at startup.
+
+See `hgai_module_storage_mongodb/` for the reference implementation and `hgai_module_storage/backend.py` for the full interface.
+
+---
 
 ### Docker (recommended)
 ```bash
@@ -565,8 +605,9 @@ All configuration is via environment variables (or `.env` file):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `HGAI_MONGO_URI` | `mongodb://localhost:27017` | MongoDB connection URI |
-| `HGAI_MONGO_DB` | `hgai` | MongoDB database name |
+| `HGAI_STORAGE_BACKEND` | `mongodb` | Storage backend name (`mongodb` is the only built-in backend) |
+| `HGAI_MONGO_URI` | `mongodb://localhost:27017` | MongoDB connection URI (used by `mongodb` backend) |
+| `HGAI_MONGO_DB` | `hgai` | MongoDB database name (used by `mongodb` backend) |
 | `HGAI_SECRET_KEY` | *(required)* | JWT signing secret |
 | `HGAI_TOKEN_EXPIRE_MINUTES` | `480` | JWT token lifetime |
 | `HGAI_PRIMARY_API_KEY` | *(none)* | Primary API key for machine-to-machine auth |
@@ -2063,7 +2104,7 @@ docker-compose exec mongo mongorestore \
 
 ### MongoDB Indexes
 
-Indexes are created automatically at server startup via `ensure_indexes()` in `hgai/db/mongodb.py`. The call is idempotent — MongoDB skips indexes that already exist with the same name and definition.
+Indexes are created automatically at server startup via `ensure_indexes()` in `hgai_module_storage_mongodb/indexes.py`, called during `StorageBackend.ensure_schema()`. The call is idempotent — MongoDB skips indexes that already exist with the same name and definition.
 
 #### hypergraphs
 

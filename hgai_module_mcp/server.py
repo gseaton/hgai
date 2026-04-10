@@ -477,19 +477,19 @@ async def hgai_query_validate(query_yaml: str) -> str:
 @mcp.tool()
 async def hgai_mesh_list() -> str:
     """List all HypergraphAI meshes."""
-    from hgai.db.mongodb import col_meshes
-    cursor = col_meshes().find({}).sort("system_created", -1).limit(200)
-    docs = []
-    async for doc in cursor:
-        doc.pop("_id", None)
-        docs.append({
+    from hgai.db.storage import get_storage
+    from hgai_module_storage.filters import MeshFilters
+    _, docs = await get_storage().meshes.list(MeshFilters(), skip=0, limit=200)
+    result = []
+    for doc in docs:
+        result.append({
             "id": doc.get("id"),
             "label": doc.get("label"),
             "description": doc.get("description"),
             "server_count": len(doc.get("servers", [])),
             "status": doc.get("status"),
         })
-    return json.dumps({"total": len(docs), "meshes": docs}, indent=2, default=str)
+    return json.dumps({"total": len(result), "meshes": result}, indent=2, default=str)
 
 
 @mcp.tool()
@@ -499,11 +499,10 @@ async def hgai_mesh_get(mesh_id: str) -> str:
     Args:
         mesh_id: The mesh identifier
     """
-    from hgai.db.mongodb import col_meshes
-    doc = await col_meshes().find_one({"id": mesh_id})
+    from hgai.db.storage import get_storage
+    doc = await get_storage().meshes.get(mesh_id)
     if not doc:
         return json.dumps({"error": f"Mesh '{mesh_id}' not found"})
-    doc.pop("_id", None)
     return json.dumps(doc, indent=2, default=str)
 
 

@@ -121,10 +121,14 @@ async def test_federated_hql_merges_results():
         r.json.return_value = {"items": items}
         return r
 
-    with patch("hgai_module_mesh.engine.col_meshes") as mock_col, \
-         patch("hgai_module_mesh.engine.httpx.AsyncClient") as mock_client_cls:
+    mock_mesh_store = MagicMock()
+    mock_mesh_store.get = AsyncMock(return_value=mesh_doc)
 
-        mock_col.return_value.find_one = AsyncMock(return_value=mesh_doc)
+    mock_storage = MagicMock()
+    mock_storage.meshes = mock_mesh_store
+
+    with patch("hgai_module_mesh.engine.get_storage", return_value=mock_storage), \
+         patch("hgai_module_mesh.engine.httpx.AsyncClient") as mock_client_cls:
 
         responses = [
             make_mock_response([{"id": "node-1"}]),
@@ -154,15 +158,21 @@ async def test_federated_hql_merges_results():
 
 @pytest.mark.asyncio
 async def test_federated_hql_mesh_not_found():
-    with patch("hgai_module_mesh.engine.col_meshes") as mock_col:
-        mock_col.return_value.find_one = AsyncMock(return_value=None)
+    mock_mesh_store = MagicMock()
+    mock_mesh_store.get = AsyncMock(return_value=None)
+    mock_storage = MagicMock()
+    mock_storage.meshes = mock_mesh_store
+    with patch("hgai_module_mesh.engine.get_storage", return_value=mock_storage):
         with pytest.raises(ValueError, match="Mesh not found"):
             await federated_hql("nonexistent", "hql:\n  from: g1\n")
 
 
 @pytest.mark.asyncio
 async def test_sync_mesh_graphs_not_found():
-    with patch("hgai_module_mesh.engine.col_meshes") as mock_col:
-        mock_col.return_value.find_one = AsyncMock(return_value=None)
+    mock_mesh_store = MagicMock()
+    mock_mesh_store.get = AsyncMock(return_value=None)
+    mock_storage = MagicMock()
+    mock_storage.meshes = mock_mesh_store
+    with patch("hgai_module_mesh.engine.get_storage", return_value=mock_storage):
         with pytest.raises(ValueError, match="Mesh not found"):
             await sync_mesh_graphs("nonexistent")

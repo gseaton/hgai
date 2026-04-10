@@ -162,24 +162,56 @@ async def mymodule_find_connected_components(graph_id: str) -> str:
 
 ## Accessing the Database
 
-Use the HypergraphAI database layer for MongoDB access:
+HypergraphAI uses a pluggable storage backend system. Modules should access data through the storage abstraction layer rather than any backend-specific driver directly.
+
+### Using the Storage API
 
 ```python
-from hgai.db.mongodb import get_db, col_hypernodes, col_hyperedges
+from hgai.db.storage import get_storage
+from hgai_module_storage.filters import HypernodeFilters, HyperedgeFilters
 
-# Use built-in collections
+# List nodes of a specific type
 async def my_operation(graph_id: str):
-    nodes = await col_hypernodes().find(
-        {"hypergraph_id": graph_id, "type": "Person"}
-    ).to_list(length=100)
+    total, nodes = await get_storage().hypernodes.list(
+        HypernodeFilters(hypergraph_id=graph_id, node_type="Person"),
+        skip=0,
+        limit=100,
+    )
     return nodes
 
-# Access custom collections
+# Get a single node
+async def get_node(graph_id: str, node_id: str):
+    return await get_storage().hypernodes.get(
+        hypergraph_id=graph_id, node_id=node_id
+    )
+```
+
+### Available Stores
+
+| Store | Access | Description |
+|---|---|---|
+| `hypergraphs` | `get_storage().hypergraphs` | Hypergraph CRUD, stats, space assignment |
+| `hypernodes` | `get_storage().hypernodes` | Hypernode CRUD and search |
+| `hyperedges` | `get_storage().hyperedges` | Hyperedge CRUD and search |
+| `accounts` | `get_storage().accounts` | User/agent account management |
+| `spaces` | `get_storage().spaces` | Multi-tenant space management |
+| `meshes` | `get_storage().meshes` | Mesh federation registry |
+| `cache` | `get_storage().cache` | Query result cache |
+
+### Custom Module Storage
+
+If your module needs its own storage, use the active backend's underlying connection. For the MongoDB backend:
+
+```python
+from hgai_module_storage_mongodb.connection import get_db
+
 async def my_custom_data():
     db = get_db()
     my_collection = db["mymodule_data"]
     await my_collection.insert_one({"key": "value"})
 ```
+
+Note: accessing the backend connection directly couples your module to that backend. Prefer using the core engine functions or storage stores where possible.
 
 ---
 
@@ -262,7 +294,7 @@ To register your module with the HypergraphAI server, add it to `hgai/main.py`:
 try:
     from hgai_module_mymodule.module import MyModule
     module = MyModule()
-    await module.startup(app, get_db(), get_settings())
+    await module.startup(app, get_settings())
 except ImportError:
     pass  # Module not installed
 ```
@@ -277,7 +309,7 @@ HGAI_MODULES=mymodule,anothermodule
 ## Security Considerations
 
 1. **Always use authentication** — import `get_current_account` or `require_admin` from `hgai.core.auth`
-2. **Never expose raw MongoDB access** — use the engine layer
+2. **Never expose raw backend access** — use `get_storage()` stores or the engine layer
 3. **Validate all inputs** — use Pydantic models for all API request bodies
 4. **Respect RBAC** — check `can_access_graph()` and `can_perform()` before operations
 5. **Sanitize outputs** — never expose password hashes or internal system fields
