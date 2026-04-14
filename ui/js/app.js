@@ -971,6 +971,10 @@ const HQL_EXAMPLES = [
     hql: `hql:\n  from: hello-world\n  match:\n    type: hyperedge\n    nodes:\n      - moe-howard\n  return:\n    - id\n    - relation\n    - members`
   },
   {
+    title: 'PIT — group members via rel:member hyperedges',
+    hql: `hql:\n  from:\n    - hg-alpha\n  at: "2026-01-01T00:00:00"\n  match:\n    type: hyperedge\n    relation: "rel:member"\n  where:\n    members.node_id: "group:three-stooges"\n  return:\n    - id\n    - relation\n    - members`
+  },
+  {
     title: 'Find nodes by attribute value',
     hql: `hql:\n  from: hello-world\n  match:\n    type: hypernode\n  where:\n    attributes.last_name: Howard\n  return:\n    - "*"`
   },
@@ -1122,6 +1126,10 @@ const SHQL_EXAMPLES = [
   {
     title: 'Numeric attribute filter',
     shql: `shql:\n  from: hello-world\n  where:\n    - node: ?n\n    - filter:\n        ">=":\n          - ?n.attributes.score\n          - 90\n  select:\n    - ?n.id\n    - ?n.label\n    - ?n.attributes.score`
+  },
+  {
+    title: 'PIT — group members via rel:member hyperedges',
+    shql: `shql:\n  from:\n    - hg-alpha\n  at: "2026-01-01T00:00:00"\n  where:\n    - edge: "?membership"\n      relation: "rel:member"\n      members:\n        - bind: "?group"\n          id: "group:three-stooges"\n        - bind: "?member"\n    - node: "?member"\n      bind: "?member_node"\n  select:\n    - "?member_node.id"\n    - "?member_node.label"\n    - "?member_node.type"\n    - "?member_node.attributes"`
   },
   {
     title: 'Find nodes by attribute value',

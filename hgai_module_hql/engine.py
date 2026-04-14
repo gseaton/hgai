@@ -110,8 +110,10 @@ def _build_node_search_filters(
             tags = value if isinstance(value, list) else [value]
         elif key == "status":
             pass  # already handled above
+        elif key.startswith("attributes."):
+            # strip "attributes." prefix — the store adds it when building the query
+            attributes[key[len("attributes."):]] = value
         else:
-            # dot-delimited attribute paths go into attributes filter
             attributes[key] = value
 
     return HypernodeSearchFilters(
@@ -155,6 +157,9 @@ def _build_edge_search_filters(
             if isinstance(value, dict):
                 for mk, mv in value.items():
                     extra_filters[f"members.{mk}"] = mv
+        elif key.startswith("attributes."):
+            # strip "attributes." prefix — the store adds it when building the query
+            attributes[key[len("attributes."):]] = value
         else:
             extra_filters[key] = value
 

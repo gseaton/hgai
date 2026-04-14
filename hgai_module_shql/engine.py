@@ -80,6 +80,17 @@ def _resolve_binding_path(expr: str, binding: BindingSet) -> Any:
 
 # ── Member pattern matching ───────────────────────────────────────────────────
 
+def _member_pat_to_node_pat(pat: Any) -> Dict[str, Any]:
+    """Normalise a raw member pattern to a flat node-pattern dict."""
+    if isinstance(pat, str) and _is_var(pat):
+        return {"bind": pat}
+    if isinstance(pat, dict) and "node" in pat:
+        return pat["node"] if isinstance(pat["node"], dict) else {}
+    if isinstance(pat, dict):
+        return pat
+    return {}
+
+
 def _match_members(
     edge_members: List[Dict],
     member_patterns: List[Any],
@@ -99,14 +110,8 @@ def _match_members(
     used: Set[int] = set()
 
     for pat in member_patterns:
-        # Normalise to a flat node-pattern dict
-        if isinstance(pat, str) and _is_var(pat):
-            node_pat: Dict[str, Any] = {"bind": pat}
-        elif isinstance(pat, dict) and "node" in pat:
-            node_pat = pat["node"] if isinstance(pat["node"], dict) else {}
-        elif isinstance(pat, dict):
-            node_pat = pat
-        else:
+        node_pat: Dict[str, Any] = _member_pat_to_node_pat(pat)
+        if not node_pat and not isinstance(pat, (str, dict)):
             return None
 
         bind_var = node_pat.get("bind")
@@ -149,6 +154,93 @@ def _match_members(
             new_binding[bind_var] = matched_node_id
 
     return new_binding
+
+
+def _match_members_expand(
+    edge_members: List[Dict],
+    member_patterns: List[Any],
+    binding: BindingSet,
+) -> List[BindingSet]:
+    """Like _match_members but expands wildcard (id-unconstrained) member patterns
+    over ALL matching edge members, producing one BindingSet per member.
+
+    Anchor patterns (those with an explicit ``id``) are matched first to determine
+    which member slots are spoken for.  Each remaining member is then yielded as a
+    separate binding for the single wildcard pattern.
+
+    Falls back to the single-result ``_match_members`` behaviour when there are
+    multiple wildcard patterns (not yet expanded) or no member patterns at all.
+    """
+    if not member_patterns:
+        return [dict(binding)]
+
+    # Classify patterns: anchor (has a required id) vs wildcard (no id constraint)
+    anchor_pats: List[tuple] = []   # (raw_pat, resolved_req_id)
+    wildcard_pats: List[Any] = []
+
+    for pat in member_patterns:
+        np = _member_pat_to_node_pat(pat)
+        req_id = np.get("id")
+        if req_id and _is_var(str(req_id)):
+            resolved = binding.get(req_id)
+            req_id = resolved.get("id") if isinstance(resolved, dict) else resolved
+        if req_id:
+            anchor_pats.append((pat, req_id))
+        else:
+            wildcard_pats.append(pat)
+
+    # No wildcards — use original single-result matcher unchanged
+    if not wildcard_pats:
+        result = _match_members(edge_members, member_patterns, binding)
+        return [result] if result is not None else []
+
+    # Match anchor patterns first to pin down used member slots
+    used_indices: Set[int] = set()
+    anchor_binding = dict(binding)
+
+    for pat, req_id in anchor_pats:
+        np = _member_pat_to_node_pat(pat)
+        bind_var = np.get("bind")
+        matched_idx = None
+        for i, member in enumerate(edge_members):
+            if i in used_indices:
+                continue
+            mid = member.get("node_id") if isinstance(member, dict) else member
+            if mid == req_id:
+                matched_idx = i
+                break
+        if matched_idx is None:
+            return []  # anchor not satisfied → edge doesn't match at all
+        used_indices.add(matched_idx)
+        matched_id = (
+            edge_members[matched_idx].get("node_id")
+            if isinstance(edge_members[matched_idx], dict)
+            else edge_members[matched_idx]
+        )
+        if bind_var and bind_var not in anchor_binding:
+            anchor_binding[bind_var] = matched_id
+
+    # Collect remaining members available for wildcard patterns
+    remaining = [
+        (i, m) for i, m in enumerate(edge_members) if i not in used_indices
+    ]
+
+    # Single wildcard: yield one binding per remaining member
+    if len(wildcard_pats) == 1:
+        np = _member_pat_to_node_pat(wildcard_pats[0])
+        bind_var = np.get("bind")
+        results: List[BindingSet] = []
+        for _, member in remaining:
+            mid = member.get("node_id") if isinstance(member, dict) else member
+            b = dict(anchor_binding)
+            if bind_var:
+                b[bind_var] = mid
+            results.append(b)
+        return results
+
+    # Multiple wildcards: fall back to original sequential first-match behaviour
+    result = _match_members(edge_members, member_patterns, binding)
+    return [result] if result is not None else []
 
 
 # ── Pattern evaluators ────────────────────────────────────────────────────────
@@ -284,16 +376,16 @@ async def _eval_edge_pattern(
                 doc.pop(_f, None)
             edge_members = doc.get("members", [])
 
-            if member_patterns:
-                new_binding = _match_members(edge_members, member_patterns, binding)
-                if new_binding is None:
-                    continue
-            else:
-                new_binding = dict(binding)
+            expanded = (
+                _match_members_expand(edge_members, member_patterns, binding)
+                if member_patterns
+                else [dict(binding)]
+            )
 
-            if bind_var:
-                new_binding[bind_var] = doc
-            result.append(new_binding)
+            for new_binding in expanded:
+                if bind_var:
+                    new_binding[bind_var] = doc
+                result.append(new_binding)
 
     return result
 
@@ -617,7 +709,7 @@ def _filter_dict_to_str(expr: Any) -> str:
         return f"BOUND({args if isinstance(args, str) else args[0]})"
 
     # Comparison operators: {">=": [left, right]} or {"IN": [left, [...]]}
-    sym_map = {"EQ": "=", "NEQ": "!=", "LT": "<", "GT": ">", "LTE": "<=", "GTE": ">="}
+    sym_map = {"EQ": "=", "==": "=", "NEQ": "!=", "!=": "!=", "LT": "<", "GT": ">", "LTE": "<=", "GTE": ">="}
     sym = sym_map.get(op_upper, op)  # use raw op for symbols like >=, <=, etc.
     if isinstance(args, list) and len(args) == 2:
         left, right = args[0], args[1]
@@ -628,11 +720,24 @@ def _filter_dict_to_str(expr: Any) -> str:
 
 
 def _normalize_node_pattern(pattern: Dict) -> Dict:
-    """Flatten ``{"node": "?var", "node_type": "X", ...}`` to ``{"bind": "?var", "type": "X", ...}``."""
+    """Flatten ``{"node": "?var", "node_type": "X", ...}`` to ``{"bind": "?var", "type": "X", ...}``.
+
+    When an explicit ``bind`` key is also present alongside ``node: "?var"``, the
+    ``node`` value is treated as an id reference (variable or literal) to look up,
+    and ``bind`` names the variable that receives the full node document.  This
+    allows patterns like::
+
+        - node: "?member"      # ?member holds a node_id string from a prior edge pattern
+          bind: "?member_node" # fetch the full doc and bind it here
+    """
     node_val = pattern["node"]
     if isinstance(node_val, str):
         node_pat = {k: v for k, v in pattern.items() if k != "node"}
-        node_pat["bind"] = node_val
+        if "bind" in node_pat:
+            # explicit bind present: node_val is an id reference, not the bind target
+            node_pat.setdefault("id", node_val)
+        else:
+            node_pat["bind"] = node_val
     elif isinstance(node_val, dict):
         node_pat = dict(node_val)
     else:
