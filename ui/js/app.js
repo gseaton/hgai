@@ -1117,7 +1117,7 @@ const SHQL_EXAMPLES = [
   },
   {
     title: 'Union of two patterns',
-    shql: `shql:\n  from: hello-world\n  where:\n    - union:\n        - - node: ?item\n            node_type: Person\n        - - node: ?item\n            node_type: Character\n  select:\n    - ?item.id\n    - ?item.label\n    - ?item.node_type`
+    shql: `shql:\n  from: hello-world\n  where:\n    - union:\n        - - node: ?item\n            node_type: Person\n        - - node: ?item\n            node_type: Character\n  select:\n    - ?item.id\n    - ?item.label\n    - ?item.type`
   },
   {
     title: 'Multi-graph with ORDER BY and LIMIT',
