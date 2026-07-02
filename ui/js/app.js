@@ -361,7 +361,7 @@ async function loadGraphs() {
       const sid = g.space_id ? `'${g.space_id}'` : 'null';
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td><code>${g.id}</code></td>
+        <td class="table-id-link" onclick="editGraph('${g.id}', ${sid})"><code>${g.id}</code></td>
         <td>${g.label}</td>
         <td><span class="badge bg-light text-dark">${g.type}</span></td>
         <td>${spaceLabel}</td>
@@ -520,7 +520,7 @@ async function loadNodes() {
       resp.items.forEach(n => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td><code class="text-truncate-150" title="${n.id}">${n.id}</code></td>
+          <td class="table-id-link" onclick="editNode('${n.id}')"><code class="text-truncate-150" title="${n.id}">${n.id}</code></td>
           <td>${n.label||'—'}</td>
           <td><span class="badge bg-light text-dark">${n.type||'—'}</span></td>
           <td>${statusBadge(n.status)}</td>
@@ -732,7 +732,7 @@ async function loadEdges() {
         const membersSummary = (e.members || []).map(m => m.node_id).join(' · ') || '—';
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td><code class="text-truncate-150" title="${e.id||e.hyperkey}">${truncate(e.id||e.hyperkey, 24)}</code></td>
+          <td class="table-id-link" onclick="editEdge('${e.id||e.hyperkey}')"><code class="text-truncate-150" title="${e.id||e.hyperkey}">${truncate(e.id||e.hyperkey, 24)}</code></td>
           <td><strong>${e.relation||'—'}</strong></td>
           <td><span class="badge badge-flavor">${e.flavor||'—'}</span></td>
           <td><small class="text-muted" title="${membersSummary}">${truncate(membersSummary, 60)}</small></td>

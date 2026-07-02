@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(source .venv/bin/activate)",
+      "Bash(find /home/gseaton/projects/hgai/hgai -name *.venv -o -name venv -o -name .venv)",
+      "Bash(.venv/bin/pytest tests/test_query.py -v 2>&1)",
+      "Bash(.venv/bin/pip install:*)",
+      "Bash(PYTHONPATH=/home/gseaton/projects/hgai/hgai .venv/bin/python -c \"from hgai_module_hql.engine import parse_hql, validate_hql, HQLError; print\\('import OK'\\)\")",
+      "Bash(PYTHONPATH=. .venv/bin/pytest tests/test_query.py -v 2>&1)",
+      "Bash(PYTHONPATH=. .venv/bin/python -c \"\nimport argparse, os\nfrom hgai.config import get_settings\n\nsettings = get_settings\\(\\)\n\nparser = argparse.ArgumentParser\\(\\)\nparser.add_argument\\('--port', type=int, default=None\\)\nargs = parser.parse_args\\([]\\)  # simulate no args\n\nport = \\(\n    args.port\n    or int\\(os.environ.get\\('DEFAULT_HGAI_PORT', 0\\)\\)\n    or settings.port\n\\)\nprint\\(f'args.port={args.port}'\\)\nprint\\(f'DEFAULT_HGAI_PORT={os.environ.get\\(\\\\\"DEFAULT_HGAI_PORT\\\\\", \\\\\"\\(not set\\)\\\\\"\\)}'\\)\nprint\\(f'settings.port={settings.port}'\\)\nprint\\(f'resolved port={port}'\\)\n\")",
+      "Bash(PYTHONPATH=. .venv/bin/pytest tests/test_mesh.py tests/test_query.py tests/test_engine.py -v 2>&1)",
+      "Bash(PYTHONPATH=. .venv/bin/pytest tests/ -v 2>&1)",
+      "Bash(PYTHONPATH=. .venv/bin/python -c \"from hgai_module_mcp.server import hgai_query_execute, hgai_query_validate; print\\('imports OK'\\)\" 2>&1)",
+      "Bash(python3:*)",
+      "Bash(.venv/bin/python -c \"\nfrom hgai.config import get_settings\nfrom hgai.core.auth import get_current_account, _resolve_api_key, _api_key_account\nfrom hgai_module_mcp.module import MCPModule, _ApiKeyMiddleware\nprint\\('config primary_api_key:', get_settings\\(\\).primary_api_key\\)\nprint\\('config secondary_api_key:', get_settings\\(\\).secondary_api_key\\)\nprint\\('_resolve_api_key\\(empty\\):', _resolve_api_key\\(''\\)\\)\nprint\\('_resolve_api_key\\(random\\):', _resolve_api_key\\('not-a-key'\\)\\)\nacct = _api_key_account\\(\\)\nprint\\('api_key_account roles:', acct.roles\\)\nprint\\('OK'\\)\n\")",
+      "Bash(.venv/bin/python -c \"from hgai_module_mesh.engine import federated_hql, federated_shql, _rewrite_from; print\\(_rewrite_from\\('hql:\\\\n  from: alpha-bravo-mesh\\\\n  match:\\\\n    type: hypernode\\\\n', 'hql', ['graph-1', 'graph-2']\\)\\); print\\('OK'\\)\")",
+      "Bash(.venv/bin/python -c \"from hgai_module_hql.engine import execute_hql, parse_hql; hql = parse_hql\\('hql:\\\\n  from: g\\\\n  distinct: true\\\\n  match:\\\\n    type: hypernode\\\\n'\\); print\\('distinct key:', hql.get\\('distinct'\\)\\); print\\('OK'\\)\")",
+      "Bash(git stash:*)",
+      "Bash(node:*)"
+    ]
+  }
+}

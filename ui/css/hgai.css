@@ -230,6 +230,20 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 .json-bool    { color: #ff79c6; }   /* pink    — true / false  */
 .json-null    { color: #ff79c6; }   /* pink    — null          */
 
+/* ── Clickable ID cells in list tables ─────────────────────────────────────── */
+.table-id-link { cursor: pointer; }
+.table-id-link code {
+  color: var(--hgai-primary);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  transition: color 0.12s;
+}
+.table-id-link:hover code {
+  color: var(--hgai-primary-dark);
+  text-decoration-style: solid;
+}
+
 /* ── Misc ──────────────────────────────────────────────────────────────────── */
 .font-monospace { font-family: 'Fira Code', 'Cascadia Code', 'Courier New', monospace; }
 .cursor-pointer { cursor: pointer; }
@@ -251,3 +265,140 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
   #sidebar.open { transform: translateX(0); }
   :root { --hgai-sidebar-width: 240px; }
 }
+
+/* ── Modal Global ──────────────────────────────────────────────────────────── */
+.modal-content {
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.18);
+  overflow: hidden;
+}
+
+/* ── Hypernode Editor Modal ────────────────────────────────────────────────── */
+.node-modal-header {
+  padding: 18px 24px;
+  background: linear-gradient(160deg, #f0fdf4 0%, #ffffff 65%);
+  border-bottom: 1px solid #d1fae5;
+}
+
+.modal-entity-badge {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.05rem;
+  flex-shrink: 0;
+}
+.modal-entity-badge-node {
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(5,150,105,0.28);
+}
+
+.modal-entity-subtitle {
+  font-size: 0.76rem;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+#modal-node .modal-body { padding: 0; }
+
+/* Form sections */
+.node-form-section {
+  padding: 18px 24px;
+  border-bottom: 1px solid #f0f2f9;
+}
+.node-form-section-last {
+  border-bottom: none;
+  padding-bottom: 24px;
+}
+.node-form-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #374151;
+  margin-bottom: 14px;
+}
+.node-form-section-hint {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.76rem;
+  color: #b0b7c3;
+}
+
+/* Bold field labels inside the node modal */
+#modal-node .form-label {
+  font-weight: 600;
+  color: #111827;
+}
+
+/* Graph display field (edit mode) */
+.node-graph-display-field {
+  background: #f9fafb;
+  color: #6b7280;
+  font-size: 0.845rem;
+}
+
+/* Attributes JSON editor — dark code theme */
+.node-attributes-editor {
+  background: #1a1b2e;
+  color: #f8f8f2;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-size: 0.82rem;
+  line-height: 1.65;
+  resize: vertical;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.node-attributes-editor:focus {
+  background: #1a1b2e;
+  color: #f8f8f2;
+  border-color: var(--hgai-primary);
+  box-shadow: 0 0 0 3px rgba(79,70,229,0.15);
+  outline: none;
+}
+
+/* Footer */
+.node-modal-footer,
+.graph-modal-footer,
+.edge-modal-footer {
+  padding: 14px 24px;
+  background: #f9fafb;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+/* ── Hypergraph Modal ──────────────────────────────────────────────────────── */
+.graph-modal-header {
+  padding: 18px 24px;
+  background: linear-gradient(160deg, #eff6ff 0%, #ffffff 65%);
+  border-bottom: 1px solid #bfdbfe;
+}
+.modal-entity-badge-graph {
+  background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(79,70,229,0.28);
+}
+#modal-graph .modal-body { padding: 0; }
+#modal-graph .form-label { font-weight: 600; color: #111827; }
+
+/* ── Hyperedge Modal ───────────────────────────────────────────────────────── */
+.edge-modal-header {
+  padding: 18px 24px;
+  background: linear-gradient(160deg, #ecfeff 0%, #ffffff 65%);
+  border-bottom: 1px solid #a5f3fc;
+}
+.modal-entity-badge-edge {
+  background: linear-gradient(135deg, #0891b2 0%, #06b6d4 100%);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(8,145,178,0.28);
+}
+#modal-edge .modal-body { padding: 0; }
+#modal-edge .form-label { font-weight: 600; color: #111827; }

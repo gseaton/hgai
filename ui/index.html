@@ -557,57 +557,93 @@
 <div class="modal fade" id="modal-graph" tabindex="-1">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="modal-graph-title">New Hypergraph</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+
+      <!-- Header -->
+      <div class="modal-header graph-modal-header">
+        <div class="d-flex align-items-center gap-3 flex-grow-1" style="min-width:0">
+          <div class="modal-entity-badge modal-entity-badge-graph">
+            <i class="bi bi-diagram-3-fill"></i>
+          </div>
+          <div style="min-width:0">
+            <h5 class="modal-title mb-0" id="modal-graph-title">New Hypergraph</h5>
+            <div class="modal-entity-subtitle">Semantic hypergraph knowledge container</div>
+          </div>
+        </div>
+        <button type="button" class="btn-close ms-3 flex-shrink-0" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-body">
+
+      <!-- Body -->
+      <div class="modal-body p-0">
         <form id="form-graph">
           <input type="hidden" id="graph-form-mode" value="create"/>
           <input type="hidden" id="graph-space-id-hidden" value=""/>
-          <div class="row g-3">
-            <div class="col-md-6">
-              <label class="form-label">Space <span class="text-muted small">(optional)</span></label>
-              <select id="graph-space-id" class="form-select">
-                <option value="">— None (global) —</option>
-              </select>
-              <div class="form-text">Assign this graph to a tenant space</div>
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">ID <span class="text-danger">*</span></label>
-              <input type="text" id="graph-id" class="form-control" placeholder="my-graph" required/>
-              <div class="form-text">Unique within the selected space</div>
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">Label <span class="text-danger">*</span></label>
-              <input type="text" id="graph-label" class="form-control" placeholder="My Hypergraph" required/>
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">Type</label>
-              <select id="graph-type" class="form-select">
-                <option value="instantiated">instantiated (physical)</option>
-                <option value="logical">logical (composed)</option>
-              </select>
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">Tags</label>
-              <input type="text" id="graph-tags" class="form-control" placeholder="tag1, tag2"/>
-            </div>
-            <div class="col-12">
-              <label class="form-label">Description</label>
-              <textarea id="graph-description" class="form-control" rows="2"></textarea>
-            </div>
-            <div class="col-12">
-              <label class="form-label">Attributes (JSON)</label>
-              <textarea id="graph-attributes" class="form-control font-monospace" rows="3" placeholder='{"key": "value"}'>{}</textarea>
+
+          <!-- ── Section: Identity ── -->
+          <div class="node-form-section">
+            <div class="node-form-section-header">Identity</div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Space <span class="text-muted fw-normal small">(optional)</span></label>
+                <select id="graph-space-id" class="form-select">
+                  <option value="">— None (global) —</option>
+                </select>
+                <div class="form-text">Assign this graph to a tenant space</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">ID <span class="text-danger">*</span></label>
+                <input type="text" id="graph-id" class="form-control font-monospace" placeholder="my-graph" required/>
+                <div class="form-text">Unique within the selected space</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Label <span class="text-danger">*</span></label>
+                <input type="text" id="graph-label" class="form-control" placeholder="My Hypergraph" required/>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Type</label>
+                <select id="graph-type" class="form-select">
+                  <option value="instantiated">instantiated (physical)</option>
+                  <option value="logical">logical (composed)</option>
+                </select>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Description</label>
+                <input type="text" id="graph-description" class="form-control" placeholder="Brief description of this hypergraph"/>
+              </div>
             </div>
           </div>
+
+          <!-- ── Section: Classification ── -->
+          <div class="node-form-section">
+            <div class="node-form-section-header">Classification</div>
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label">Tags</label>
+                <input type="text" id="graph-tags" class="form-control" placeholder="tag1, tag2, tag3"/>
+                <div class="form-text">Comma-separated list</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Section: Attributes ── -->
+          <div class="node-form-section node-form-section-last">
+            <div class="node-form-section-header">
+              Attributes
+              <span class="node-form-section-hint">— arbitrary JSON key-value metadata</span>
+            </div>
+            <textarea id="graph-attributes" class="form-control font-monospace node-attributes-editor" rows="5" placeholder='{"key": "value"}'>{}</textarea>
+          </div>
+
         </form>
       </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" id="btn-save-graph">Save Hypergraph</button>
+
+      <!-- Footer -->
+      <div class="modal-footer graph-modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary px-4" id="btn-save-graph">
+          <i class="bi bi-floppy me-1"></i>Save Hypergraph
+        </button>
       </div>
+
     </div>
   </div>
 </div>
@@ -616,76 +652,123 @@
 <div class="modal fade" id="modal-node" tabindex="-1">
   <div class="modal-dialog modal-xl">
     <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="modal-node-title">New Hypernode</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+
+      <!-- Header -->
+      <div class="modal-header node-modal-header">
+        <div class="d-flex align-items-center gap-3 flex-grow-1" style="min-width:0">
+          <div class="modal-entity-badge modal-entity-badge-node">
+            <i class="bi bi-circle-fill"></i>
+          </div>
+          <div style="min-width:0">
+            <h5 class="modal-title mb-0" id="modal-node-title">New Hypernode</h5>
+            <div class="modal-entity-subtitle">Semantic knowledge graph node</div>
+          </div>
+        </div>
+        <button type="button" class="btn-close ms-3 flex-shrink-0" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-body">
+
+      <!-- Body -->
+      <div class="modal-body p-0">
         <form id="form-node">
           <input type="hidden" id="node-form-mode" value="create"/>
-          <div class="row g-3">
-            <div class="col-md-6" id="node-graph-select-row">
-              <label class="form-label">Hypergraph <span class="text-danger">*</span></label>
-              <select id="node-graph-id" class="form-select">
-                <option value="">— Select Hypergraph —</option>
-              </select>
-            </div>
-            <div class="col-md-6 d-none" id="node-graph-display-row">
-              <label class="form-label">Hypergraph</label>
-              <div id="node-graph-display" class="form-control bg-body-secondary text-muted"></div>
-            </div>
-            <div class="col-md-4">
-              <label class="form-label">ID <span class="text-danger">*</span></label>
-              <input type="text" id="node-id" class="form-control" placeholder="my-node-id" required/>
-            </div>
-            <div class="col-md-5">
-              <label class="form-label">Label <span class="text-danger">*</span></label>
-              <input type="text" id="node-label" class="form-control" placeholder="My Node Label" required/>
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">Type</label>
-              <input type="text" id="node-type" class="form-control" placeholder="Entity" list="node-type-suggestions"/>
-              <datalist id="node-type-suggestions">
-                <option value="Entity"/><option value="Person"/><option value="Organization"/>
-                <option value="Concept"/><option value="RelationType"/><option value="Event"/>
-                <option value="Place"/><option value="Group"/>
-              </datalist>
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">Tags</label>
-              <input type="text" id="node-tags" class="form-control" placeholder="tag1, tag2"/>
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">Status</label>
-              <select id="node-status" class="form-select">
-                <option value="active">active</option>
-                <option value="draft">draft</option>
-                <option value="archived">archived</option>
-              </select>
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">Valid From</label>
-              <input type="datetime-local" id="node-valid-from" class="form-control"/>
-            </div>
-            <div class="col-md-3 offset-md-3">
-              <label class="form-label">Valid To</label>
-              <input type="datetime-local" id="node-valid-to" class="form-control"/>
-            </div>
-            <div class="col-12">
-              <label class="form-label">Description</label>
-              <input type="text" id="node-description" class="form-control"/>
-            </div>
-            <div class="col-12">
-              <label class="form-label">Attributes (JSON)</label>
-              <textarea id="node-attributes" class="form-control font-monospace" rows="6" placeholder='{"key": "value"}'>{}</textarea>
+
+          <!-- ── Section: Identity ── -->
+          <div class="node-form-section">
+            <div class="node-form-section-header">Identity</div>
+            <div class="row g-3">
+              <div class="col-12" id="node-graph-select-row">
+                <label class="form-label">Hypergraph <span class="text-danger">*</span></label>
+                <select id="node-graph-id" class="form-select">
+                  <option value="">— Select Hypergraph —</option>
+                </select>
+              </div>
+              <div class="col-12 d-none" id="node-graph-display-row">
+                <label class="form-label">Hypergraph</label>
+                <div id="node-graph-display" class="form-control font-monospace node-graph-display-field"></div>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">ID <span class="text-danger">*</span></label>
+                <input type="text" id="node-id" class="form-control font-monospace" placeholder="my-node-id" required/>
+                <div class="form-text">Unique within the hypergraph</div>
+              </div>
+              <div class="col-md-5">
+                <label class="form-label">Label <span class="text-danger">*</span></label>
+                <input type="text" id="node-label" class="form-control" placeholder="Human-readable name" required/>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Type</label>
+                <input type="text" id="node-type" class="form-control" placeholder="Entity" list="node-type-suggestions"/>
+                <datalist id="node-type-suggestions">
+                  <option value="Entity"/><option value="Person"/><option value="Organization"/>
+                  <option value="Concept"/><option value="RelationType"/><option value="Event"/>
+                  <option value="Place"/><option value="Group"/>
+                </datalist>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Description</label>
+                <input type="text" id="node-description" class="form-control" placeholder="Brief description of this node"/>
+              </div>
             </div>
           </div>
+
+          <!-- ── Section: Classification ── -->
+          <div class="node-form-section">
+            <div class="node-form-section-header">Classification</div>
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label">Status</label>
+                <select id="node-status" class="form-select">
+                  <option value="active">active</option>
+                  <option value="draft">draft</option>
+                  <option value="archived">archived</option>
+                </select>
+              </div>
+              <div class="col-md-8">
+                <label class="form-label">Tags</label>
+                <input type="text" id="node-tags" class="form-control" placeholder="tag1, tag2, tag3"/>
+                <div class="form-text">Comma-separated list</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Section: Temporal Validity ── -->
+          <div class="node-form-section">
+            <div class="node-form-section-header">
+              Temporal Validity
+              <span class="node-form-section-hint">— optional point-in-time bounds</span>
+            </div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Valid From</label>
+                <input type="datetime-local" id="node-valid-from" class="form-control"/>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Valid To</label>
+                <input type="datetime-local" id="node-valid-to" class="form-control"/>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Section: Attributes ── -->
+          <div class="node-form-section node-form-section-last">
+            <div class="node-form-section-header">
+              Attributes
+              <span class="node-form-section-hint">— arbitrary JSON key-value metadata</span>
+            </div>
+            <textarea id="node-attributes" class="form-control font-monospace node-attributes-editor" rows="7" placeholder='{"key": "value"}'>{}</textarea>
+          </div>
+
         </form>
       </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-success" id="btn-save-node">Save Hypernode</button>
+
+      <!-- Footer -->
+      <div class="modal-footer node-modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-success px-4" id="btn-save-node">
+          <i class="bi bi-floppy me-1"></i>Save Hypernode
+        </button>
       </div>
+
     </div>
   </div>
 </div>
@@ -694,92 +777,140 @@
 <div class="modal fade" id="modal-edge" tabindex="-1">
   <div class="modal-dialog modal-xl">
     <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="modal-edge-title">New Hyperedge</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+
+      <!-- Header -->
+      <div class="modal-header edge-modal-header">
+        <div class="d-flex align-items-center gap-3 flex-grow-1" style="min-width:0">
+          <div class="modal-entity-badge modal-entity-badge-edge">
+            <i class="bi bi-share-fill"></i>
+          </div>
+          <div style="min-width:0">
+            <h5 class="modal-title mb-0" id="modal-edge-title">New Hyperedge</h5>
+            <div class="modal-entity-subtitle">Semantic hyperedge relationship</div>
+          </div>
+        </div>
+        <button type="button" class="btn-close ms-3 flex-shrink-0" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-body">
+
+      <!-- Body -->
+      <div class="modal-body p-0">
         <form id="form-edge">
           <input type="hidden" id="edge-form-mode" value="create"/>
-          <div class="row g-3">
-            <div class="col-md-6" id="edge-graph-select-row">
-              <label class="form-label">Hypergraph <span class="text-danger">*</span></label>
-              <select id="edge-graph-id" class="form-select">
-                <option value="">— Select Hypergraph —</option>
-              </select>
-            </div>
-            <div class="col-md-6 d-none" id="edge-graph-display-row">
-              <label class="form-label">Hypergraph</label>
-              <div id="edge-graph-display" class="form-control bg-body-secondary text-muted"></div>
-            </div>
-            <div class="col-md-4">
-              <label class="form-label">ID <span class="text-muted small">(optional, auto-generated)</span></label>
-              <input type="text" id="edge-id" class="form-control" placeholder="auto"/>
-            </div>
-            <div class="col-md-5">
-              <label class="form-label">Relation <span class="text-danger">*</span></label>
-              <input type="text" id="edge-relation" class="form-control" placeholder="has-member" required list="edge-relation-suggestions"/>
-              <datalist id="edge-relation-suggestions">
-                <option value="has-member"/><option value="sibling"/><option value="broader"/>
-                <option value="narrower"/><option value="related"/><option value="contains"/>
-                <option value="instance-of"/><option value="holds-office"/><option value="part-of"/>
-              </datalist>
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">Flavor</label>
-              <select id="edge-flavor" class="form-select">
-                <option value="hub">hub</option>
-                <option value="symmetric">symmetric</option>
-                <option value="direct">direct</option>
-                <option value="transitive">transitive</option>
-                <option value="inverse-transitive">inverse-transitive</option>
-              </select>
-            </div>
-            <div class="col-md-9">
-              <label class="form-label">Label</label>
-              <input type="text" id="edge-label" class="form-control"/>
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">Status</label>
-              <select id="edge-status" class="form-select">
-                <option value="active">active</option>
-                <option value="draft">draft</option>
-                <option value="archived">archived</option>
-              </select>
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">Valid From</label>
-              <input type="datetime-local" id="edge-valid-from" class="form-control"/>
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">Valid To</label>
-              <input type="datetime-local" id="edge-valid-to" class="form-control"/>
-            </div>
-            <div class="col-12">
-              <label class="form-label">Tags</label>
-              <input type="text" id="edge-tags" class="form-control" placeholder="tag1, tag2"/>
-            </div>
 
-            <!-- Members builder -->
-            <div class="col-12">
-              <label class="form-label fw-semibold">Members <span class="text-muted small">(hypernodes in this edge)</span></label>
-              <div id="edge-members-list" class="mb-2"></div>
-              <button type="button" class="btn btn-outline-primary btn-sm" id="btn-add-member">
-                <i class="bi bi-plus me-1"></i>Add Member
-              </button>
-            </div>
-
-            <div class="col-12">
-              <label class="form-label">Attributes (JSON)</label>
-              <textarea id="edge-attributes" class="form-control font-monospace" rows="4" placeholder='{"key": "value"}'>{}</textarea>
+          <!-- ── Section: Identity ── -->
+          <div class="node-form-section">
+            <div class="node-form-section-header">Identity</div>
+            <div class="row g-3">
+              <div class="col-12" id="edge-graph-select-row">
+                <label class="form-label">Hypergraph <span class="text-danger">*</span></label>
+                <select id="edge-graph-id" class="form-select">
+                  <option value="">— Select Hypergraph —</option>
+                </select>
+              </div>
+              <div class="col-12 d-none" id="edge-graph-display-row">
+                <label class="form-label">Hypergraph</label>
+                <div id="edge-graph-display" class="form-control font-monospace node-graph-display-field"></div>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">ID <span class="text-muted fw-normal small">(optional, auto-generated)</span></label>
+                <input type="text" id="edge-id" class="form-control font-monospace" placeholder="auto"/>
+              </div>
+              <div class="col-md-5">
+                <label class="form-label">Relation <span class="text-danger">*</span></label>
+                <input type="text" id="edge-relation" class="form-control" placeholder="has-member" required list="edge-relation-suggestions"/>
+                <datalist id="edge-relation-suggestions">
+                  <option value="has-member"/><option value="sibling"/><option value="broader"/>
+                  <option value="narrower"/><option value="related"/><option value="contains"/>
+                  <option value="instance-of"/><option value="holds-office"/><option value="part-of"/>
+                </datalist>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Flavor</label>
+                <select id="edge-flavor" class="form-select">
+                  <option value="hub">hub</option>
+                  <option value="symmetric">symmetric</option>
+                  <option value="direct">direct</option>
+                  <option value="transitive">transitive</option>
+                  <option value="inverse-transitive">inverse-transitive</option>
+                </select>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Label</label>
+                <input type="text" id="edge-label" class="form-control" placeholder="Optional human-readable label"/>
+              </div>
             </div>
           </div>
+
+          <!-- ── Section: Classification ── -->
+          <div class="node-form-section">
+            <div class="node-form-section-header">Classification</div>
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label">Status</label>
+                <select id="edge-status" class="form-select">
+                  <option value="active">active</option>
+                  <option value="draft">draft</option>
+                  <option value="archived">archived</option>
+                </select>
+              </div>
+              <div class="col-md-8">
+                <label class="form-label">Tags</label>
+                <input type="text" id="edge-tags" class="form-control" placeholder="tag1, tag2, tag3"/>
+                <div class="form-text">Comma-separated list</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Section: Temporal Validity ── -->
+          <div class="node-form-section">
+            <div class="node-form-section-header">
+              Temporal Validity
+              <span class="node-form-section-hint">— optional point-in-time bounds</span>
+            </div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Valid From</label>
+                <input type="datetime-local" id="edge-valid-from" class="form-control"/>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Valid To</label>
+                <input type="datetime-local" id="edge-valid-to" class="form-control"/>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Section: Members ── -->
+          <div class="node-form-section">
+            <div class="node-form-section-header">
+              Members
+              <span class="node-form-section-hint">— hypernodes participating in this edge</span>
+            </div>
+            <div id="edge-members-list" class="mb-3"></div>
+            <button type="button" class="btn btn-outline-info btn-sm" id="btn-add-member">
+              <i class="bi bi-plus me-1"></i>Add Member
+            </button>
+          </div>
+
+          <!-- ── Section: Attributes ── -->
+          <div class="node-form-section node-form-section-last">
+            <div class="node-form-section-header">
+              Attributes
+              <span class="node-form-section-hint">— arbitrary JSON key-value metadata</span>
+            </div>
+            <textarea id="edge-attributes" class="form-control font-monospace node-attributes-editor" rows="5" placeholder='{"key": "value"}'>{}</textarea>
+          </div>
+
         </form>
       </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-info text-white" id="btn-save-edge">Save Hyperedge</button>
+
+      <!-- Footer -->
+      <div class="modal-footer edge-modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-info text-white px-4" id="btn-save-edge">
+          <i class="bi bi-floppy me-1"></i>Save Hyperedge
+        </button>
       </div>
+
     </div>
   </div>
 </div>
