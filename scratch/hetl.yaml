@@ -1,0 +1,1353 @@
+hgai: "1.0"
+
+prefixes:
+  person: "person:"
+  org:    "org:"
+  office: "office:"
+  event:  "event:"
+  place:  "place:"
+  doc:    "doc:"
+
+nodes:
+
+  # ─── PRIMARY SUBJECT ───────────────────────────────────────────────────────
+
+  - id: person:harry-s-truman
+    label: Harry S. Truman
+    type: Person
+    description: 33rd President of the United States (1945–1953)
+    tags: [president, senator, vice-president, military, democrat, missouri]
+    status: active
+    valid_from: "1884-05-08"
+    valid_to:   "1972-12-26"
+    attributes:
+      last_name: Truman
+      first_name: Harry
+      middle_initial: "S"
+      birth_date: "1884-05-08"
+      death_date: "1972-12-26"
+      birth_place: "Lamar, Missouri, USA"
+      death_place: "Kansas City, Missouri, USA"
+      burial_place: "Independence, Missouri, USA"
+      nationality: American
+      religion: Baptist
+      political_party: Democratic
+      presidential_number: 33
+      vice_president: "Alben W. Barkley"
+      military_rank: "Colonel, US Army Reserve"
+      military_branch: "United States Army"
+      nickname: "Give 'em Hell Harry"
+      education: "Kansas City School of Law (did not graduate)"
+      occupation: "Politician, Farmer, Haberdasher"
+      height_cm: 175
+      eye_color: blue
+      known_for: >
+        Dropping atomic bombs on Japan ending WWII; Truman Doctrine;
+        Marshall Plan; NATO founding; desegregating US military;
+        Korean War; Berlin Airlift; recognition of Israel
+
+  # ─── FAMILY ────────────────────────────────────────────────────────────────
+
+  - id: person:bess-wallace-truman
+    label: Bess Wallace Truman
+    type: Person
+    tags: [first-lady, missouri]
+    valid_from: "1885-02-13"
+    valid_to:   "1982-10-18"
+    attributes:
+      last_name: Truman
+      maiden_name: Wallace
+      first_name: Elizabeth Virginia
+      nickname: Bess
+      birth_date: "1885-02-13"
+      death_date: "1982-10-18"
+      birth_place: "Independence, Missouri, USA"
+      role: First Lady of the United States
+
+  - id: person:margaret-truman
+    label: Margaret Truman Daniel
+    type: Person
+    tags: [author, singer, missouri]
+    valid_from: "1924-02-17"
+    valid_to:   "2008-01-29"
+    attributes:
+      last_name: Daniel
+      maiden_name: Truman
+      first_name: Mary Margaret
+      birth_date: "1924-02-17"
+      death_date: "2008-01-29"
+      occupation: "Author, Singer"
+      notable_works: ["Harry S. Truman (biography, 1973)", "Bess W. Truman (1986)"]
+
+  - id: person:john-anderson-truman
+    label: John Anderson Truman
+    type: Person
+    tags: [farmer, missouri]
+    valid_from: "1851-12-05"
+    valid_to:   "1914-11-02"
+    attributes:
+      first_name: John
+      last_name: Truman
+      birth_date: "1851-12-05"
+      death_date: "1914-11-02"
+      occupation: Farmer
+
+  - id: person:martha-ellen-young-truman
+    label: Martha Ellen Young Truman
+    type: Person
+    tags: [missouri]
+    valid_from: "1852-11-25"
+    valid_to:   "1947-07-26"
+    attributes:
+      first_name: Martha Ellen
+      maiden_name: Young
+      last_name: Truman
+      birth_date: "1852-11-25"
+      death_date: "1947-07-26"
+
+  - id: person:vivian-truman
+    label: John Vivian Truman
+    type: Person
+    tags: [farmer, missouri]
+    valid_from: "1886-04-25"
+    valid_to:   "1965-07-08"
+    attributes:
+      first_name: John Vivian
+      last_name: Truman
+      birth_date: "1886-04-25"
+      death_date: "1965-07-08"
+
+  - id: person:mary-jane-truman
+    label: Mary Jane Truman
+    type: Person
+    tags: [missouri]
+    valid_from: "1889-08-12"
+    valid_to:   "1978-10-02"
+    attributes:
+      first_name: Mary Jane
+      last_name: Truman
+      birth_date: "1889-08-12"
+      death_date: "1978-10-02"
+
+  # ─── US POLITICAL & MILITARY ASSOCIATES ────────────────────────────────────
+
+  - id: person:franklin-d-roosevelt
+    label: Franklin D. Roosevelt
+    type: Person
+    tags: [president, democrat, new-york]
+    valid_from: "1882-01-30"
+    valid_to:   "1945-04-12"
+    attributes:
+      last_name: Roosevelt
+      first_name: Franklin
+      middle_name: Delano
+      nickname: FDR
+      birth_date: "1882-01-30"
+      death_date: "1945-04-12"
+      presidential_number: 32
+      political_party: Democratic
+      death_cause: "cerebral hemorrhage"
+
+  - id: person:dwight-d-eisenhower
+    label: Dwight D. Eisenhower
+    type: Person
+    tags: [president, general, republican, kansas]
+    valid_from: "1890-10-14"
+    valid_to:   "1969-03-28"
+    attributes:
+      last_name: Eisenhower
+      first_name: Dwight
+      middle_name: David
+      nickname: Ike
+      birth_date: "1890-10-14"
+      death_date: "1969-03-28"
+      presidential_number: 34
+      military_rank: "General of the Army (Five-Star)"
+      political_party: Republican
+
+  - id: person:george-marshall
+    label: George C. Marshall
+    type: Person
+    tags: [general, secretary-of-state, secretary-of-defense]
+    valid_from: "1880-12-31"
+    valid_to:   "1959-10-16"
+    attributes:
+      last_name: Marshall
+      first_name: George
+      middle_name: Catlett
+      birth_date: "1880-12-31"
+      death_date: "1959-10-16"
+      military_rank: "General of the Army (Five-Star)"
+      notable_achievement: "Marshall Plan (European Recovery Program)"
+      nobel_peace_prize: 1953
+
+  - id: person:dean-acheson
+    label: Dean Acheson
+    type: Person
+    tags: [secretary-of-state, diplomat]
+    valid_from: "1893-04-11"
+    valid_to:   "1971-10-12"
+    attributes:
+      last_name: Acheson
+      first_name: Dean
+      middle_name: Gooderham
+      birth_date: "1893-04-11"
+      death_date: "1971-10-12"
+      role: "Secretary of State (1949–1953)"
+      notable_for: "Formulating containment policy; NATO architecture"
+
+  - id: person:james-byrnes
+    label: James F. Byrnes
+    type: Person
+    tags: [secretary-of-state, south-carolina]
+    valid_from: "1882-05-02"
+    valid_to:   "1972-04-09"
+    attributes:
+      last_name: Byrnes
+      first_name: James
+      middle_name: Francis
+      birth_date: "1882-05-02"
+      death_date: "1972-04-09"
+      role: "Secretary of State (1945–1947)"
+
+  - id: person:douglas-macarthur
+    label: Douglas MacArthur
+    type: Person
+    tags: [general, korean-war, wwii]
+    valid_from: "1880-01-26"
+    valid_to:   "1964-04-05"
+    attributes:
+      last_name: MacArthur
+      first_name: Douglas
+      birth_date: "1880-01-26"
+      death_date: "1964-04-05"
+      military_rank: "General of the Army (Five-Star)"
+      dismissed_by: "Harry S. Truman"
+      dismissal_date: "1951-04-11"
+      dismissal_reason: "Insubordination; public disagreement with Korean War policy"
+
+  - id: person:omar-bradley
+    label: Omar N. Bradley
+    type: Person
+    tags: [general, joint-chiefs]
+    valid_from: "1893-02-12"
+    valid_to:   "1981-04-08"
+    attributes:
+      last_name: Bradley
+      first_name: Omar
+      middle_name: Nelson
+      birth_date: "1893-02-12"
+      death_date: "1981-04-08"
+      military_rank: "General of the Army (Five-Star)"
+      role: "First Chairman of the Joint Chiefs of Staff"
+
+  - id: person:henry-stimson
+    label: Henry L. Stimson
+    type: Person
+    tags: [secretary-of-war]
+    valid_from: "1867-09-21"
+    valid_to:   "1950-10-20"
+    attributes:
+      last_name: Stimson
+      first_name: Henry
+      middle_name: Lewis
+      birth_date: "1867-09-21"
+      death_date: "1950-10-20"
+      role: "Secretary of War (1940–1945)"
+      notable_for: "Advised Truman on atomic bomb use"
+
+  - id: person:j-robert-oppenheimer
+    label: J. Robert Oppenheimer
+    type: Person
+    tags: [physicist, manhattan-project]
+    valid_from: "1904-04-22"
+    valid_to:   "1967-02-18"
+    attributes:
+      last_name: Oppenheimer
+      first_name: Julius Robert
+      birth_date: "1904-04-22"
+      death_date: "1967-02-18"
+      role: "Scientific Director, Manhattan Project"
+      notable_for: "Father of the atomic bomb"
+
+  - id: person:tom-pendergast
+    label: Tom Pendergast
+    type: Person
+    tags: [political-boss, kansas-city, missouri]
+    valid_from: "1872-07-22"
+    valid_to:   "1945-01-26"
+    attributes:
+      last_name: Pendergast
+      first_name: Thomas
+      middle_name: Joseph
+      birth_date: "1872-07-22"
+      death_date: "1945-01-26"
+      role: "Democratic Party political boss, Kansas City"
+      significance: "Mentored and sponsored Truman's early political career"
+
+  - id: person:thomas-dewey
+    label: Thomas E. Dewey
+    type: Person
+    tags: [republican, governor, new-york]
+    valid_from: "1902-03-24"
+    valid_to:   "1971-03-16"
+    attributes:
+      last_name: Dewey
+      first_name: Thomas
+      middle_name: Edmund
+      birth_date: "1902-03-24"
+      death_date: "1971-03-16"
+      role: "Governor of New York; Republican presidential nominee 1944 and 1948"
+      electoral_loss_1948: true
+
+  - id: person:adlai-stevenson
+    label: Adlai Stevenson II
+    type: Person
+    tags: [democrat, illinois, presidential-candidate]
+    valid_from: "1900-02-05"
+    valid_to:   "1965-07-14"
+    attributes:
+      last_name: Stevenson
+      first_name: Adlai
+      birth_date: "1900-02-05"
+      death_date: "1965-07-14"
+      role: "Governor of Illinois; Democratic presidential nominee 1952"
+
+  - id: person:alben-barkley
+    label: Alben W. Barkley
+    type: Person
+    tags: [vice-president, democrat, kentucky]
+    valid_from: "1877-11-24"
+    valid_to:   "1956-04-30"
+    attributes:
+      last_name: Barkley
+      first_name: Alben
+      middle_name: William
+      birth_date: "1877-11-24"
+      death_date: "1956-04-30"
+      role: "35th Vice President of the United States (1949–1953)"
+
+  - id: person:henry-wallace
+    label: Henry A. Wallace
+    type: Person
+    tags: [vice-president, democrat, iowa]
+    valid_from: "1888-10-07"
+    valid_to:   "1965-11-18"
+    attributes:
+      last_name: Wallace
+      first_name: Henry
+      middle_name: Agard
+      birth_date: "1888-10-07"
+      death_date: "1965-11-18"
+      role: "33rd Vice President (under FDR); Secretary of Commerce under Truman (dismissed 1946)"
+
+  # ─── FOREIGN LEADERS ───────────────────────────────────────────────────────
+
+  - id: person:winston-churchill
+    label: Winston Churchill
+    type: Person
+    tags: [prime-minister, uk, wwii]
+    valid_from: "1874-11-30"
+    valid_to:   "1965-01-24"
+    attributes:
+      last_name: Churchill
+      first_name: Winston
+      middle_name: Leonard Spencer
+      birth_date: "1874-11-30"
+      death_date: "1965-01-24"
+      nationality: British
+      role: "Prime Minister of the United Kingdom (1940–1945, 1951–1955)"
+      notable_speech: "Iron Curtain speech (1946, Fulton Missouri)"
+
+  - id: person:joseph-stalin
+    label: Joseph Stalin
+    type: Person
+    tags: [soviet-leader, wwii, cold-war]
+    valid_from: "1878-12-18"
+    valid_to:   "1953-03-05"
+    attributes:
+      last_name: Stalin
+      first_name: Joseph
+      birth_name: Ioseb Jughashvili
+      birth_date: "1878-12-18"
+      death_date: "1953-03-05"
+      nationality: Soviet
+      role: "General Secretary of the Communist Party; de facto leader of the Soviet Union"
+
+  - id: person:clement-attlee
+    label: Clement Attlee
+    type: Person
+    tags: [prime-minister, uk, labour]
+    valid_from: "1883-01-03"
+    valid_to:   "1967-10-08"
+    attributes:
+      last_name: Attlee
+      first_name: Clement
+      middle_name: Richard
+      birth_date: "1883-01-03"
+      death_date: "1967-10-08"
+      nationality: British
+      role: "Prime Minister of the United Kingdom (1945–1951)"
+
+  - id: person:david-ben-gurion
+    label: David Ben-Gurion
+    type: Person
+    tags: [israel, prime-minister]
+    valid_from: "1886-10-16"
+    valid_to:   "1973-12-01"
+    attributes:
+      last_name: Ben-Gurion
+      first_name: David
+      birth_name: David Grün
+      birth_date: "1886-10-16"
+      death_date: "1973-12-01"
+      nationality: Israeli
+      role: "First Prime Minister of Israel"
+
+  - id: person:kim-il-sung
+    label: Kim Il-sung
+    type: Person
+    tags: [north-korea, korean-war]
+    valid_from: "1912-04-15"
+    valid_to:   "1994-07-08"
+    attributes:
+      last_name: Kim
+      first_name: Il-sung
+      birth_date: "1912-04-15"
+      death_date: "1994-07-08"
+      nationality: "North Korean"
+      role: "Supreme Leader of North Korea; initiated Korean War (1950)"
+
+  - id: person:syngman-rhee
+    label: Syngman Rhee
+    type: Person
+    tags: [south-korea, korean-war]
+    valid_from: "1875-04-26"
+    valid_to:   "1965-07-19"
+    attributes:
+      last_name: Rhee
+      first_name: Syngman
+      birth_date: "1875-04-26"
+      death_date: "1965-07-19"
+      nationality: "South Korean"
+      role: "First President of South Korea"
+
+  - id: person:konrad-adenauer
+    label: Konrad Adenauer
+    type: Person
+    tags: [west-germany, cold-war]
+    valid_from: "1876-01-05"
+    valid_to:   "1967-04-19"
+    attributes:
+      last_name: Adenauer
+      first_name: Konrad
+      birth_date: "1876-01-05"
+      death_date: "1967-04-19"
+      nationality: West German
+      role: "First Chancellor of West Germany"
+
+  # ─── OFFICES ───────────────────────────────────────────────────────────────
+
+  - id: office:president-us-33
+    label: 33rd President of the United States
+    type: Office
+    attributes:
+      office_number: 33
+      country: "United States"
+      term_start: "1945-04-12"
+      term_end: "1953-01-20"
+      preceded_by: "Franklin D. Roosevelt"
+      succeeded_by: "Dwight D. Eisenhower"
+
+  - id: office:vp-us-34
+    label: 34th Vice President of the United States
+    type: Office
+    attributes:
+      office_number: 34
+      country: "United States"
+      term_start: "1945-01-20"
+      term_end: "1945-04-12"
+
+  - id: office:senator-missouri
+    label: US Senator from Missouri
+    type: Office
+    attributes:
+      state: Missouri
+      term_start: "1935-01-03"
+      term_end: "1945-01-17"
+
+  - id: office:presiding-judge-jackson-county
+    label: Presiding Judge, Jackson County Court
+    type: Office
+    attributes:
+      county: "Jackson County, Missouri"
+      terms: ["1927-01-01/1935-01-01"]
+
+  # ─── ORGANIZATIONS (STUBS) ─────────────────────────────────────────────────
+
+  - id: org:democratic-party
+    label: Democratic Party
+    type: Organization
+    attributes: { country: "United States", founded: 1828 }
+
+  - id: org:us-army
+    label: United States Army
+    type: Organization
+    attributes: { country: "United States" }
+
+  - id: org:us-senate
+    label: United States Senate
+    type: Organization
+    attributes: { country: "United States" }
+
+  - id: org:nato
+    label: North Atlantic Treaty Organization
+    type: Organization
+    attributes: { founded: 1949, headquarters: Brussels }
+
+  - id: org:un
+    label: United Nations
+    type: Organization
+    attributes: { founded: 1945, headquarters: "New York City" }
+
+  - id: org:cia
+    label: Central Intelligence Agency
+    type: Organization
+    attributes: { founded: 1947, country: "United States" }
+
+  - id: org:nsa-council
+    label: National Security Council
+    type: Organization
+    attributes: { founded: 1947, country: "United States" }
+
+  - id: org:battery-d-129
+    label: Battery D, 129th Field Artillery Regiment
+    type: Organization
+    attributes: { branch: "US Army", war: "World War I" }
+
+  - id: org:truman-committee
+    label: Senate Special Committee to Investigate the National Defense Program
+    type: Organization
+    attributes: { nickname: "Truman Committee", active: "1941-1948" }
+
+  - id: org:state-department
+    label: United States Department of State
+    type: Organization
+    attributes: { country: "United States" }
+
+  - id: org:joint-chiefs
+    label: Joint Chiefs of Staff
+    type: Organization
+    attributes: { country: "United States", established: 1942 }
+
+  # ─── EVENTS (STUBS) ────────────────────────────────────────────────────────
+
+  - id: event:wwii
+    label: World War II
+    type: Event
+    tags: [war, global]
+    attributes:
+      start_date: "1939-09-01"
+      end_date: "1945-09-02"
+      theaters: ["European", "Pacific", "African", "Asian"]
+
+  - id: event:wwi
+    label: World War I
+    type: Event
+    tags: [war, global]
+    attributes:
+      start_date: "1914-07-28"
+      end_date: "1918-11-11"
+
+  - id: event:korean-war
+    label: Korean War
+    type: Event
+    tags: [war, korea, cold-war]
+    attributes:
+      start_date: "1950-06-25"
+      end_date: "1953-07-27"
+      outcome: "Armistice; Korea remains divided at 38th parallel"
+
+  - id: event:potsdam-conference
+    label: Potsdam Conference
+    type: Event
+    tags: [diplomacy, wwii, cold-war]
+    attributes:
+      start_date: "1945-07-17"
+      end_date: "1945-08-02"
+      location: "Potsdam, Germany"
+      participants: ["Truman", "Stalin", "Churchill/Attlee"]
+
+  - id: event:atomic-bomb-hiroshima
+    label: Atomic Bombing of Hiroshima
+    type: Event
+    tags: [wwii, atomic, japan]
+    attributes:
+      date: "1945-08-06"
+      location: "Hiroshima, Japan"
+      bomb_name: "Little Boy"
+      authorized_by: "Harry S. Truman"
+
+  - id: event:atomic-bomb-nagasaki
+    label: Atomic Bombing of Nagasaki
+    type: Event
+    tags: [wwii, atomic, japan]
+    attributes:
+      date: "1945-08-09"
+      location: "Nagasaki, Japan"
+      bomb_name: "Fat Man"
+      authorized_by: "Harry S. Truman"
+
+  - id: event:manhattan-project
+    label: Manhattan Project
+    type: Event
+    tags: [nuclear, wwii, science]
+    attributes:
+      start_date: "1942-08-13"
+      end_date: "1946-01-01"
+      outcome: "Successful development of first nuclear weapons"
+
+  - id: event:berlin-airlift
+    label: Berlin Airlift
+    type: Event
+    tags: [cold-war, germany]
+    attributes:
+      start_date: "1948-06-26"
+      end_date: "1949-09-30"
+      outcome: "Soviet blockade lifted; Western access to Berlin maintained"
+
+  - id: event:election-1948
+    label: 1948 US Presidential Election
+    type: Event
+    tags: [election, upset]
+    attributes:
+      date: "1948-11-02"
+      winner: "Harry S. Truman"
+      runner_up: "Thomas Dewey"
+      notable: "Considered greatest electoral upset in US history"
+
+  - id: event:vj-day
+    label: Victory over Japan Day
+    type: Event
+    tags: [wwii, pacific]
+    attributes:
+      date: "1945-09-02"
+      location: "USS Missouri, Tokyo Bay"
+
+  - id: event:nato-founding
+    label: NATO Founding
+    type: Event
+    tags: [nato, cold-war, diplomacy]
+    attributes:
+      date: "1949-04-04"
+      location: "Washington, D.C."
+
+  - id: event:truman-doctrine-speech
+    label: Truman Doctrine Speech to Congress
+    type: Event
+    tags: [cold-war, foreign-policy, greece, turkey]
+    attributes:
+      date: "1947-03-12"
+      location: "US Capitol"
+      outcome: "Congress authorized $400M aid to Greece and Turkey"
+
+  - id: event:macarthur-dismissal
+    label: Dismissal of General MacArthur
+    type: Event
+    tags: [korean-war, military, constitutional-crisis]
+    attributes:
+      date: "1951-04-11"
+      reason: "Insubordination; violated orders by publicly undermining Korean War policy"
+
+  - id: event:battle-of-meuse-argonne
+    label: Meuse-Argonne Offensive
+    type: Event
+    tags: [wwi, france]
+    attributes:
+      start_date: "1918-09-26"
+      end_date: "1918-11-11"
+      location: "Meuse-Argonne region, France"
+
+  - id: event:israel-recognition
+    label: US Recognition of Israel
+    type: Event
+    tags: [diplomacy, israel, middle-east]
+    attributes:
+      date: "1948-05-14"
+      significance: "United States was first nation to recognize the State of Israel"
+
+  - id: event:executive-order-9981-signing
+    label: Executive Order 9981 Signing
+    type: Event
+    tags: [civil-rights, military, desegregation]
+    attributes:
+      date: "1948-07-26"
+
+  # ─── PLACES (STUBS) ────────────────────────────────────────────────────────
+
+  - id: place:lamar-missouri
+    label: Lamar, Missouri
+    type: Place
+    attributes: { state: Missouri, country: "United States", significance: "Birthplace of Harry S. Truman" }
+
+  - id: place:independence-missouri
+    label: Independence, Missouri
+    type: Place
+    attributes: { state: Missouri, country: "United States", significance: "Truman's hometown and post-presidency home" }
+
+  - id: place:kansas-city-missouri
+    label: Kansas City, Missouri
+    type: Place
+    attributes: { state: Missouri, country: "United States" }
+
+  - id: place:white-house
+    label: White House
+    type: Place
+    attributes: { city: "Washington, D.C.", country: "United States" }
+
+  - id: place:truman-library
+    label: Harry S. Truman Presidential Library and Museum
+    type: Place
+    attributes: { city: "Independence, Missouri", opened: 1957 }
+
+  - id: place:hiroshima
+    label: Hiroshima, Japan
+    type: Place
+    attributes: { country: Japan }
+
+  - id: place:korea-38th-parallel
+    label: 38th Parallel, Korean Peninsula
+    type: Place
+    attributes: { significance: "Dividing line between North and South Korea" }
+
+  # ─── DOCUMENTS (STUBS) ─────────────────────────────────────────────────────
+
+  - id: doc:executive-order-9981
+    label: Executive Order 9981
+    type: Document
+    attributes:
+      date: "1948-07-26"
+      subject: "Desegregation of United States Armed Forces"
+      signed_by: "Harry S. Truman"
+
+  - id: doc:truman-doctrine
+    label: Truman Doctrine
+    type: Document
+    attributes:
+      date: "1947-03-12"
+      subject: "US policy to counter Soviet expansion; aid to Greece and Turkey"
+
+  - id: doc:national-security-act-1947
+    label: National Security Act of 1947
+    type: Document
+    attributes:
+      date: "1947-07-26"
+      subject: "Reorganized US military; created CIA, NSC, Joint Chiefs, USAF"
+
+  - id: doc:marshall-plan
+    label: Marshall Plan (European Recovery Program)
+    type: Document
+    attributes:
+      date: "1948-04-03"
+      subject: "US economic assistance to rebuild war-torn Western Europe"
+      total_aid_usd: 13000000000
+
+  - id: doc:potsdam-declaration
+    label: Potsdam Declaration
+    type: Document
+    attributes:
+      date: "1945-07-26"
+      subject: "Allied ultimatum to Japan; terms of surrender"
+
+  - id: doc:japanese-surrender-instrument
+    label: Japanese Instrument of Surrender
+    type: Document
+    attributes:
+      date: "1945-09-02"
+      location: "USS Missouri, Tokyo Bay"
+
+  - id: doc:national-security-council-68
+    label: NSC-68
+    type: Document
+    attributes:
+      date: "1950-04-14"
+      subject: "Classified policy paper calling for massive US military buildup to counter USSR"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # HYPEREDGES (type: Rel)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # ─── FAMILY RELATIONSHIPS ──────────────────────────────────────────────────
+
+  - type: Rel
+    relation: schema:spouse
+    flavor: symmetric
+    label: Truman–Bess marriage
+    valid_from: "1919-06-28"
+    members:
+      - person:harry-s-truman
+      - person:bess-wallace-truman
+
+  - type: Rel
+    relation: schema:parent
+    flavor: direct
+    label: Truman parents Harry
+    members:
+      - person:john-anderson-truman
+      - person:harry-s-truman
+
+  - type: Rel
+    relation: schema:parent
+    flavor: direct
+    label: Martha Truman parents Harry
+    members:
+      - person:martha-ellen-young-truman
+      - person:harry-s-truman
+
+  - type: Rel
+    relation: schema:children
+    flavor: direct
+    label: Harry Truman's daughter
+    members:
+      - person:harry-s-truman
+      - person:margaret-truman
+
+  - type: Rel
+    relation: schema:sibling
+    flavor: symmetric
+    label: Truman siblings
+    members:
+      - person:harry-s-truman
+      - person:vivian-truman
+      - person:mary-jane-truman
+
+  # ─── BIRTH / DEATH / GEOGRAPHY ────────────────────────────────────────────
+
+  - type: Rel
+    relation: schema:birthPlace
+    flavor: direct
+    label: Truman birthplace
+    members:
+      - person:harry-s-truman
+      - place:lamar-missouri
+
+  - type: Rel
+    relation: schema:deathPlace
+    flavor: direct
+    label: Truman deathplace
+    members:
+      - person:harry-s-truman
+      - place:kansas-city-missouri
+
+  - type: Rel
+    relation: rel:raised-in
+    flavor: direct
+    label: Truman raised in Independence
+    members:
+      - person:harry-s-truman
+      - place:independence-missouri
+
+  - type: Rel
+    relation: rel:buried-in
+    flavor: direct
+    label: Truman buried in Independence
+    members:
+      - person:harry-s-truman
+      - place:independence-missouri
+
+  # ─── OFFICE HOLDINGS ──────────────────────────────────────────────────────
+
+  - type: Rel
+    relation: rel:holds-office
+    flavor: direct
+    label: Truman as 33rd President
+    valid_from: "1945-04-12"
+    valid_to:   "1953-01-20"
+    members:
+      - person:harry-s-truman
+      - office:president-us-33
+
+  - type: Rel
+    relation: rel:holds-office
+    flavor: direct
+    label: Truman as 34th Vice President
+    valid_from: "1945-01-20"
+    valid_to:   "1945-04-12"
+    members:
+      - person:harry-s-truman
+      - office:vp-us-34
+
+  - type: Rel
+    relation: rel:holds-office
+    flavor: direct
+    label: Truman as Missouri Senator
+    valid_from: "1935-01-03"
+    valid_to:   "1945-01-17"
+    members:
+      - person:harry-s-truman
+      - office:senator-missouri
+
+  - type: Rel
+    relation: rel:holds-office
+    flavor: direct
+    label: Truman as Presiding Judge
+    valid_from: "1927-01-01"
+    valid_to:   "1935-01-01"
+    members:
+      - person:harry-s-truman
+      - office:presiding-judge-jackson-county
+
+  - type: Rel
+    relation: rel:holds-office
+    flavor: direct
+    label: Barkley as 35th VP
+    valid_from: "1949-01-20"
+    valid_to:   "1953-01-20"
+    members:
+      - person:alben-barkley
+      - office:vp-us-34
+
+  - type: Rel
+    relation: rel:succeeded
+    flavor: direct
+    label: Truman succeeded FDR
+    attributes: { reason: "FDR died in office" }
+    members:
+      - person:harry-s-truman
+      - person:franklin-d-roosevelt
+
+  - type: Rel
+    relation: rel:succeeded-by
+    flavor: direct
+    label: Truman succeeded by Eisenhower
+    members:
+      - person:harry-s-truman
+      - person:dwight-d-eisenhower
+
+  # ─── ORGANIZATIONAL MEMBERSHIP ────────────────────────────────────────────
+
+  - type: Rel
+    relation: schema:memberOf
+    flavor: hub
+    label: Truman's party and military memberships
+    members:
+      - person:harry-s-truman
+      - org:democratic-party
+      - org:us-army
+      - org:us-senate
+
+  - type: Rel
+    relation: schema:memberOf
+    flavor: direct
+    label: Truman Battery D service
+    valid_from: "1917-06-22"
+    valid_to:   "1919-05-06"
+    members:
+      - person:harry-s-truman
+      - org:battery-d-129
+
+  # ─── APPOINTMENTS ─────────────────────────────────────────────────────────
+
+  - type: Rel
+    relation: rel:appointed
+    flavor: direct
+    label: Truman appoints Marshall as SecState
+    valid_from: "1947-01-21"
+    members:
+      - person:harry-s-truman
+      - person:george-marshall
+
+  - type: Rel
+    relation: rel:appointed
+    flavor: direct
+    label: Truman appoints Acheson as SecState
+    valid_from: "1949-01-21"
+    members:
+      - person:harry-s-truman
+      - person:dean-acheson
+
+  - type: Rel
+    relation: rel:appointed
+    flavor: direct
+    label: Truman appoints Byrnes as SecState
+    valid_from: "1945-07-03"
+    valid_to:   "1947-01-21"
+    members:
+      - person:harry-s-truman
+      - person:james-byrnes
+
+  - type: Rel
+    relation: rel:appointed
+    flavor: direct
+    label: Truman appoints Bradley as Chairman JCS
+    valid_from: "1949-08-16"
+    members:
+      - person:harry-s-truman
+      - person:omar-bradley
+
+  # ─── DISMISSALS ───────────────────────────────────────────────────────────
+
+  - type: Rel
+    relation: rel:dismissed
+    flavor: direct
+    label: Truman dismisses MacArthur
+    valid_from: "1951-04-11"
+    attributes:
+      reason: "Insubordination; public undermining of Korean War policy"
+    members:
+      - person:harry-s-truman
+      - person:douglas-macarthur
+
+  - type: Rel
+    relation: rel:dismissed
+    flavor: direct
+    label: Truman dismisses Wallace
+    valid_from: "1946-09-20"
+    attributes:
+      reason: "Wallace gave unauthorized speech criticizing Truman's Soviet policy"
+    members:
+      - person:harry-s-truman
+      - person:henry-wallace
+
+  # ─── MENTORSHIP ───────────────────────────────────────────────────────────
+
+  - type: Rel
+    relation: rel:mentored-by
+    flavor: direct
+    label: Truman mentored by Pendergast
+    members:
+      - person:harry-s-truman
+      - person:tom-pendergast
+
+  # ─── ELECTORAL CONTESTS ───────────────────────────────────────────────────
+
+  - type: Rel
+    relation: rel:electoral-opponent
+    flavor: symmetric
+    label: Truman vs Dewey 1948
+    attributes: { year: 1948, winner: "person:harry-s-truman" }
+    members:
+      - person:harry-s-truman
+      - person:thomas-dewey
+
+  - type: Rel
+    relation: rel:electoral-opponent
+    flavor: symmetric
+    label: Stevenson vs Eisenhower 1952
+    attributes: { year: 1952, winner: "person:dwight-d-eisenhower", note: "Truman did not run; endorsed Stevenson" }
+    members:
+      - person:adlai-stevenson
+      - person:dwight-d-eisenhower
+
+  # ─── EVENT PARTICIPATION ──────────────────────────────────────────────────
+
+  - type: Rel
+    relation: rel:participated-in
+    flavor: hub
+    label: Potsdam Conference attendees
+    members:
+      - event:potsdam-conference
+      - person:harry-s-truman
+      - person:joseph-stalin
+      - person:winston-churchill
+      - person:clement-attlee
+
+  - type: Rel
+    relation: rel:participated-in
+    flavor: hub
+    label: WWII key participants
+    members:
+      - event:wwii
+      - person:harry-s-truman
+      - person:franklin-d-roosevelt
+      - person:dwight-d-eisenhower
+      - person:george-marshall
+      - person:douglas-macarthur
+      - person:winston-churchill
+      - person:joseph-stalin
+      - person:clement-attlee
+
+  - type: Rel
+    relation: rel:participated-in
+    flavor: hub
+    label: Korean War key figures
+    members:
+      - event:korean-war
+      - person:harry-s-truman
+      - person:douglas-macarthur
+      - person:omar-bradley
+      - person:kim-il-sung
+      - person:syngman-rhee
+
+  - type: Rel
+    relation: rel:participated-in
+    flavor: direct
+    label: Truman WWI service
+    valid_from: "1917-06-22"
+    valid_to:   "1919-05-06"
+    members:
+      - person:harry-s-truman
+      - event:wwi
+
+  - type: Rel
+    relation: rel:participated-in
+    flavor: direct
+    label: Truman at Meuse-Argonne
+    members:
+      - person:harry-s-truman
+      - event:battle-of-meuse-argonne
+
+  # ─── AUTHORIZATIONS ───────────────────────────────────────────────────────
+
+  - type: Rel
+    relation: rel:authorized
+    flavor: direct
+    label: Truman authorizes Hiroshima bombing
+    members:
+      - person:harry-s-truman
+      - event:atomic-bomb-hiroshima
+
+  - type: Rel
+    relation: rel:authorized
+    flavor: direct
+    label: Truman authorizes Nagasaki bombing
+    members:
+      - person:harry-s-truman
+      - event:atomic-bomb-nagasaki
+
+  - type: Rel
+    relation: rel:authorized
+    flavor: direct
+    label: Truman authorizes Berlin Airlift
+    members:
+      - person:harry-s-truman
+      - event:berlin-airlift
+
+  # ─── DOCUMENT SIGNING / ISSUING ───────────────────────────────────────────
+
+  - type: Rel
+    relation: rel:signed
+    flavor: direct
+    label: Truman signs Executive Order 9981
+    valid_from: "1948-07-26"
+    members:
+      - person:harry-s-truman
+      - doc:executive-order-9981
+
+  - type: Rel
+    relation: rel:signed
+    flavor: direct
+    label: Truman signs Marshall Plan
+    valid_from: "1948-04-03"
+    members:
+      - person:harry-s-truman
+      - doc:marshall-plan
+
+  - type: Rel
+    relation: rel:signed
+    flavor: direct
+    label: Truman signs National Security Act
+    valid_from: "1947-07-26"
+    members:
+      - person:harry-s-truman
+      - doc:national-security-act-1947
+
+  - type: Rel
+    relation: rel:issued
+    flavor: direct
+    label: Truman issues Truman Doctrine
+    valid_from: "1947-03-12"
+    members:
+      - person:harry-s-truman
+      - doc:truman-doctrine
+
+  - type: Rel
+    relation: rel:issued
+    flavor: direct
+    label: Truman issues NSC-68
+    valid_from: "1950-04-14"
+    members:
+      - person:harry-s-truman
+      - doc:national-security-council-68
+
+  # ─── DIPLOMATIC RECOGNITION ───────────────────────────────────────────────
+
+  - type: Rel
+    relation: rel:recognized
+    flavor: direct
+    label: US recognizes State of Israel
+    valid_from: "1948-05-14"
+    attributes: { note: "De facto recognition issued 11 minutes after Israeli declaration of independence" }
+    members:
+      - person:harry-s-truman
+      - event:israel-recognition
+
+  - type: Rel
+    relation: rel:recognized
+    flavor: direct
+    label: Truman recognizes Ben-Gurion as Israeli leader
+    valid_from: "1948-05-14"
+    members:
+      - person:harry-s-truman
+      - person:david-ben-gurion
+
+  # ─── SKOS HIERARCHICAL LINKS ──────────────────────────────────────────────
+
+  - type: Rel
+    relation: skos:broader
+    flavor: transitive
+    label: Korean War broader context for MacArthur dismissal
+    members:
+      - event:korean-war
+      - event:macarthur-dismissal
+
+  - type: Rel
+    relation: skos:broader
+    flavor: transitive
+    label: WWII broader context for Hiroshima bombing
+    members:
+      - event:wwii
+      - event:atomic-bomb-hiroshima
+
+  - type: Rel
+    relation: skos:broader
+    flavor: transitive
+    label: WWII broader context for Nagasaki bombing
+    members:
+      - event:wwii
+      - event:atomic-bomb-nagasaki
+
+  - type: Rel
+    relation: skos:broader
+    flavor: transitive
+    label: WWII broader context for VJ Day
+    members:
+      - event:wwii
+      - event:vj-day
+
+  - type: Rel
+    relation: skos:broader
+    flavor: transitive
+    label: WWII broader context for Manhattan Project
+    members:
+      - event:wwii
+      - event:manhattan-project
+
+  - type: Rel
+    relation: skos:broader
+    flavor: transitive
+    label: WWII broader context for Potsdam Conference
+    members:
+      - event:wwii
+      - event:potsdam-conference
+
+  # ─── COMMAND RELATIONSHIPS ────────────────────────────────────────────────
+
+  - type: Rel
+    relation: rel:commanded
+    flavor: direct
+    label: Truman commands MacArthur
+    valid_from: "1945-04-12"
+    valid_to:   "1951-04-11"
+    members:
+      - person:harry-s-truman
+      - person:douglas-macarthur
+
+  - type: Rel
+    relation: rel:commanded
+    flavor: direct
+    label: Truman commands Bradley
+    valid_from: "1945-04-12"
+    valid_to:   "1953-01-20"
+    members:
+      - person:harry-s-truman
+      - person:omar-bradley
+
+  # ─── NATO / ALLIANCE ──────────────────────────────────────────────────────
+
+  - type: Rel
+    relation: schema:memberOf
+    flavor: hub
+    label: NATO founding leaders
+    valid_from: "1949-04-04"
+    members:
+      - org:nato
+      - person:harry-s-truman
+      - person:clement-attlee
+      - person:konrad-adenauer
+
+  # ─── MANHATTAN PROJECT ────────────────────────────────────────────────────
+
+  - type: Rel
+    relation: rel:participated-in
+    flavor: hub
+    label: Manhattan Project principals
+    members:
+      - event:manhattan-project
+      - person:j-robert-oppenheimer
+      - person:henry-stimson
+      - person:harry-s-truman
+      - person:franklin-d-roosevelt
+
+  # ─── VP RELATIONSHIPS ─────────────────────────────────────────────────────
+
+  - type: Rel
+    relation: rel:vice-president-of
+    flavor: direct
+    label: Truman as VP under FDR
+    valid_from: "1945-01-20"
+    valid_to:   "1945-04-12"
+    members:
+      - person:harry-s-truman
+      - person:franklin-d-roosevelt
+
+  - type: Rel
+    relation: rel:vice-president-of
+    flavor: direct
+    label: Barkley as VP under Truman
+    valid_from: "1949-01-20"
+    valid_to:   "1953-01-20"
+    members:
+      - person:alben-barkley
+      - person:harry-s-truman
+
+  # ─── DOCUMENT PROVENANCE ──────────────────────────────────────────────────
+
+  - type: Rel
+    relation: rel:produced-by
+    flavor: direct
+    label: Potsdam Declaration issued at Potsdam Conference
+    members:
+      - doc:potsdam-declaration
+      - event:potsdam-conference
+
+  - type: Rel
+    relation: rel:produced-by
+    flavor: direct
+    label: Japanese surrender instrument from VJ Day
+    members:
+      - doc:japanese-surrender-instrument
+      - event:vj-day
+
+  # ─── TRUMAN COMMITTEE ─────────────────────────────────────────────────────
+
+  - type: Rel
+    relation: rel:member-of
+    flavor: direct
+    label: Truman chairs Truman Committee
+    valid_from: "1941-03-01"
+    valid_to:   "1944-08-04"
+    attributes: { role: Chair }
+    members:
+      - person:harry-s-truman
+      - org:truman-committee
+
+  # ─── LIBRARY LOCATION ─────────────────────────────────────────────────────
+
+  - type: Rel
+    relation: rel:located-in
+    flavor: direct
+    label: Truman Library in Independence
+    members:
+      - place:truman-library
+      - place:independence-missouri
