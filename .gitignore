@@ -29,6 +29,7 @@ pip-delete-this-directory.txt
 *.swo
 *~
 .DS_Store
+scratch/
 
 # Testing
 .pytest_cache/

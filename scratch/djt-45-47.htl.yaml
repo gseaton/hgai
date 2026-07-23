@@ -1,0 +1,130 @@
+hgai: "1.0"
+
+prefixes:
+  person: "person:"
+  org: "org:"
+  office: "office:"
+  event: "event:"
+  place: "place:"
+  doc: "doc:"
+  skos: "skos:"
+
+nodes:
+
+  # ─── PRIMARY SUBJECT ───────────────────────────────────────────────────────
+
+  - id: person:donald-j-trump
+    label: Donald J. Trump
+    type: Person
+    description: The Donald
+    tags: [president, businessman]
+    status: active
+    valid_from: "1946-06-14"
+    attributes:
+      last_name: Trump
+      first_name: Donald
+      middle_initial: J
+      birth_date: 1946-06-14
+      nationality: US
+      political_party: Republican
+
+  - id: _edge:potus-45
+    type: _edge
+    flavor: hub
+    relation: rel:president-of
+    valid_from: 2017-01-20
+    valid_to: 2021-01-20
+    members:
+      - person:donald-j-trump
+      - nation:us
+
+  - id: _edge:potus-47
+    type: _edge
+    relation: president-of
+    valid_from: 2025-01-20
+    valid_to: 2029-01-20
+    flavor: hub
+    members:
+      - person:donald-j-trump
+      - nation:us
+
+  - id: nation:us
+    label: United States of America
+    type: Nation
+    status: active
+    valid_from: 1776-07-04
+
+  - id: rel:president-of
+    label: President of
+    type: Rel
+
+  - id: rel:leader-of
+    label: Leader of
+    type: Rel
+
+  - id: _edge:leader-of-broader-than-president-of
+    type: _edge
+    flavor: hub
+    relation: skos:narrower
+    members:
+      - rel:leader-of
+      - rel:president-of
+    status: active
+
+  - id: group:us-republican-party
+    label: U.S. Republican Party
+    valid_from: 1864-03-20
+    status: active
+
+  - id: group:us-democratic-party
+    label: U.S. Democratic Party
+    valid_from: 1828-01-08
+    status: active
+
+  - id: group:us-reform-party
+    label: U.S. Reform Party
+    valid_from: 1995-09-03
+    status: active
+
+  - id: rel:member-of
+    type: Rel
+    label: Member of
+
+  - id: _edge:republican-party-trump-member-1987
+    type: _edge
+    valid_from: 1987-01-01
+    valid_to: 1999-06-30
+    relation: rel:member-of
+    flavor: hub
+    members:
+      - person:donald-j-trump
+      - group:us-republican-party
+
+  - id: _edge:reform-party-trump-member
+    type: _edge
+    valid_from: 1999-07-01
+    valid_to: 2001-06-30
+    relation: rel:member-of
+    flavor: hub
+    members:
+      - person:donald-j-trump
+      - group:us-reform-party
+
+  - id: _edge:democratic-party-trump-member
+    type: _edge
+    valid_from: 2001-07-01
+    valid_to: 2009-08-31
+    relation: rel:member-of
+    flavor: hub
+    members:
+      - person:donald-j-trump
+      - group:us-democractic-party
+
+  - id: _edge:republican-party-trump-member-2009
+    type: _edge
+    valid_from: 2009-09-01
+    relation: rel:member-of
+    flavor: hub
+    members:
+      - person:donald-j-trump
+      - group:us-republican-party

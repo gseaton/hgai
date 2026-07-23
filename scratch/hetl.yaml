@@ -7,10 +7,72 @@ prefixes:
   event:  "event:"
   place:  "place:"
   doc:    "doc:"
+  skos: "skos:"
 
 nodes:
 
   # ─── PRIMARY SUBJECT ───────────────────────────────────────────────────────
+
+  - id: person:donald-j-trump
+    label: Donald J. Trump
+    type: Person
+    description: The Donald
+    tags: [president, businessman]
+    status: active
+    valid_from: "1946-06-14"
+    attributes:
+      last_name: Trump
+      first_name: Donald
+      middle_initial: J
+      birth_date: 1946-06-14
+      nationality: US
+      political_party: Republican
+
+  - id: _edge:potus-45
+    type: _edge
+    flavor: hub
+    relation: rel:president-of
+    valid_from: 2017-01-20
+    valid_to: 2021-01-20
+    members:
+      - person:donald-j-trump
+      - nation:us
+
+  - id: _edge:potus-47
+    type: _edge
+    relation: president-of
+    valid_from: 2025-01-20
+    valid_to: 2029-01-20
+    flavor: hub
+    members:
+      - person:donald-j-trump
+      - nation:us
+
+  - id: nation:us
+    label: United States of America
+    type: Nation
+    status: active
+    valid_from: 1776-07-04
+
+  - id: rel:president-of
+    label: President of
+    type: Rel
+
+  - id: rel:leader-of
+    label: Leader of
+    type: Rel
+
+  - id: _edge:leader-of-broader-than-president-of
+    type: _edge
+    flavor: hub
+    relation: skos:narrower
+    members:
+      - rel:leader-of
+      - rel:president-of
+    status: active
+
+
+
 
   - id: person:harry-s-truman
     label: Harry S. Truman
