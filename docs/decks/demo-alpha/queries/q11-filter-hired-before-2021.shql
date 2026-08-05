@@ -1,0 +1,13 @@
+shql:
+  from: acme-eng
+  select:
+    - ?person.label
+    - ?person.attributes.title
+    - ?person.attributes.hired_year
+  where:
+    - node:
+        bind: ?person
+        type: Person
+    - filter: "?person.attributes.hired_year < 2021"
+  order_by: ?person.label
+  as: people_hired_before_2021

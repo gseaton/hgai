@@ -1,0 +1,19 @@
+shql:
+  from: acme-eng
+  select:
+    - ?person.label
+    - ?skill.label
+  where:
+    - node:
+        bind: ?person
+        type: Person
+    - edge:
+        relation: has-skill
+        members:
+          # ?person is already bound above — repeating it in both bind and id
+          # anchors this slot, so the remaining open slot (?skill) expands
+          # over every skill on the hub edge instead of matching just one.
+          - node: { bind: "?person", id: "?person" }
+          - node: { bind: "?skill" }
+  order_by: ?person.label
+  as: person_skill_matrix

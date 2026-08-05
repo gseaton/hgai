@@ -1,0 +1,17 @@
+shql:
+  from: acme-eng
+  select:
+    - ?person.label
+    - ?mentor.label
+  where:
+    - node:
+        bind: ?person
+        type: Person
+    - optional:
+        - edge:
+            relation: mentors
+            members:
+              - node: { bind: "?mentor" }
+              - node: { bind: "?person" }
+  order_by: ?person.label
+  as: people_with_optional_mentor

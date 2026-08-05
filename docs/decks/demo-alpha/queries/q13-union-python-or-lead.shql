@@ -1,0 +1,24 @@
+shql:
+  from: acme-eng
+  select:
+    - ?person.id
+    - ?person.label
+  where:
+    - union:
+        - patterns:
+            - node:
+                bind: ?person
+                type: Person
+            - edge:
+                relation: has-skill
+                members:
+                  - node: { bind: "?person", id: "?person" }
+                  - node: { id: skill:python }
+        - patterns:
+            - node:
+                bind: ?person
+                type: Person
+            - filter: "?person.attributes.level = 'lead'"
+  distinct: true
+  order_by: ?person.label
+  as: python_or_lead

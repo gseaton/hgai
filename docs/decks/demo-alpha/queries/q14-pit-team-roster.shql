@@ -1,0 +1,14 @@
+shql:
+  from: acme-eng
+  at: "2023-06-01T00:00:00Z"
+  select:
+    - ?person.label
+    - ?team.label
+  where:
+    - edge:
+        relation: has-member
+        members:
+          - node: { id: team:perception, bind: "?team" }
+          - node: { bind: "?person", type: Person }
+  order_by: ?person.label
+  as: perception_roster_mid_2023_shql

@@ -1,0 +1,23 @@
+shql:
+  from: acme-eng
+  select:
+    - ?project.label
+    - ?person.label
+    - ?person.attributes.title
+  where:
+    - node:
+        bind: ?project
+        type: Project
+    - node:
+        bind: ?person
+        type: Person
+    - edge:
+        relation: staffed-on
+        members:
+          # Both sides are already bound (via the node patterns above) and
+          # anchored here via bind+id, so this pattern is a pure co-membership
+          # check — safe even though each project has several staff members.
+          - node: { bind: "?project", id: "?project" }
+          - node: { bind: "?person", id: "?person" }
+  order_by: ?project.label
+  as: project_staffing

@@ -1,0 +1,19 @@
+shql:
+  from: acme-eng
+  select:
+    - ?person.label
+    - ?team.label
+    - ?membership.valid_from
+    - ?membership.valid_to
+  where:
+    - node:
+        bind: ?person
+        type: Person
+    - edge:
+        bind: ?membership
+        relation: has-member
+        members:
+          - node: { bind: "?team", type: Team }
+          - node: { bind: "?person" }
+  order_by: ?team.label
+  as: people_and_their_teams
