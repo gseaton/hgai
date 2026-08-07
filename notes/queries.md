@@ -56,3 +56,21 @@
       - ?edge.attributes
     as: memberships
 ```
+
+```yaml
+shql:
+  from: hello-world
+  at: "1934-01-01T00:00:00Z"
+  where:
+    - edge: ?e
+      relation: "rel:member"
+      members:
+        - node_id: "group:three-stooges"
+          seq: 0
+  select:
+    - ?e.id
+    - ?e.relation
+    - ?e.members
+    - ?e.attributes
+  as: first_member_is_stooges
+```
