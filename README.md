@@ -183,9 +183,7 @@ hql:
     where:
       relation: rel:president-of
       flavor: hub
-      members.node_id:
-        $all: [nation:usa]
-      members.seq: 0
+      members.node_id: nation:usa
     return:
       - id
       - relation
@@ -194,7 +192,7 @@ hql:
     as: potus-at
 ```
 
-The SHQL needs to: (1) find the president-of edge that includes nation:usa as a member, (2) bind the other member (seq 0) as the president's node ID, then (3) join to the Person node to project the requested fields.
+This HQL query only narrows down to the president-of edge that contains nation:usa as a member (at any position) — HQL has no variable binding, so it can't single out "the other member" on its own; the full `members` array is returned instead so the caller can read the president's node ID off it directly. The SHQL below does the extraction: (1) find the president-of edge that includes nation:usa as a member, (2) bind the other member (seq 0) as the president's node ID, then (3) join to the Person node to project the requested fields.
 
 ```yaml
 shql:
@@ -239,7 +237,9 @@ How it works:
 │ 4    │ select                                   │ Projects id, label, description, attributes from the bound Person                 │
 └──────┴──────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────┘
 
-The `at:` timestamp is respected at every stage — both the edge lookup and node lookup are evaluated at the point-in-time `1948-11-22`, so the result reflects whoever held the office on that date. 
+The `at:` timestamp is respected at every stage — both the edge lookup and node lookup are evaluated at the point-in-time `1948-11-22`, so the result reflects whoever held the office on that date.
+
+Step 2's `seq: 0` is enforced positionally: `?president_id` only binds to the member whose `seq` is actually `0` on that edge, not just any unused member. If the edge's seq-0 slot were occupied by someone other than the president (a malformed edge), the pattern would fail to match rather than binding the wrong node.
 
 ---
 
@@ -299,7 +299,7 @@ hql:
       - attributes
     as: edges_containing_moe
 ```
-The `members.node_id` path is handled as a special case in the HQL engine, translating to a MongoDB `members.node_id` field match — which works against the array of `member` objects regardless of position.
+The `members.node_id` path is handled as a special case in the HQL engine, translating to a MongoDB `members.node_id` field match — which works against the array of `member` objects **regardless of position** when it's the only member sub-field in `where`. See [Positional member filters (seq)](#positional-member-filters-seq) below for matching a specific array slot.
 
 To match edges containing any one of several nodes:
 
@@ -327,6 +327,42 @@ hql:
       - attributes
     as: edges_containing_moe_et
 ```
+
+#### Positional member filters (seq)
+
+To match a specific *position* within the members array rather than "contains
+this node anywhere," combine `seq` with another member sub-field (typically
+`node_id`) — either as a nested dict or as separate literal dotted keys. Both
+forms bind to the **same** array element, so the query below only matches
+edges whose *first* member (`seq: 0`) is `group:three-stooges`:
+
+```yaml
+hql:
+  from: hello-world
+  match:
+    type: hyperedge
+    relation: "rel:member"
+  where:
+    members:
+      seq: 0
+      node_id: group:three-stooges
+  return:
+    - id
+    - relation
+    - members
+    - attributes
+  as: first_member_is_stooges
+```
+
+Equivalently:
+
+```yaml
+where:
+  members.seq: 0
+  members.node_id: group:three-stooges
+```
+
+Internally, the HQL engine merges every `members.*` / `members: {...}` condition given in the same `where` clause and, when there's more than one, translates them into a single MongoDB [`$elemMatch`](https://www.mongodb.com/docs/manual/reference/operator/query/elemMatch/) so all conditions are required to hold on the same array element — unlike separate top-level dot-paths, which Mongo would otherwise evaluate independently against any (possibly different) elements. A single member sub-field is unaffected and keeps the "contains anywhere" behavior described above.
 
 ### Space-scoped Graph References
 
@@ -1516,7 +1552,9 @@ shql:
     - ?person.tags
 ```
 
-Returns all hyperedge group + members
+Returns all hyperedge group + members. `seq: 0` here isn't just decorative —
+it requires the already-bound `?group` to specifically be the hub-flavor
+edge's *first* member, not merely one of its members:
 
 ```yaml
 shql:

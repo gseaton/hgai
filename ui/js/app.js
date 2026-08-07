@@ -975,6 +975,10 @@ const HQL_EXAMPLES = [
     hql: `hql:\n  from:\n    - hg-alpha\n  at: "2026-01-01T00:00:00"\n  match:\n    type: hyperedge\n    relation: "rel:member"\n  where:\n    members.node_id: "group:three-stooges"\n  return:\n    - id\n    - relation\n    - members`
   },
   {
+    title: 'Positional member filter — first member is a specific node (seq)',
+    hql: `hql:\n  from: hello-world\n  match:\n    type: hyperedge\n    relation: "rel:member"\n  where:\n    members:\n      seq: 0\n      node_id: "group:three-stooges"\n  return:\n    - id\n    - relation\n    - members\n    - attributes\n  as: first_member_is_stooges`
+  },
+  {
     title: 'Find nodes by attribute value',
     hql: `hql:\n  from: hello-world\n  match:\n    type: hypernode\n  where:\n    attributes.last_name: Howard\n  return:\n    - "*"`
   },
@@ -1130,6 +1134,10 @@ const SHQL_EXAMPLES = [
   {
     title: 'PIT — group members via rel:member hyperedges',
     shql: `shql:\n  from:\n    - hg-alpha\n  at: "2026-01-01T00:00:00"\n  where:\n    - edge: "?membership"\n      relation: "rel:member"\n      members:\n        - bind: "?group"\n          id: "group:three-stooges"\n        - bind: "?member"\n    - node: "?member"\n      bind: "?member_node"\n  select:\n    - "?member_node.id"\n    - "?member_node.label"\n    - "?member_node.type"\n    - "?member_node.attributes"`
+  },
+  {
+    title: 'Positional member filter — bind the first member (seq)',
+    shql: `shql:\n  from: hello-world\n  where:\n    - edge: ?e\n      relation: "rel:member"\n      members:\n        - bind: ?first_member_id\n          seq: 0\n  select:\n    - ?e.id\n    - ?e.relation\n    - ?first_member_id`
   },
   {
     title: 'Find nodes by attribute value',

@@ -91,6 +91,42 @@ def _member_pat_to_node_pat(pat: Any) -> Dict[str, Any]:
     return {}
 
 
+def _resolve_member_pat(node_pat: Dict[str, Any], binding: BindingSet) -> Dict[str, Any]:
+    """Resolve a normalised member pattern's bind var, required node_id, and
+    required seq against the current binding set.
+
+    An already-bound ``bind`` variable takes priority over a literal/variable
+    ``id`` (it reflects a join constraint from an earlier pattern). ``seq`` is
+    resolved the same way ``id`` is when given as a variable reference.
+    """
+    bind_var = node_pat.get("bind")
+    req_id   = node_pat.get("id")
+    req_seq  = node_pat.get("seq")
+
+    if bind_var and bind_var in binding:
+        existing = binding[bind_var]
+        req_id = existing.get("id") if isinstance(existing, dict) else existing
+    elif req_id is not None and _is_var(str(req_id)):
+        req_id = _resolve_var(req_id, binding)
+
+    if req_seq is not None and _is_var(str(req_seq)):
+        req_seq = _resolve_var(req_seq, binding)
+
+    return {"bind": bind_var, "id": req_id, "seq": req_seq}
+
+
+def _member_satisfies(member: Any, req_id: Any, req_seq: Any) -> bool:
+    """Check a single edge member dict against required node_id / seq constraints."""
+    mid = member.get("node_id") if isinstance(member, dict) else member
+    if req_id is not None and mid != req_id:
+        return False
+    if req_seq is not None:
+        mseq = member.get("seq") if isinstance(member, dict) else None
+        if mseq != req_seq:
+            return False
+    return True
+
+
 def _match_members(
     edge_members: List[Dict],
     member_patterns: List[Any],
@@ -102,7 +138,11 @@ def _match_members(
       - "?var"                                  shorthand variable
       - {"bind": "?var"}                        bind any unmatched member
       - {"bind": "?var", "id": "literal-id"}    bind a member with a specific id
+      - {"bind": "?var", "seq": 0}               bind the member at a specific sequence position
       - {"node": {"bind": "?var", "id": ...}}   nested node form
+
+    ``id`` and ``seq``, when both given on the same pattern, must be satisfied
+    by the same edge member (e.g. "the seq-0 member has id X").
 
     Returns an updated BindingSet if all patterns are satisfied, or None.
     """
@@ -114,26 +154,15 @@ def _match_members(
         if not node_pat and not isinstance(pat, (str, dict)):
             return None
 
-        bind_var = node_pat.get("bind")
-        req_id   = node_pat.get("id")
-        req_type = node_pat.get("type")   # not used in member matching (type lives on the node doc)
-
-        # If the bind variable is already resolved, treat its id as the required id
-        if bind_var and bind_var in new_binding:
-            existing = new_binding[bind_var]
-            req_id = existing.get("id") if isinstance(existing, dict) else existing
-
-        # Resolve any variable reference in req_id
-        if req_id is not None:
-            req_id = _resolve_var(req_id, new_binding) if _is_var(str(req_id)) else req_id
+        resolved = _resolve_member_pat(node_pat, new_binding)
+        bind_var, req_id, req_seq = resolved["bind"], resolved["id"], resolved["seq"]
 
         # Find the first unused edge member that satisfies the requirement
         matched_idx = None
         for i, member in enumerate(edge_members):
             if i in used:
                 continue
-            mid = member.get("node_id") if isinstance(member, dict) else member
-            if req_id is not None and mid != req_id:
+            if not _member_satisfies(member, req_id, req_seq):
                 continue
             matched_idx = i
             break
@@ -161,12 +190,13 @@ def _match_members_expand(
     member_patterns: List[Any],
     binding: BindingSet,
 ) -> List[BindingSet]:
-    """Like _match_members but expands wildcard (id-unconstrained) member patterns
-    over ALL matching edge members, producing one BindingSet per member.
+    """Like _match_members but expands wildcard (fully unconstrained) member
+    patterns over ALL matching edge members, producing one BindingSet per member.
 
-    Anchor patterns (those with an explicit ``id``) are matched first to determine
-    which member slots are spoken for.  Each remaining member is then yielded as a
-    separate binding for the single wildcard pattern.
+    Anchor patterns — those that resolve to a required ``id`` and/or ``seq``,
+    including via an already-bound ``bind`` variable — are matched first to
+    determine which member slots are spoken for. Each remaining member is then
+    yielded as a separate binding for the single wildcard pattern.
 
     Falls back to the single-result ``_match_members`` behaviour when there are
     multiple wildcard patterns (not yet expanded) or no member patterns at all.
@@ -174,18 +204,17 @@ def _match_members_expand(
     if not member_patterns:
         return [dict(binding)]
 
-    # Classify patterns: anchor (has a required id) vs wildcard (no id constraint)
-    anchor_pats: List[tuple] = []   # (raw_pat, resolved_req_id)
+    # Classify patterns: anchor (resolves to a required id and/or seq) vs
+    # wildcard (no constraint at all — enumerate every remaining member).
+    anchor_pats: List[tuple] = []   # (raw_pat, req_id, req_seq)
     wildcard_pats: List[Any] = []
 
     for pat in member_patterns:
         np = _member_pat_to_node_pat(pat)
-        req_id = np.get("id")
-        if req_id and _is_var(str(req_id)):
-            resolved = binding.get(req_id)
-            req_id = resolved.get("id") if isinstance(resolved, dict) else resolved
-        if req_id:
-            anchor_pats.append((pat, req_id))
+        resolved = _resolve_member_pat(np, binding)
+        req_id, req_seq = resolved["id"], resolved["seq"]
+        if req_id is not None or req_seq is not None:
+            anchor_pats.append((pat, req_id, req_seq))
         else:
             wildcard_pats.append(pat)
 
@@ -198,17 +227,17 @@ def _match_members_expand(
     used_indices: Set[int] = set()
     anchor_binding = dict(binding)
 
-    for pat, req_id in anchor_pats:
+    for pat, req_id, req_seq in anchor_pats:
         np = _member_pat_to_node_pat(pat)
         bind_var = np.get("bind")
         matched_idx = None
         for i, member in enumerate(edge_members):
             if i in used_indices:
                 continue
-            mid = member.get("node_id") if isinstance(member, dict) else member
-            if mid == req_id:
-                matched_idx = i
-                break
+            if not _member_satisfies(member, req_id, req_seq):
+                continue
+            matched_idx = i
+            break
         if matched_idx is None:
             return []  # anchor not satisfied → edge doesn't match at all
         used_indices.add(matched_idx)

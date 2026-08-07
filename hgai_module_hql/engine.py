@@ -148,6 +148,7 @@ def _build_edge_search_filters(
 
     # extra filters from where (pass-through for members.* and other dot-paths)
     extra_filters: Dict[str, Any] = {}
+    member_filters: Dict[str, Any] = {}
     for key, value in where.items():
         if key == "tags":
             tags = value if isinstance(value, list) else [value]
@@ -155,13 +156,27 @@ def _build_edge_search_filters(
             pass
         elif key == "members":
             if isinstance(value, dict):
-                for mk, mv in value.items():
-                    extra_filters[f"members.{mk}"] = mv
+                member_filters.update(value)
+        elif key.startswith("members."):
+            member_filters[key[len("members."):]] = value
         elif key.startswith("attributes."):
             # strip "attributes." prefix — the store adds it when building the query
             attributes[key[len("attributes."):]] = value
         else:
             extra_filters[key] = value
+
+    # A single member sub-field (e.g. just node_id) is a plain "contains" filter —
+    # it matches regardless of which array element satisfies it, so a dot-path is
+    # sufficient and keeps existing queries working unchanged. Two or more
+    # sub-fields together (e.g. seq + node_id) must bind to the SAME array
+    # element ("the Nth member has id X"), which Mongo only guarantees via
+    # $elemMatch — separate dot-paths would match each condition independently,
+    # possibly against different members.
+    if len(member_filters) == 1:
+        (mk, mv), = member_filters.items()
+        extra_filters[f"members.{mk}"] = mv
+    elif member_filters:
+        extra_filters["members"] = {"$elemMatch": member_filters}
 
     return HyperedgeSearchFilters(
         hypergraph_ids=graph_ids,

@@ -12,8 +12,8 @@ motor==3.7.0
 pymongo>=4.10,<5.0
 
 # Data validation
-pydantic==2.10.3
-pydantic-settings==2.6.1
+pydantic==2.13.4
+pydantic-settings==2.15.0
 
 # Authentication
 python-jose[cryptography]==3.3.0
