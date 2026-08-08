@@ -474,7 +474,7 @@ shql:
     - edge:
         relation: has-skill
         members:
-          - node: { bind: "?person", id: "?person" }
+          - node: { bind: "?person" }
           - node: { bind: "?skill" }
   order_by: ?person.label
   as: person_skill_matrix
@@ -482,17 +482,17 @@ shql:
 → **14 results** — the full person↔skill matrix (Dana alone contributes 3
 rows: Python, ROS, Computer Vision).
 
-> **Practical tip — anchoring an already-bound variable.** Notice
-> `{ bind: "?person", id: "?person" }`: `?person` was already bound by the
-> `node` pattern above, so repeating it as both `bind` and `id` tells the
-> engine "this member slot is pinned to the person we already have" and
-> lets the *other* slot (`?skill`) expand freely across every remaining
-> member. This matters whenever a hyperedge can have more than one member
-> of the same kind (several skills, several project staff) — q10 below uses
-> the same technique on both sides at once.
+> **Concept note — anchoring an already-bound variable.** `?person` was
+> already bound by the `node` pattern above, so when the same variable
+> reappears in the `edge` pattern's members list, the engine treats that
+> slot as pinned to the person we already have and lets the *other* slot
+> (`?skill`) expand freely across every remaining member. This is what
+> makes multi-member hyperedges (several skills, several project staff)
+> safe to join against — q10 below relies on the same behavior for two
+> variables at once.
 
-**q10 — project staffing** (`queries/q10-staffing-by-project.shql`) — same
-anchoring technique, applied to both `?project` and `?person`:
+**q10 — project staffing** (`queries/q10-staffing-by-project.shql`) — the
+same join pattern, applied to both `?project` and `?person`:
 ```yaml
 shql:
   from: acme-eng
@@ -510,8 +510,8 @@ shql:
     - edge:
         relation: staffed-on
         members:
-          - node: { bind: "?project", id: "?project" }
-          - node: { bind: "?person", id: "?person" }
+          - node: { bind: "?project" }
+          - node: { bind: "?person" }
   order_by: ?project.label
   as: project_staffing
 ```
@@ -593,7 +593,7 @@ shql:
             - edge:
                 relation: has-skill
                 members:
-                  - node: { bind: "?person", id: "?person" }
+                  - node: { bind: "?person" }
                   - node: { id: skill:python }
         - patterns:
             - node:

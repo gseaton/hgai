@@ -340,6 +340,7 @@ async def _eval_edge_pattern(
     bindings: List[BindingSet],
 ) -> List[BindingSet]:
     bind_var       = pattern.get("bind")
+    edge_id        = pattern.get("id")
     relation       = pattern.get("relation")
     flavor         = pattern.get("flavor")
     tags           = pattern.get("tags")
@@ -350,7 +351,7 @@ async def _eval_edge_pattern(
     result: List[BindingSet] = []
 
     for binding in bindings:
-        # Already bound: verify relation matches
+        # Already bound: verify relation/flavor/id match
         if bind_var and bind_var in binding:
             existing = binding[bind_var]
             if isinstance(existing, dict):
@@ -358,6 +359,10 @@ async def _eval_edge_pattern(
                     continue
                 if flavor and existing.get("flavor") != flavor:
                     continue
+                if edge_id:
+                    req = _resolve_var(edge_id, binding) if _is_var(str(edge_id)) else edge_id
+                    if req and existing.get("id") != req:
+                        continue
             result.append(binding)
             continue
 
@@ -365,6 +370,13 @@ async def _eval_edge_pattern(
         resolved_rel = None
         if relation:
             resolved_rel = _resolve_var(relation, binding) if _is_var(str(relation)) else relation
+
+        # Resolve edge id variable if needed
+        resolved_id = None
+        if edge_id is not None:
+            resolved_id = _resolve_var(edge_id, binding) if _is_var(str(edge_id)) else edge_id
+            if resolved_id is None:
+                continue
 
         # Add member constraints from already-bound variables to narrow the query
         bound_node_ids: List[str] = []
@@ -397,6 +409,7 @@ async def _eval_edge_pattern(
             pit=pit,
             member_node_ids_all=bound_node_ids if bound_node_ids else None,
             attributes=attributes if attributes else None,
+            extra_filters={"id": resolved_id} if resolved_id is not None else None,
         )
         docs = await get_storage().hyperedges.search(filters, skip=0, limit=2000)
 

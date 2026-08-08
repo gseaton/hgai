@@ -10,10 +10,10 @@ shql:
     - edge:
         relation: has-skill
         members:
-          # ?person is already bound above — repeating it in both bind and id
-          # anchors this slot, so the remaining open slot (?skill) expands
-          # over every skill on the hub edge instead of matching just one.
-          - node: { bind: "?person", id: "?person" }
+          # ?person is already bound above, so this slot is anchored to that
+          # specific person; the remaining open slot (?skill) expands over
+          # every skill on the hub edge instead of matching just one.
+          - node: { bind: "?person" }
           - node: { bind: "?skill" }
   order_by: ?person.label
   as: person_skill_matrix

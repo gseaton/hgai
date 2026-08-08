@@ -12,7 +12,7 @@ shql:
             - edge:
                 relation: has-skill
                 members:
-                  - node: { bind: "?person", id: "?person" }
+                  - node: { bind: "?person" }
                   - node: { id: skill:python }
         - patterns:
             - node:
