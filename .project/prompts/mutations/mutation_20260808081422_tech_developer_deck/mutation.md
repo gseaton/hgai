@@ -1,0 +1,4 @@
+# Mutation Log
+
+## Created
+- **notes/decks/hgai-tech-developer-20260808.md** — 18-slide hands-on implementation cookbook for AI software engineers: 60-second mental model, Docker quickstart with a real port gotcha (8000 compose vs 8357 CLI default), the three integration paths (REST/MCP/hgai-shell) with an explicit "no bundled Python SDK" callout, a runnable `httpx`-based client wrapper, an agent-memory schema-design worked example, write-path and HQL/SHQL read-path query recipes (including the positional `seq` filter and temporal `at:` recall), a concrete recall→act→record agent-loop code pattern, MCP client wiring, testing/validation guidance, a gotchas table, federation/local-dev/performance recipes, and a condensed cheat sheet with verified REST request-body field names for both HQL and SHQL endpoints.
