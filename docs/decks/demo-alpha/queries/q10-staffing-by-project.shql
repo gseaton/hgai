@@ -14,10 +14,10 @@ shql:
     - edge:
         relation: staffed-on
         members:
-          # Both sides are already bound (via the node patterns above) and
-          # anchored here via bind+id, so this pattern is a pure co-membership
-          # check — safe even though each project has several staff members.
-          - node: { bind: "?project", id: "?project" }
-          - node: { bind: "?person", id: "?person" }
+          # Both sides are already bound (via the node patterns above), so
+          # this pattern is a pure co-membership check — safe even though
+          # each project has several staff members.
+          - node: { bind: "?project" }
+          - node: { bind: "?person" }
   order_by: ?project.label
   as: project_staffing

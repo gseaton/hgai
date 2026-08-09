@@ -1675,6 +1675,7 @@ Variables start with `?` and bind matched entities across patterns. A variable u
 ```yaml
 - edge:
     bind: ?edge         # bind matched edge to this variable
+    id: my-edge-id       # match by exact edge id (literal or ?var)
     relation: has-member
     flavor: hub
     tags: [original]
