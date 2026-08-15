@@ -1,0 +1,4 @@
+# Mutation Log
+
+## Created
+- **docs/design/epcis-to-build-production-hgai/build-plan.md** — A self-contained, LLM-optimized greenfield build plan for "HypergraphAI v2." Covers: product tenets, a defect table drawn from an audit of the current codebase, technology-stack decisions (v1 vs v2 with rationale), target repository layout for a `uv` workspace, canonical data model schemas, HQL/SHQL query-layer spec plus a new backend-neutral Filter IR, consolidated REST API surface, security model, a real inferencing-engine design (RelationType/axiom-based), a new hybrid retrieval layer (structural/lexical/semantic), an event-sourcing/audit design, MCP tool parity table, a testing-strategy/quality-gates table, a 13-phase ordered build plan (Phase 0–12) each with deliverables and exit criteria, an explicit deferred/non-goals list, and a glossary.
