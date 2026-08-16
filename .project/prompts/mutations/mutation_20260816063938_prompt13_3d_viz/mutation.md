@@ -1,0 +1,4 @@
+# Mutation Log
+
+## Modified
+- **docs/design/epics-to-build-production-hgai/hgai-v0.2-plan-prompts.md** — Appended **Prompt 13 — 3D interactive hypergraph visualization (optional)**, after Prompt 12 (previously the last prompt). Marked optional in its heading and in the prompt body itself ("only proceed if you were explicitly asked to build this phase"). Mirrors `build-plan.md`'s new §14 Phase 13 spec: WebGL 3D scene via `3d-force-graph`, hyperedge-as-scene-node rendering mapping, bounded initial load from the existing `/graphs/{id}/nodes`/`edges` endpoints, manual + auto-rotation, server-side filtering reusing existing list-endpoint query params, and double-click focus reusing HQL `members.node_id` filtering plus REST `?hydrate=1` edge hydration to fetch and merge a focused node's one-hop neighborhood. Ends with the same manual-smoke-test-plus-report instruction pattern used in Prompt 11 (the other UI-phase prompt) and matching exit criteria.

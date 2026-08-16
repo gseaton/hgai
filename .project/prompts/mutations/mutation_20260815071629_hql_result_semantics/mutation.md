@@ -1,0 +1,4 @@
+# Mutation Log
+
+## Modified
+- **docs/design/epics-to-build-production-hgai/build-plan.md** — Expanded §6.1 (HQL spec), mirroring the §6.2 (SHQL) treatment from the prior mutation. Added: (1) an explicit result-shape statement — HQL returns a flat list of same-kind documents (or a `return:` projection), not a SHQL-style binding table; (2) a same-document-only attribute-access boundary, explicitly stating cross-document joins (e.g. hydrating a hyperedge member's node attributes) are SHQL's responsibility, not HQL's, to keep scope from creeping between the two query engines; (3) a multi-value `id` lookup capability (`match.id`/`where.id` accepts a list, compiled to the Filter IR's `In`), called out because the reference implementation had this silently return zero rows instead of erroring; (4) three worked YAML examples — filtered retrieval + projection, bulk-id hydration, and PIT + aggregate.

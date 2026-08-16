@@ -250,3 +250,24 @@ As a final verification step, spot-check every documented endpoint and every doc
 
 Exit criteria: CI pipeline green end-to-end on a clean PR from a fresh clone. All coverage gates met. Docs spot-check complete with zero drift remaining.
 ```
+
+---
+
+## Prompt 13 — 3D interactive hypergraph visualization *(optional)*
+
+```
+Read docs/design/build-plan.md in full, especially §1 (hyperedges are first-class, referenceable like hypernodes), §6.1 (HQL members.* filtering), §7 (REST list endpoints, edge hydration via ?hydrate=n), and §14 Phase 13. Phases 0–12 are complete — the platform is fully functional without this phase. You are now implementing Phase 13, which is OPTIONAL: only proceed if you were explicitly asked to build this phase. It is purely additive to apps/web-ui — do not modify any backend/API package, this phase consumes the existing REST surface and HQL unmodified.
+
+Implement in apps/web-ui:
+- A new "Visualize" view using a WebGL 3D force-directed graph component (recommend the `3d-force-graph` library, Three.js-based, self-hostable via the Vite bundle — no CDN/external service dependency), mounted alongside the existing Phase 11 views.
+- Rendering mapping: each Hypernode is a scene node; each Hyperedge is ALSO a scene node (visually distinct — smaller radius, color/shape keyed by relation/flavor), with one link per member connecting the hyperedge-node to that member in seq order (directional arrow for hub/transitive/inverse-transitive flavors, undirected for symmetric/direct). Do not render hyperedges as plain lines between two nodes — hyperedges are N-ary and first-class, per §1.
+- Initial scene load: parallel GET /graphs/{id}/nodes + GET /graphs/{id}/edges (§7), transformed client-side into the {nodes, links} shape per the mapping above. Bound the default load — warn and require narrowing via the filter panel above roughly 2000 combined nodes+edges rather than attempting to render an unbounded scene.
+- Rotation: manual orbit via pointer-drag using the library's default Three.js OrbitControls — no custom camera-control implementation.
+- Auto-rotation: a toggle enabling continuous slow camera orbit when idle. It must pause immediately on user drag and resume automatically after a short idle timeout (~3s) once the user releases control.
+- Filtering: a filter panel using the same query params as the list endpoints (tags, status, node_type for nodes; relation, flavor for edges — §7). Changing a filter re-fetches nodes/edges with those params and rebuilds the scene graph server-side — do not implement this as client-side show/hide over an unbounded in-memory dataset.
+- Hypernode double-click focus: double-clicking a hypernode-typed scene node (not a hyperedge-node) must (1) run an HQL query via POST /query with match: {type: hyperedge}, where: {members.node_id: <id>} to find every hyperedge incident to that node (this member sub-field filtering is already supported per §6.1, do not build a new backend endpoint for it); (2) fetch each incident edge with GET .../{edge_id}?hydrate=1 (§7) to pull full member documents for anything not already present in the loaded scene, merging new nodes/links in; (3) animate the camera to center/zoom on the focused node; (4) highlight the focused node plus its one-hop neighborhood (incident hyperedge-nodes and their other members), dimming everything else. Provide a "clear focus" control (button, or double-click on empty space) that restores the default full-brightness view and camera position.
+
+This is explicitly a UI/UX phase — after building it, run the full stack and actually use the feature: load a seeded graph in the Visualize view, drag to rotate, toggle auto-rotate, apply a filter and confirm the scene rebuilds correctly, double-click a hypernode and confirm the camera focuses with its neighborhood highlighted and any not-yet-loaded neighbors appear correctly hydrated. Report specifically that you did this walkthrough and what you observed, not just that the build compiled.
+
+Exit criteria: manual smoke-test walkthrough (described above) completed and reported. Component tests for the filter-params-to-fetch logic and the scene-graph transform function (hypernode/hyperedge/member → nodes/links) in isolation.
+```

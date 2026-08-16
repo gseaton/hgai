@@ -165,11 +165,67 @@ All models are Pydantic v2, `*Base` / `*Create` / `*Update` / `*InDB` / `*Respon
 
 YAML-first, top-level `hql:` key. `from` (graph id / list / `space/graph` / mesh dot-ref), `match` (type, node_type, relation, flavor, id, nodes), `where` (attribute equality, `tags`, dot-paths, `members.*`), `return`, `as`, `limit`/`skip`, `distinct`, `at` (PIT timestamp), `aggregate` (`count`, `group_by`). Query result caching by hash of normalized query; PIT filters against `valid_from`/`valid_to`.
 
+**Result shape.** HQL is single-entity-type, direct filtered retrieval — not pattern matching. A query returns a flat list of documents, all of the same kind (`match.type: hypernode` or `hyperedge`), each either the full matched document or a `return:` field projection of it. There is no binding-table/multi-variable result like SHQL (§6.2) — a query needing to correlate several related entities in one result row is a SHQL query, not an HQL one.
+
+**Attribute access is same-document-only.** `where:`/`return:` dot-paths (e.g. `attributes.foo.bar`) resolve against the single matched document only. A hyperedge's `members:` field supports where-filtering on member sub-fields (`node_id`, `seq` — via `Eq`/`ElemMatch` in the Filter IR, §6.3, so two sub-fields filtered together correctly constrain the *same* array element), but member results are always returned as bare `{node_id, seq}` — HQL never hydrates a member's node document. Fetching a member's `label`/`attributes` requires SHQL (§6.2), or a follow-up HQL bulk `id` lookup (below). This is a deliberate boundary, kept from v1: HQL optimizes for fast single-collection retrieval; SHQL owns joins/traversal. Don't add cross-document joins to HQL — that's scope creep into what SHQL already does.
+
+**`id` supports multi-value match.** `match.id` / `where.id` accepts either a single literal or a list, compiled to the Filter IR's `In` (§6.3), for bulk lookup by id — e.g. hydrating a batch of member `node_id`s gathered from a prior query. Include a dedicated test for this: the reference implementation had `where: {id: {$in: [...]}}` against hypernodes silently match zero rows, because unrecognized `where` keys fell through to an `attributes.<key>` filter instead of erroring — it failed silently rather than loudly, which is the worse failure mode.
+
 **v2 addition:** `match.flavor: transitive` (or `inverse-transitive`) triggers the inference engine (§9) instead of returning raw unexpanded edges.
+
+Worked examples:
+
+```yaml
+# Direct filtered retrieval + projection
+hql:
+  from: org-graph
+  match: { type: hypernode, node_type: Employee }
+  where: { attributes.department: "engineering", tags: { $in: ["fte"] } }
+  return: [id, label, attributes.title]
+  limit: 50
+```
+
+```yaml
+# Bulk hydration by id — the HQL-side half of "get member ids from a
+# hyperedge (HQL or SHQL), then hydrate the node docs (HQL)"
+hql:
+  from: org-graph
+  match: { type: hypernode, id: [emp-014, emp-042, emp-091] }
+  return: "*"
+```
+
+```yaml
+# PIT + aggregate
+hql:
+  from: org-graph
+  match: { type: hyperedge, relation: reports-to }
+  at: "2025-01-01T00:00:00Z"
+  aggregate: { group_by: attributes.department, op: count }
+```
 
 ### 6.2 SHQL (unchanged surface, from v1)
 
 YAML-first, top-level `shql:` key: `from`, `where` (list of patterns: `node`, `edge` w/ `members` sub-patterns, `filter`, `optional`, `union`), `select`, `limit`, `offset`. `?var` bindings resolved left-to-right; a member sub-pattern is an *anchor* if it has a literal `id` **or** references an already-bound `?var` (v1 fixed this correctly late in its life — keep that behavior, don't regress to the old "only `id:` counts as anchor" bug). `filter:` expressions need a real small grammar (Lark or a hand-written recursive-descent parser) — v1's string-scanning evaluator is fragile; replace it, keep the same `filter:` expression syntax users already write.
+
+**What "SPARQL-esque" means concretely — results are binding tables.** A query does not return a flat list of matched hypernodes/hyperedges; it returns rows of `{?var: resolved_value, ...}` — one row per satisfying assignment of every `?var` bound anywhere in `where:`, same as a SPARQL `SELECT`. `select:` picks which bindings (or sub-fields of them) appear in each row; it does not change what was matched.
+
+**Attribute access on any bound variable, at any hop.** Any `?var` bound by *any* pattern — a `node:` pattern, an `edge:` pattern, or a `members:` sub-pattern, regardless of how many hops from the first pattern — resolves to its full underlying document (hypernode or hyperedge dict) and is addressable by dot-path in both `select:` and `filter:`: `?var.label`, `?var.attributes.<nested.path>`, `?member.attributes.skill_level`, etc. There is no separate mechanism for "the initial match" vs. "later matches" — every bound variable is equally queryable.
+
+**Multi-hop chaining is just anchor reuse, not a path operator.** To walk a second hop, add another `edge:`/`node:` pattern whose member sub-pattern (or `id:`) references a `?var` already bound by an earlier pattern — that reference is what makes it an anchor (per the anchor rule above) and joins the new pattern to the existing bindings. There is no dedicated "path"/"traverse" keyword; chaining depth is just how many patterns in sequence reuse a prior binding.
+
+Worked example — two hops, selecting an attribute from the hop-2 node:
+
+```yaml
+shql:
+  from: org-graph
+  where:
+    - node: { bind: "?person", type: Employee, id: emp-042 }
+    - edge: { relation: reports-to, members: [{ bind: "?person" }, { bind: "?manager" }] }
+    - edge: { relation: member-of, members: [{ bind: "?manager" }, { bind: "?team" }] }
+  select: [?person.label, ?manager.label, ?team.attributes.department]
+```
+
+`?manager` is bound by hop 1 (as the unconstrained member of the `reports-to` edge) and reused as the anchor of hop 2's `member-of` edge; `?team` is a hop-2 binding. All three variables' attributes are selectable in the same `select:` regardless of which pattern first bound them.
 
 ### 6.3 Filter IR (new — fixes defect #1)
 
@@ -203,7 +259,7 @@ Base: `/api/v1`. All graph-scoped resources resolve tenancy from the graph's own
 | `/spaces` | CRUD, `/spaces/{id}/members` | scoped within org |
 | `/graphs` | CRUD, `/graphs/{id}/stats`, `/graphs/{id}/export`, `/graphs/{id}/import` | `space_id` is a field on create, not a URL segment |
 | `/graphs/{graph_id}/nodes` | CRUD | |
-| `/graphs/{graph_id}/edges` | CRUD | |
+| `/graphs/{graph_id}/edges` | CRUD | `GET .../{edge_id}` supports `?hydrate=<n>`, see below |
 | `/query` (HQL), `/shql/query` | POST, `/validate` variants | |
 | `/search/semantic`, `/search/hybrid` *(new)* | POST | embedding-based and blended retrieval (§10) |
 | `/infer/transitive`, `/infer/expand` *(new)* | POST | direct REST access to the inference engine, mirrors MCP tools |
@@ -211,6 +267,35 @@ Base: `/api/v1`. All graph-scoped resources resolve tenancy from the graph's own
 | `/meshes` | CRUD, `/ping`, `/sync`, `/query`, proxy passthrough | unchanged from v1 |
 | `/events` *(new)* | GET (filterable by entity/graph/time range) | read path over the append-only event log |
 | `/healthz`, `/readyz` | GET | liveness vs. readiness (DB + Qdrant ping) |
+
+**Request/response conventions.** Every route above except `/auth/token` and `/healthz` requires `Authorization: Bearer <jwt-or-api-key>` — one shared auth dependency (§8), not reimplemented per router. List endpoints return a pagination envelope: `{items: [...], total: int, limit: int, offset: int}`; single-resource endpoints (get/create/update) return the resource document directly, no envelope. Errors return one consistent shape regardless of which router raised them — `{error: {code: str, message: str, details?: any}}` — paired with the matching HTTP status: `400` malformed request, `401` unauthenticated, `403` unauthorized, `404` not found, `409` conflict (e.g. duplicate id), `422` semantic validation (e.g. a hyperedge referencing a nonexistent member `node_id`). List endpoints accept `limit`/`offset` plus common filters `tags`, `status`, and entity-specific filters (`node_type` on nodes; `relation`/`flavor` on edges).
+
+**Edge hydration — the REST analogue of SHQL's member-attribute access (§6.2).** A single-edge `GET` accepts `?hydrate=<n>` (default `0`): at `0`, `members` returns bare `{node_id, seq}` (matches HQL's same-document-only boundary, §6.1); at `1`, each member is replaced by its full hypernode document (or hyperedge document, if that member is itself an edge); at `n > 1`, hydration recurses through hyperedge members up to `n` levels — hypernode leaves populate at whatever depth they're reached, hyperedge documents populate at each intermediate level. This gives the common "fetch this edge and its members' attributes" case a one-call REST path without requiring SHQL. Cap `n` server-side (e.g. max `5`) to bound response size and query cost — reject larger values with `400`, don't silently clamp.
+
+Worked examples:
+
+```json
+// GET /api/v1/graphs/org-graph/edges/edge-team-x?hydrate=1  (200)
+{
+  "id": "edge-team-x",
+  "relation": "member-of",
+  "flavor": "hub",
+  "members": [
+    { "seq": 0, "node": { "id": "team-x", "label": "Team X", "attributes": { "department": "engineering" } } },
+    { "seq": 1, "node": { "id": "emp-042", "label": "Dana", "attributes": { "title": "SRE" } } }
+  ]
+}
+```
+
+```json
+// GET /api/v1/graphs/org-graph/nodes?node_type=Employee&limit=2  (200)
+{ "items": [ { "id": "emp-014", "label": "Alex" }, { "id": "emp-042", "label": "Dana" } ], "total": 37, "limit": 2, "offset": 0 }
+```
+
+```json
+// POST /api/v1/graphs/org-graph/edges  with a members[].node_id that doesn't exist  (422)
+{ "error": { "code": "invalid_reference", "message": "member node_id 'emp-999' does not exist in graph 'org-graph'", "details": { "field": "members[1].node_id" } } }
+```
 
 ---
 
@@ -229,10 +314,41 @@ Relation semantics are declared as data, evaluated at query time, not hardcoded 
 
 1. A **RelationType** hypernode declares axioms: `axioms: ["owl:transitive"]`, `["owl:symmetric"]`, `["owl:inverse-of:rel:contains"]`, `["skos:broader-of:rel:sibling"]`.
 2. `hgai_inference` exposes two operations, called from both HQL (`match.flavor: transitive`) and SHQL (pattern evaluation) and as direct MCP/REST tools:
-   - `expand_edge(edge) -> list[Hyperedge]` — for edges whose relation has `inverse-of`/`symmetric` axioms, synthesizes the implied edge(s), tagged `_inferred: true`, `_source_edge: <id>`. Never persisted — computed at read time.
-   - `check_transitive(start_id, end_id, relation, graph_ids, max_depth=10) -> bool | path` — BFS over hyperedges filtered by relation, bounded by `max_depth`.
+   - `expand_edge(edge) -> list[Hyperedge]` — for edges whose relation has `inverse-of`/`symmetric` axioms, synthesizes the implied edge(s), tagged `_inferred: true`, `_source_edge: <id>`, `_axiom: <axiom-string>` (e.g. `"owl:inverse-of:rel:contains"` — kept for traceability, so a caller can tell *why* an edge was inferred, not just that it was). Never persisted — computed at read time.
+   - `check_transitive(start_id, end_id, relation, graph_ids, max_depth=10) -> {reachable: bool, path: list[str] | None}` — BFS over hyperedges filtered by relation, bounded by `max_depth`. `path` is the ordered list of *hyperedge ids* forming the chain (not node ids) — consistent with hyperedges being first-class, this lets a caller hydrate/select attributes on each hop the same way as any other edge (§6.2, §7).
 3. **Materialized closure cache** for hot transitive relations: a background job (or on-write trigger) precomputes reachability for `owl:transitive` relations flagged `cache: true` on the RelationType, stored in a `transitive_closures` collection, invalidated on relevant edge writes. Query-time `check_transitive` checks the cache first, falls back to live BFS.
 4. This is a resurrection of a real, previously-designed-but-never-wired spec — do not redesign the axiom vocabulary from scratch; the table above is the full syntax needed for v1 of this feature.
+
+**When inference fires — explicit, never implicit.** Per §0's "explicit config over implicit magic": queries return literal stored edges only unless inference is explicitly requested. Two triggers, both opt-in: HQL/SHQL `match.flavor: transitive` (or `inverse-transitive`) triggers `check_transitive`-backed expansion, as already stated in §6.1; a query- or pattern-level `infer: true` flag triggers `expand_edge`-based inverse-of/symmetric expansion for edges matched by that query/pattern. A plain query with neither never calls into `hgai_inference` at all — no silent expansion.
+
+**Inferred edges are first-class results, not a side channel — this is what makes them chainable.** When `infer: true` expands an edge inline during SHQL pattern evaluation, the synthesized edge is bound to `?var` exactly like a stored edge: it can anchor a later hop (§6.2's anchor-reuse rule), and its attributes (and its `_inferred`/`_source_edge`/`_axiom` fields) are selectable via the same dot-path mechanism as any other bound variable. Inference does not stop the chain — a multi-hop SHQL query can walk from a real edge, across an inferred one, into a further real edge, in one query. The same applies to REST: a `hydrate=n` fetch (§7) on an edge that was itself synthesized by `check_transitive`'s `path` follows the same hydration rules as a stored edge.
+
+Worked examples:
+
+```yaml
+# HQL — does A transitively contain B? (flavor triggers inference, no separate call needed)
+hql:
+  from: org-graph
+  match: { type: hyperedge, relation: contains, flavor: transitive, nodes: [warehouse-1, pallet-042] }
+  return: "*"
+```
+
+```yaml
+# SHQL — chain a real edge into an inferred inverse-of edge, then a further real edge,
+# selecting attributes at every hop including the inferred one
+shql:
+  from: org-graph
+  where:
+    - node: { bind: "?item", id: pallet-042 }
+    - edge: { infer: true, relation: contained-by, members: [{ bind: "?item" }, { bind: "?container" }] }
+    - edge: { relation: located-in, members: [{ bind: "?container" }, { bind: "?zone" }] }
+  select: [?item.label, ?container.label, ?container.attributes._inferred, ?zone.attributes.zone_code]
+```
+
+```json
+// POST /api/v1/infer/transitive  { "start_id": "warehouse-1", "end_id": "pallet-042", "relation": "contains" }  (200)
+{ "reachable": true, "path": ["edge-wh1-rack3", "edge-rack3-pallet042"] }
+```
 
 ---
 
@@ -347,6 +463,21 @@ Exit: manual smoke test of both against a running server (login → create graph
 **Phase 12 — Observability, docs, CI hardening**
 Deliverables: structlog + OpenTelemetry wiring, `/readyz` with real dependency checks, full GitHub Actions pipeline (lint+typecheck+unit+contract+integration on PR, build+push on tag), generated `docs/module-development.md` from the actual `HgaiModule` Protocol (fixes defect #8), `docs/api-reference.md`, `docs/concepts.md`, `docs/hello-world.md` walkthrough.
 Exit: CI pipeline green end-to-end on a clean PR; docs reviewed for drift against actual code (spot-check every documented endpoint/tool against the route table).
+
+**Phase 13 — 3D interactive hypergraph visualization *(optional)***
+Optional: the platform is complete and usable without this phase (Phase 11 already ships a working 2D UI). Start only after Phase 12's exit criteria pass. Purely additive to `apps/web-ui` — no backend/API changes, it consumes the existing REST surface (§7) and HQL (§6.1) unmodified. This is new functionality, not present in any prior version of this system.
+
+*Rendering mapping (hypergraph → binary-link scene graph):* 3D graph-rendering libraries render binary node-links; hyperedges are N-ary. Map each **Hypernode** to a scene node, and each **Hyperedge** to a scene node too (visually distinct — smaller radius, color/shape keyed by `relation`/`flavor`), with one link per member connecting the hyperedge-node to that member (`seq`-ordered; directional arrow for `hub`/`transitive`/`inverse-transitive` flavors, undirected for `symmetric`/`direct`). This is a direct application of §1's "hyperedges are first-class, referenceable like hypernodes" tenet — no separate hyperedge-rendering model needed.
+
+Deliverables:
+- A WebGL 3D force-directed graph component — recommend `3d-force-graph` (Three.js-based, self-hostable via the Vite bundle, no CDN/external service dependency, consistent with this plan's self-hosted-first choices elsewhere, e.g. §3's Qdrant decision) — mounted as a new "Visualize" view in `apps/web-ui` alongside the Phase 11 views.
+- Initial scene load: parallel `GET /graphs/{id}/nodes` + `GET /graphs/{id}/edges` (§7, both paginated/filterable) transformed client-side into the library's `{nodes, links}` shape per the mapping above. Bound the default load (e.g. warn/require narrowing via filters above ~2000 combined nodes+edges) rather than attempting to render an unbounded scene.
+- **Rotation**: manual orbit via pointer-drag — the library's default Three.js `OrbitControls`, no custom implementation.
+- **Auto-rotation**: a toggle enabling continuous slow camera orbit when idle; pauses immediately on user drag, resumes after a short idle timeout (e.g. 3s) after the user releases control.
+- **Filtering**: a filter panel using the same query params as the list endpoints (`tags`, `status`, `node_type` for nodes; `relation`, `flavor` for edges — §7); changing filters re-fetches nodes/edges with those params and rebuilds the scene graph server-side, rather than show/hiding over an unbounded client-side dataset.
+- **Hypernode double-click focus**: double-clicking a hypernode-typed scene node (not a hyperedge-node) — (1) runs an HQL query (`POST /query`, §7) with `match: { type: hyperedge }, where: { members.node_id: <id> }` (member sub-field filtering, already spec'd in §6.1) to find every hyperedge incident to that node; (2) fetches each with `GET .../{edge_id}?hydrate=1` (§7) to pull full member documents for anything not already in the loaded scene, merging new nodes/links in; (3) animates the camera to center/zoom on the focused node; (4) highlights the focused node plus its one-hop neighborhood (incident hyperedge-nodes and their other members), dimming everything else. A "clear focus" control (button, or double-click on empty space) restores the default full-brightness view/camera.
+
+Exit: manual smoke test (UI/UX phase, verify by using it, same standard as Phase 11) — load a seeded graph; confirm drag-to-rotate and the auto-rotate toggle both work; apply a filter and confirm the scene rebuilds to match; double-click a hypernode and confirm the camera focuses with its neighborhood highlighted and any not-yet-loaded neighbors appear correctly hydrated. Component tests for the filter-params-to-fetch logic and the scene-graph transform function (hypernode/hyperedge/member → nodes/links) in isolation.
 
 ---
 
