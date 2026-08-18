@@ -1,0 +1,37 @@
+# Comparison query for the HypergraphAI business briefing.
+#
+# "Who is CURRENTLY staffed on TO-047, in what labor category, and who's
+# their manager?" -- against staffing-rdf-comparison.ttl's reified data.
+#
+# Every fact about one staffing event -- person, task order, labor
+# category, validity window -- has to be re-associated to the SAME
+# ?assignment variable by hand. Nothing in RDF itself guarantees two
+# triples sharing that subject actually describe one real-world event
+# rather than an authoring mistake that merged two unrelated ones.
+
+PREFIX demo: <https://example.org/hgai-demo/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?personName ?lcatName ?managerName
+WHERE {
+  ?assignment a demo:StaffingAssignment ;
+              demo:assignmentPerson ?person ;
+              demo:assignmentTaskOrder demo:taskOrder_TO047 ;
+              demo:assignmentLaborCategory ?lcat ;
+              demo:validFrom ?from ;
+              demo:validTo ?to .
+  FILTER (NOW() >= ?from && NOW() <= ?to)
+
+  ?person rdfs:label ?personName .
+  ?lcat rdfs:label ?lcatName .
+
+  OPTIONAL {
+    ?person demo:reportsTo ?manager .
+    ?manager rdfs:label ?managerName .
+  }
+}
+
+# Point-in-time equivalent of q02/q03: replace NOW() with a literal
+# xsd:dateTime in the FILTER above -- the reification-unpacking cost is
+# identical either way; only the temporal comparison changes.

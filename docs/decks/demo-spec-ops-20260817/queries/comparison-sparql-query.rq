@@ -1,0 +1,42 @@
+# Comparison query for the HypergraphAI business briefing.
+#
+# "Who's requesting what MEDEVAC support, for which patients, tasked to
+# which asset, right now?" -- against specops-rdf-comparison.ttl's
+# reified data.
+#
+# Every fact about one request -- element, location, asset, the
+# multi-valued patient list, validity window -- has to be re-associated
+# to the SAME ?request variable by hand, and the multi-valued patient
+# property needs a GROUP_CONCAT to reassemble into one readable row.
+# Nothing in RDF itself guarantees the triples sharing that subject
+# actually describe one real event rather than an authoring mistake that
+# merged two.
+
+PREFIX demo: <https://example.org/hgai-demo/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?elementName ?assetName
+       (GROUP_CONCAT(DISTINCT ?patientName; separator=", ") AS ?patients)
+       ?precedence
+WHERE {
+  ?request a demo:MedevacRequest ;
+           demo:requestingElement ?element ;
+           demo:requestLocation demo:loc_pz_bravo ;
+           demo:requestAsset ?asset ;
+           demo:requestPatient ?patient ;
+           demo:precedence ?precedence ;
+           demo:validFrom ?from ;
+           demo:validTo ?to .
+  FILTER (NOW() >= ?from && NOW() <= ?to)
+
+  ?element rdfs:label ?elementName .
+  ?asset rdfs:label ?assetName .
+  ?patient rdfs:label ?patientName .
+}
+GROUP BY ?elementName ?assetName ?precedence
+
+# Point-in-time equivalent of q02/q03: replace NOW() with a literal
+# xsd:dateTime in the FILTER above -- the reification-unpacking and
+# GROUP_CONCAT cost is identical either way; only the temporal comparison
+# changes.

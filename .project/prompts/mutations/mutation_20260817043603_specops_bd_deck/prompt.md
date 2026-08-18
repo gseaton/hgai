@@ -1,0 +1,6 @@
+# Prompt
+
+Please generate in the 'docs/decks/demo-spec-ops-20260817' folder markdown slide deck(s) and other necessary demo artifacts (e.g. TTL demo data files, demo query files, etc) to present to a group of business development / product managers of large U.S. defense professional services and      technology      
+  consulting companies to explain the underlying principles and concepts of HypergraphAI semantic knowledge hypergraph platform, how HypergraphAI may be used as a general semantic knowledge storage platform, how HypergraphAI can be leveraged by AI models and enteprises as AI context memory that may be used during     
+  individual sessions and cross sessions, how MCP opened up models to use almost any system and how AI models may leverage the semantic knowledge hypergraph capabilities for not only context memory management and storage but also to persist and query the accumulated resource-intensive generated         
+  distilled knowledge across multiple turns and sessions, as well as at least one complete simple-to-understand example of supporting special operations and other forces in combat operations and how to step-by-step leverage HypergraphAI during implementations that illustrates the advantages of using HypergraphAI instead of other technologies (e.g. traditional SQL RDBMS, traditional semantic knowledge graphs, etc).

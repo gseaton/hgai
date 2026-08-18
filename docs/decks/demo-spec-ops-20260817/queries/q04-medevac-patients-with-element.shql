@@ -1,0 +1,41 @@
+# q04 — for the CURRENT PZ Bravo request (at: pins this to after the
+# 14:20Z reassessment, matching q03), which patients are involved, what
+# element are they from, and what's the request's precedence? Drop the
+# "at:" line to see all versions instead — same "nothing hidden by
+# default" behavior as q01, applied through a multi-hop join.
+#
+# Both ?patient and ?element are bound independently up front via
+# top-level node: patterns (each type-checked safely there — member
+# sub-patterns do NOT enforce type, only top-level node: patterns do).
+# The two edge: patterns below are then pure join constraints — every
+# member slot in each is either a literal id: or an already-bound ?var
+# (an anchor), with zero unconstrained wildcard slots. This is the safe
+# way to extract two unknowns from hyperedges that have more than 2
+# members, matching the pattern demo-alpha's own q10 relies on.
+shql:
+  from: defense-bd-demo-specops
+  at: "2026-08-10T14:30:00Z"
+  select:
+    - ?patient.label
+    - ?element.label
+    - ?request.attributes.precedence
+  where:
+    - node:
+        bind: "?patient"
+        type: Person
+    - node:
+        bind: "?element"
+        type: Element
+    - edge:
+        relation: has-member
+        members:
+          - node: { bind: "?element" }
+          - node: { bind: "?patient" }
+    - edge:
+        bind: "?request"
+        relation: medevac-request
+        members:
+          - node: { id: "loc:pz-bravo" }
+          - node: { bind: "?patient" }
+  order_by: ?patient.label
+  as: pz_bravo_patients_with_element

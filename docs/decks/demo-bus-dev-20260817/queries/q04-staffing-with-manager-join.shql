@@ -1,0 +1,27 @@
+# q04 — multi-hop: everyone staffed on TO-047, their labor category, and
+# (if recorded) their manager, in one pattern. The first member pattern
+# anchors on a literal id (the task order); ?person and ?lcat expand
+# across the edge's other members; the OPTIONAL means someone with no
+# recorded manager (e.g. the PM herself) still appears in results with
+# ?manager left null, instead of being silently dropped.
+shql:
+  from: defense-bd-demo
+  select:
+    - ?person.label
+    - ?lcat.label
+    - ?manager.label
+  where:
+    - edge:
+        relation: staffed-on
+        members:
+          - node: { id: "taskorder:to-047" }
+          - node: { bind: "?person", type: Person }
+          - node: { bind: "?lcat", type: LaborCategory }
+    - optional:
+        - edge:
+            relation: reports-to
+            members:
+              - node: { bind: "?person" }
+              - node: { bind: "?manager" }
+  order_by: ?person.label
+  as: to047_roster_with_lcat_and_manager
