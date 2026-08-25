@@ -4,13 +4,15 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from hgai.api.deps import require_graph_access
+from hgai.api.deps import parse_sort_param, require_graph_access
 from hgai.core import engine
 from hgai.models.account import AccountInDB
 from hgai.models.common import PaginatedResponse
 from hgai.models.hypernode import HypernodeCreate, HypernodeResponse, HypernodeUpdate
 
 router = APIRouter(prefix="/graphs/{graph_id}/nodes", tags=["hypernodes"])
+
+NODE_SORT_FIELDS = {"id", "label", "type", "status", "valid_from", "valid_to", "system_created", "system_updated"}
 
 
 @router.get("", response_model=PaginatedResponse)
@@ -22,6 +24,7 @@ async def list_nodes(
     search: Optional[str] = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=500),
+    sort: Optional[str] = Query(default=None, description=f"Comma-separated fields, '-' prefix = descending. Allowed: {sorted(NODE_SORT_FIELDS)}"),
     account: AccountInDB = Depends(require_graph_access("read")),
 ):
     total, nodes = await engine.list_hypernodes(
@@ -32,6 +35,7 @@ async def list_nodes(
         search=search,
         skip=skip,
         limit=limit,
+        sort=parse_sort_param(sort, NODE_SORT_FIELDS),
     )
     return PaginatedResponse(
         total=total, skip=skip, limit=limit,

@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import Field
 
 from hgai.models.common import Status, TimestampedModel
+from hgai.models.media import MediaRef
 
 
 class HypernodeBase(TimestampedModel):
@@ -15,6 +16,7 @@ class HypernodeBase(TimestampedModel):
     label: str = Field(..., description="Display label")
     type: str = Field(default="Entity", description="Entity type (e.g., Person, Organization)")
     description: Optional[str] = Field(default=None)
+    media: List[MediaRef] = Field(default_factory=list, description="Associated media attachments")
 
     # Temporal existential qualifiers
     valid_from: Optional[datetime] = Field(
@@ -42,6 +44,7 @@ class HypernodeUpdate(TimestampedModel):
     status: Optional[Status] = None
     valid_from: Optional[datetime] = None
     valid_to: Optional[datetime] = None
+    media: Optional[List[MediaRef]] = None
 
 
 class HypernodeInDB(HypernodeBase):

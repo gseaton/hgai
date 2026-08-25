@@ -58,6 +58,20 @@ class Settings(BaseSettings):
     # Mesh
     mesh_sync_interval_seconds: int = Field(default=300, description="Background mesh graph-list sync interval (0 = disabled)")
 
+    # Media
+    max_media_size_mb: int = Field(default=100, description="Maximum upload size for a single media file, in MB")
+    media_backend: str = Field(
+        default="gridfs",
+        description="Blob storage for media bytes: 'gridfs' (default, stored in MongoDB) or 's3'. "
+                    "Metadata (id/checksum/ref_count/...) always stays in MongoDB either way. "
+                    "Env: HGAI_MEDIA_BACKEND",
+    )
+    s3_bucket: Optional[str] = Field(default=None, description="S3 bucket name (required when media_backend=s3)")
+    s3_endpoint_url: Optional[str] = Field(default=None, description="S3-compatible endpoint URL (e.g. MinIO); omit for real AWS S3")
+    s3_region: str = Field(default="us-east-1", description="S3 region")
+    s3_access_key_id: Optional[str] = Field(default=None, description="S3 access key (omit to use the default AWS credential chain)")
+    s3_secret_access_key: Optional[str] = Field(default=None, description="S3 secret key (omit to use the default AWS credential chain)")
+
     # Bootstrap admin account
     admin_username: str = Field(default="admin")
     admin_password: str = Field(default="pwd357")

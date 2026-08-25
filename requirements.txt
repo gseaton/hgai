@@ -30,6 +30,9 @@ pyyaml==6.0.2
 # HTTP client (for mesh/remote graph queries)
 httpx==0.28.1
 
+# S3-compatible object storage (optional media backend, HGAI_MEDIA_BACKEND=s3)
+boto3==1.43.79
+
 # Utilities
 python-dateutil==2.9.0
 

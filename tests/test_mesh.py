@@ -176,3 +176,64 @@ async def test_sync_mesh_graphs_not_found():
     with patch("hgai_module_mesh.engine.get_storage", return_value=mock_storage):
         with pytest.raises(ValueError, match="Mesh not found"):
             await sync_mesh_graphs("nonexistent")
+
+
+# ─── Media mesh-qualification ──────────────────────────────────────────────────
+
+from hgai_module_mesh.engine import qualify_media_ids, find_server_by_id
+
+
+def test_qualify_media_ids_rewrites_bare_ids():
+    item = {"id": "n1", "media": [{"media_id": "abc123"}]}
+    qualify_media_ids(item, "server-a")
+    assert item["media"][0]["media_id"] == "server-a/abc123"
+
+
+def test_qualify_media_ids_leaves_already_qualified_ids_untouched():
+    """An id already qualified by ITS origin server must not be re-qualified
+    by an intermediate/aggregating server it happens to pass through."""
+    item = {"id": "n1", "media": [{"media_id": "server-x/abc123"}]}
+    qualify_media_ids(item, "server-a")
+    assert item["media"][0]["media_id"] == "server-x/abc123"
+
+
+def test_qualify_media_ids_noop_without_media_field():
+    item = {"id": "n1"}
+    qualify_media_ids(item, "server-a")  # must not raise
+    assert "media" not in item
+
+
+def test_qualify_media_ids_noop_on_empty_media_list():
+    item = {"id": "n1", "media": []}
+    qualify_media_ids(item, "server-a")
+    assert item["media"] == []
+
+
+@pytest.mark.asyncio
+async def test_find_server_by_id_found():
+    mock_mesh_store = MagicMock()
+    mock_mesh_store.list_active = AsyncMock(return_value=[
+        {"id": "mesh1", "servers": [
+            {"server_id": "server-a", "server_name": "A", "url": "http://a:8357"},
+            {"server_id": "server-b", "server_name": "B", "url": "http://b:8357"},
+        ]},
+    ])
+    mock_storage = MagicMock()
+    mock_storage.meshes = mock_mesh_store
+    with patch("hgai_module_mesh.engine.get_storage", return_value=mock_storage):
+        server = await find_server_by_id("server-b")
+        assert server is not None
+        assert server.url == "http://b:8357"
+
+
+@pytest.mark.asyncio
+async def test_find_server_by_id_not_found():
+    mock_mesh_store = MagicMock()
+    mock_mesh_store.list_active = AsyncMock(return_value=[
+        {"id": "mesh1", "servers": [{"server_id": "server-a", "server_name": "A", "url": "http://a:8357"}]},
+    ])
+    mock_storage = MagicMock()
+    mock_storage.meshes = mock_mesh_store
+    with patch("hgai_module_mesh.engine.get_storage", return_value=mock_storage):
+        server = await find_server_by_id("does-not-exist")
+        assert server is None

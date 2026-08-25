@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from hgai.models.common import Status, TimestampedModel
+from hgai.models.media import MediaRef
 
 
 class EdgeFlavor(str, Enum):
@@ -62,6 +63,8 @@ class HyperedgeBase(TimestampedModel):
         default=None, description="ID of the RelationType hypernode for this relation"
     )
 
+    media: List[MediaRef] = Field(default_factory=list, description="Associated media attachments")
+
 
 class HyperedgeCreate(HyperedgeBase):
     """Schema for creating a hyperedge."""
@@ -84,6 +87,7 @@ class HyperedgeUpdate(TimestampedModel):
     skos_broader: Optional[List[str]] = None
     skos_narrower: Optional[List[str]] = None
     skos_related: Optional[List[str]] = None
+    media: Optional[List[MediaRef]] = None
 
 
 class HyperedgeInDB(HyperedgeBase):

@@ -8,12 +8,19 @@ const State = {
   activeGraphId: null,
   nodesPage: 0,
   edgesPage: 0,
+  mediaPage: 0,
+  mediaPickerPage: 0,
   nodePageSize: 50,
   edgePageSize: 50,
+  mediaPageSize: 50,
+  mediaPickerPageSize: 10,
   confirmCallback: null,
   editorCM: null,
   graphsCache: {},       // id -> graph object (includes space_id)
+  mediaCache: {},        // id -> media object, from the last list load
   activeSpaceDetailId: null,
+  nodesSort: [],         // [{field, dir: 'asc'|'desc'}, ...] — priority order, first = primary sort key
+  edgesSort: [],
   viz3d: null,
 };
 
@@ -58,6 +65,13 @@ function truncate(s, n = 32) {
   return s.length > n ? s.slice(0, n) + '…' : s;
 }
 
+// Free-form fields (filenames, uploader-supplied content types, ...) go through
+// this before landing in an innerHTML template — unlike `id` fields elsewhere
+// in this app, these come straight from user-controlled upload metadata.
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 function parseTags(str) {
   return (str || '').split(',').map(t => t.trim()).filter(Boolean);
 }
@@ -90,7 +104,7 @@ function showScreen(name) {
 
   const titles = {
     dashboard: 'Dashboard', graphs: 'Hypergraphs', nodes: 'Hypernodes',
-    edges: 'Hyperedges', viz: 'Visualize', query: 'HQL Query', shql: 'SHQL Query',
+    edges: 'Hyperedges', media: 'Media', viz: 'Visualize', query: 'HQL Query', shql: 'SHQL Query',
     spaces: 'Spaces', accounts: 'Accounts', meshes: 'Meshes', system: 'System',
   };
   document.getElementById('topbar-screen-title').textContent = titles[name] || name;
@@ -102,6 +116,7 @@ function showScreen(name) {
     graphs: loadGraphs,
     nodes: () => { State.nodesPage = 0; populateNodesGraphSelect(); loadNodes(); },
     edges: () => { State.edgesPage = 0; populateEdgesGraphSelect(); loadEdges(); },
+    media: () => { State.mediaPage = 0; loadMedia(); },
     viz: loadVizScreen,
     query: initQueryEditor,
     shql: initShqlEditor,
@@ -490,6 +505,72 @@ document.getElementById('btn-save-graph').addEventListener('click', async () => 
   } catch (err) { toast(err.message, 'danger'); }
 });
 
+// ── Multi-column table sort ───────────────────────────────────────────────
+function sortParam(sortState) {
+  if (!sortState || !sortState.length) return undefined;
+  return sortState.map(s => (s.dir === 'desc' ? '-' : '') + s.field).join(',');
+}
+
+function updateSortIndicators(table) {
+  const sortState = State[table + 'Sort'] || [];
+  document.querySelectorAll(`.sortable-th[data-table="${table}"]`).forEach(th => {
+    const field = th.dataset.sortField;
+    const idx = sortState.findIndex(s => s.field === field);
+    const indicator = th.querySelector('.sort-indicator');
+    if (idx === -1) {
+      th.classList.remove('sort-active');
+      indicator.innerHTML = '';
+      return;
+    }
+    th.classList.add('sort-active');
+    const entry = sortState[idx];
+    const arrow = entry.dir === 'desc' ? '<i class="bi bi-caret-down-fill"></i>' : '<i class="bi bi-caret-up-fill"></i>';
+    const priority = sortState.length > 1 ? `<span class="sort-priority">${idx + 1}</span>` : '';
+    indicator.innerHTML = arrow + priority;
+  });
+}
+
+function handleSortableThClick(th, shiftKey) {
+  const table = th.dataset.table;
+  const field = th.dataset.sortField;
+  const key = table + 'Sort';
+  let sortState = State[key] || [];
+
+  if (shiftKey) {
+    const idx = sortState.findIndex(s => s.field === field);
+    if (idx === -1) {
+      sortState = sortState.concat([{ field, dir: 'asc' }]);
+    } else if (sortState[idx].dir === 'asc') {
+      sortState = sortState.slice();
+      sortState[idx] = { field, dir: 'desc' };
+    } else {
+      sortState = sortState.slice(0, idx).concat(sortState.slice(idx + 1));
+    }
+  } else {
+    const isOnlyActiveColumn = sortState.length === 1 && sortState[0].field === field;
+    if (isOnlyActiveColumn && sortState[0].dir === 'asc') {
+      sortState = [{ field, dir: 'desc' }];
+    } else if (isOnlyActiveColumn && sortState[0].dir === 'desc') {
+      sortState = [];
+    } else {
+      sortState = [{ field, dir: 'asc' }];
+    }
+  }
+
+  State[key] = sortState;
+  if (table === 'nodes') {
+    State.nodesPage = 0;
+    loadNodes();
+  } else if (table === 'edges') {
+    State.edgesPage = 0;
+    loadEdges();
+  }
+}
+
+document.querySelectorAll('.sortable-th').forEach(th => {
+  th.addEventListener('click', e => handleSortableThClick(th, e.shiftKey));
+});
+
 // ── Hypernodes ─────────────────────────────────────────────────────────────
 async function loadNodes() {
   // Sync State from the in-screen selector (it may have been set before State synced)
@@ -508,7 +589,9 @@ async function loadNodes() {
     status: document.getElementById('node-status-filter').value || undefined,
     node_type: document.getElementById('node-type-filter').value.trim() || undefined,
     search: document.getElementById('node-search').value.trim() || undefined,
+    sort: sortParam(State.nodesSort),
   };
+  updateSortIndicators('nodes');
 
   const spaceId = graphSpaceId(State.activeGraphId);
   try {
@@ -543,10 +626,13 @@ async function loadNodes() {
   }
 }
 
+const PAGINATION_LOADERS = { nodes: () => loadNodes(), edges: () => loadEdges(), media: () => loadMedia(), mediaPicker: () => loadMediaPicker() };
+
 function renderPagination(type, total, page, pageSize) {
   const totalPages = Math.ceil(total / pageSize);
   const infoEl = document.getElementById(`${type}-pagination-info`);
   const pgEl = document.getElementById(`${type}-pagination`);
+  const reload = PAGINATION_LOADERS[type];
 
   infoEl.textContent = `Showing ${page * pageSize + 1}–${Math.min((page+1)*pageSize, total)} of ${total}`;
   pgEl.innerHTML = '';
@@ -554,15 +640,345 @@ function renderPagination(type, total, page, pageSize) {
   const prev = document.createElement('button');
   prev.className = 'btn btn-outline-secondary btn-sm'; prev.textContent = '‹ Prev';
   prev.disabled = page === 0;
-  prev.onclick = () => { State[`${type}Page`]--; type === 'nodes' ? loadNodes() : loadEdges(); };
+  prev.onclick = () => { State[`${type}Page`]--; reload(); };
   pgEl.appendChild(prev);
 
   const next = document.createElement('button');
   next.className = 'btn btn-outline-secondary btn-sm'; next.textContent = 'Next ›';
   next.disabled = page >= totalPages - 1;
-  next.onclick = () => { State[`${type}Page`]++; type === 'nodes' ? loadNodes() : loadEdges(); };
+  next.onclick = () => { State[`${type}Page`]++; reload(); };
   pgEl.appendChild(next);
 }
+
+// ── Media attachment widget (shared by node & edge modals) ──────────────────
+let nodeMediaItems = [];
+let edgeMediaItems = [];
+
+let mediaRefEditContext = null; // { items, index, containerId } for the currently-open ref-edit modal
+
+function renderMediaList(containerId, items) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = '';
+  if (!items.length) {
+    el.innerHTML = '<div class="media-item-empty">No media attached</div>';
+    return;
+  }
+  items.forEach((ref, i) => {
+    const div = document.createElement('div');
+    div.className = 'media-item';
+    div.innerHTML = `
+      <i class="bi bi-file-earmark-fill text-secondary"></i>
+      <span class="media-item-name" title="${escapeHtml(ref.media_id)}">${escapeHtml(ref.filename || ref.media_id)}</span>
+      ${ref.role ? `<span class="badge bg-light text-dark">${escapeHtml(ref.role)}</span>` : ''}
+      ${ref.attributes && Object.keys(ref.attributes).length ? '<span class="badge bg-light text-dark" title="Has custom attributes"><i class="bi bi-braces"></i></span>' : ''}
+      <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit role &amp; attributes"><i class="bi bi-pencil"></i></button>
+      <button type="button" class="btn btn-xs btn-outline-secondary" title="Download"><i class="bi bi-download"></i></button>
+      <button type="button" class="btn btn-xs btn-outline-danger" title="Remove"><i class="bi bi-x"></i></button>`;
+    const [editBtn, downloadBtn, removeBtn] = div.querySelectorAll('button');
+    editBtn.addEventListener('click', () => openMediaRefEditModal(items, i, containerId));
+    downloadBtn.addEventListener('click', () => downloadMediaFile(ref.media_id, ref.filename));
+    removeBtn.addEventListener('click', () => { items.splice(i, 1); renderMediaList(containerId, items); });
+    el.appendChild(div);
+  });
+}
+
+function openMediaRefEditModal(items, index, containerId) {
+  const ref = items[index];
+  mediaRefEditContext = { items, index, containerId };
+  document.getElementById('media-ref-edit-name').textContent = ref.filename || ref.media_id;
+  document.getElementById('media-ref-edit-role').value = ref.role || '';
+  document.getElementById('media-ref-edit-attributes').value = JSON.stringify(ref.attributes || {}, null, 2);
+  new bootstrap.Modal(document.getElementById('modal-media-ref-edit')).show();
+}
+
+document.getElementById('btn-save-media-ref-edit').addEventListener('click', () => {
+  if (!mediaRefEditContext) return;
+  const { items, index, containerId } = mediaRefEditContext;
+  const role = document.getElementById('media-ref-edit-role').value.trim();
+  const attributes = parseJSON(document.getElementById('media-ref-edit-attributes').value);
+  items[index] = { ...items[index], role: role || null, attributes };
+  renderMediaList(containerId, items);
+  bootstrap.Modal.getInstance(document.getElementById('modal-media-ref-edit'))?.hide();
+  toast('Media association updated');
+});
+
+async function downloadMediaFile(mediaId, filename) {
+  try {
+    const blob = await HGAI_API.downloadMedia(mediaId);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || State.mediaCache[mediaId]?.filename || mediaId;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (err) { toast(err.message, 'danger'); }
+}
+
+async function handleMediaUpload(fileInputId, roleInputId, spinnerId, items, containerId) {
+  const fileInput = document.getElementById(fileInputId);
+  const file = fileInput.files[0];
+  if (!file) { toast('Choose a file first', 'warning'); return; }
+  const role = document.getElementById(roleInputId).value.trim();
+  const spinner = document.getElementById(spinnerId);
+  spinner.classList.remove('d-none');
+  try {
+    const media = await HGAI_API.uploadMedia(file);
+    items.push({
+      media_id: media.id,
+      role: role || null,
+      content_type: media.content_type,
+      filename: media.filename,
+      attributes: {},
+    });
+    renderMediaList(containerId, items);
+    fileInput.value = '';
+    document.getElementById(roleInputId).value = '';
+    toast(`"${media.filename || media.id}" uploaded and attached`);
+  } catch (err) {
+    toast(err.message, 'danger');
+  } finally {
+    spinner.classList.add('d-none');
+  }
+}
+
+document.getElementById('btn-node-media-upload').addEventListener('click', () =>
+  handleMediaUpload('node-media-file', 'node-media-role', 'node-media-upload-spinner', nodeMediaItems, 'node-media-list'));
+document.getElementById('btn-edge-media-upload').addEventListener('click', () =>
+  handleMediaUpload('edge-media-file', 'edge-media-role', 'edge-media-upload-spinner', edgeMediaItems, 'edge-media-list'));
+
+// ── Media picker (attach an already-uploaded media file) ─────────────────────
+let mediaPickerContext = null; // { items, containerId } for the currently-open picker modal
+
+function openMediaPicker(items, containerId) {
+  mediaPickerContext = { items, containerId };
+  State.mediaPickerPage = 0;
+  document.getElementById('media-picker-search').value = '';
+  document.getElementById('media-picker-type-filter').value = '';
+  document.getElementById('media-picker-role').value = '';
+  new bootstrap.Modal(document.getElementById('modal-media-picker')).show();
+  loadMediaPicker();
+}
+
+document.getElementById('btn-node-media-browse').addEventListener('click', () =>
+  openMediaPicker(nodeMediaItems, 'node-media-list'));
+document.getElementById('btn-edge-media-browse').addEventListener('click', () =>
+  openMediaPicker(edgeMediaItems, 'edge-media-list'));
+
+async function loadMediaPicker() {
+  const tbody = document.getElementById('tbody-media-picker');
+  tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+
+  const params = {
+    skip: State.mediaPickerPage * State.mediaPickerPageSize,
+    limit: State.mediaPickerPageSize,
+    search: document.getElementById('media-picker-search').value.trim() || undefined,
+    content_type: document.getElementById('media-picker-type-filter').value.trim() || undefined,
+    status: 'active',
+  };
+
+  try {
+    const resp = await HGAI_API.listMedia(params);
+    tbody.innerHTML = '';
+    if (!resp.items || !resp.items.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No media found</td></tr>';
+    } else {
+      resp.items.forEach(m => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><i class="bi bi-file-earmark-fill text-secondary me-1"></i><code class="text-truncate-150" title="${escapeHtml(m.filename || m.id)}">${escapeHtml(truncate(m.filename || m.id, 28))}</code></td>
+          <td><span class="badge bg-light text-dark">${escapeHtml(m.content_type || '—')}</span></td>
+          <td class="small text-muted">${fmtBytes(m.size_bytes)}</td>
+          <td>${tagBadges(m.tags)}</td>
+          <td class="text-end"><button type="button" class="btn btn-xs btn-primary">Attach</button></td>`;
+        tr.querySelector('button').addEventListener('click', () => attachExistingMedia(m));
+        tbody.appendChild(tr);
+      });
+    }
+    renderPagination('mediaPicker', resp.total, State.mediaPickerPage, State.mediaPickerPageSize);
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="5" class="text-danger text-center">${err.message}</td></tr>`;
+  }
+}
+
+document.getElementById('btn-refresh-media-picker').addEventListener('click', () => loadMediaPicker());
+['media-picker-search', 'media-picker-type-filter'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') { State.mediaPickerPage = 0; loadMediaPicker(); }
+  });
+});
+
+function attachExistingMedia(m) {
+  if (!mediaPickerContext) return;
+  const { items, containerId } = mediaPickerContext;
+  if (items.some(ref => ref.media_id === m.id)) {
+    toast('Already attached', 'warning');
+    return;
+  }
+  const role = document.getElementById('media-picker-role').value.trim();
+  items.push({
+    media_id: m.id,
+    role: role || null,
+    content_type: m.content_type,
+    filename: m.filename,
+    attributes: {},
+  });
+  renderMediaList(containerId, items);
+  bootstrap.Modal.getInstance(document.getElementById('modal-media-picker'))?.hide();
+  toast(`"${m.filename || m.id}" attached`);
+}
+
+// ── Media Screen (browse / search / manage) ──────────────────────────────────
+function fmtBytes(n) {
+  if (n == null) return '—';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+async function loadMedia() {
+  const tbody = document.getElementById('tbody-media');
+  tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+
+  const params = {
+    skip: State.mediaPage * State.mediaPageSize,
+    limit: State.mediaPageSize,
+    search: document.getElementById('media-search').value.trim() || undefined,
+    content_type: document.getElementById('media-type-filter').value.trim() || undefined,
+    status: document.getElementById('media-status-filter').value || undefined,
+  };
+
+  try {
+    const resp = await HGAI_API.listMedia(params);
+    tbody.innerHTML = '';
+    State.mediaCache = {};
+    if (!resp.items || !resp.items.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No media found</td></tr>';
+    } else {
+      resp.items.forEach(m => {
+        State.mediaCache[m.id] = m;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="table-id-link" onclick="editMedia('${m.id}')">
+            <i class="bi bi-file-earmark-fill text-secondary me-1"></i>
+            <code class="text-truncate-150" title="${escapeHtml(m.filename || m.id)}">${escapeHtml(truncate(m.filename || m.id, 28))}</code>
+          </td>
+          <td><span class="badge bg-light text-dark">${escapeHtml(m.content_type || '—')}</span></td>
+          <td class="small text-muted">${fmtBytes(m.size_bytes)}</td>
+          <td>${m.ref_count > 0 ? `<span class="badge bg-info text-dark">${m.ref_count}</span>` : '<span class="text-muted small">0</span>'}</td>
+          <td class="small">${escapeHtml(m.uploaded_by || '—')}</td>
+          <td>${tagBadges(m.tags)}</td>
+          <td>${statusBadge(m.status)}</td>
+          <td class="text-end">
+            <button class="btn btn-xs btn-outline-secondary me-1" onclick="editMedia('${m.id}')"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-xs btn-outline-secondary me-1" onclick="downloadMediaFile('${m.id}')"><i class="bi bi-download"></i></button>
+            <button class="btn btn-xs btn-outline-danger" onclick="deleteMediaRow('${m.id}')"><i class="bi bi-trash"></i></button>
+          </td>`;
+        tbody.appendChild(tr);
+      });
+    }
+    renderPagination('media', resp.total, State.mediaPage, State.mediaPageSize);
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" class="text-danger text-center">${err.message}</td></tr>`;
+  }
+}
+
+document.getElementById('btn-refresh-media').addEventListener('click', () => loadMedia());
+document.getElementById('media-status-filter').addEventListener('change', () => { State.mediaPage = 0; loadMedia(); });
+['media-search', 'media-type-filter'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') { State.mediaPage = 0; loadMedia(); }
+  });
+});
+
+// Standalone upload (not attached to any node/edge — browse-and-manage independently)
+document.getElementById('btn-upload-media').addEventListener('click', () => {
+  document.getElementById('upload-media-file').value = '';
+  document.getElementById('upload-media-tags').value = '';
+  document.getElementById('upload-media-attributes').value = '{}';
+  new bootstrap.Modal(document.getElementById('modal-media-upload')).show();
+});
+
+document.getElementById('btn-confirm-upload-media').addEventListener('click', async () => {
+  const fileInput = document.getElementById('upload-media-file');
+  const file = fileInput.files[0];
+  if (!file) { toast('Choose a file first', 'warning'); return; }
+  const tags = parseTags(document.getElementById('upload-media-tags').value);
+  const attributes = parseJSON(document.getElementById('upload-media-attributes').value);
+  const spinner = document.getElementById('upload-media-spinner');
+  spinner.classList.remove('d-none');
+  try {
+    const media = await HGAI_API.uploadMedia(file);
+    if (tags.length || Object.keys(attributes).length) {
+      await HGAI_API.updateMedia(media.id, { tags, attributes });
+    }
+    bootstrap.Modal.getInstance(document.getElementById('modal-media-upload'))?.hide();
+    toast(`"${media.filename || media.id}" uploaded`);
+    loadMedia();
+  } catch (err) {
+    toast(err.message, 'danger');
+  } finally {
+    spinner.classList.add('d-none');
+  }
+});
+
+window.editMedia = (id) => {
+  const m = State.mediaCache[id];
+  if (!m) return;
+  document.getElementById('media-edit-id').value = m.id;
+  document.getElementById('media-info-id').textContent = m.id;
+  document.getElementById('media-info-content-type').textContent = m.content_type || '—';
+  document.getElementById('media-info-size').textContent = fmtBytes(m.size_bytes);
+  document.getElementById('media-info-checksum').textContent = m.checksum || '—';
+  document.getElementById('media-info-uploaded-by').textContent = m.uploaded_by || '—';
+  document.getElementById('media-info-ref-count').textContent = m.ref_count;
+  document.getElementById('media-info-created').textContent = fmtDate(m.system_created);
+  document.getElementById('media-edit-filename').value = m.filename || '';
+  document.getElementById('media-edit-status').value = m.status || 'active';
+  document.getElementById('media-edit-tags').value = (m.tags || []).join(', ');
+  document.getElementById('media-edit-attributes').value = JSON.stringify(m.attributes || {}, null, 2);
+  new bootstrap.Modal(document.getElementById('modal-media-edit')).show();
+};
+
+document.getElementById('btn-save-media-edit').addEventListener('click', async () => {
+  const id = document.getElementById('media-edit-id').value;
+  const data = {
+    filename: document.getElementById('media-edit-filename').value.trim() || null,
+    status: document.getElementById('media-edit-status').value,
+    tags: parseTags(document.getElementById('media-edit-tags').value),
+    attributes: parseJSON(document.getElementById('media-edit-attributes').value),
+  };
+  try {
+    await HGAI_API.updateMedia(id, data);
+    bootstrap.Modal.getInstance(document.getElementById('modal-media-edit'))?.hide();
+    toast('Media updated');
+    loadMedia();
+  } catch (err) { toast(err.message, 'danger'); }
+});
+
+document.getElementById('btn-media-edit-download').addEventListener('click', () => {
+  const id = document.getElementById('media-edit-id').value;
+  downloadMediaFile(id);
+});
+
+function doDeleteMedia(id) {
+  HGAI_API.deleteMedia(id).then(() => {
+    toast('Media deleted');
+    bootstrap.Modal.getInstance(document.getElementById('modal-media-edit'))?.hide();
+    loadMedia();
+  }).catch(err => toast(err.message, 'danger'));
+}
+
+document.getElementById('btn-media-edit-delete').addEventListener('click', () => {
+  const id = document.getElementById('media-edit-id').value;
+  confirmDelete(`Delete media "${id}"? This cannot be undone.`, () => doDeleteMedia(id));
+});
+
+window.deleteMediaRow = (id) => {
+  confirmDelete(`Delete media "${id}"? This cannot be undone.`, () => doDeleteMedia(id));
+};
 
 document.getElementById('btn-create-node').addEventListener('click', () => openNodeModal());
 document.getElementById('btn-refresh-nodes').addEventListener('click', () => loadNodes());
@@ -619,12 +1035,16 @@ async function openNodeModal(nodeId = null) {
       document.getElementById('node-valid-from').value = n.valid_from ? n.valid_from.slice(0,16) : '';
       document.getElementById('node-valid-to').value = n.valid_to ? n.valid_to.slice(0,16) : '';
       document.getElementById('node-attributes').value = JSON.stringify(n.attributes || {}, null, 2);
+      nodeMediaItems = (n.media || []).map(m => ({ ...m }));
+      renderMediaList('node-media-list', nodeMediaItems);
     } catch {}
   } else if (!isEdit) {
     document.getElementById('form-node').reset();
     document.getElementById('node-id').readOnly = false;
     document.getElementById('node-attributes').value = '{}';
     document.getElementById('node-type').value = 'Entity';
+    nodeMediaItems = [];
+    renderMediaList('node-media-list', nodeMediaItems);
   }
   modal.show();
 }
@@ -672,6 +1092,7 @@ document.getElementById('btn-save-node').addEventListener('click', async () => {
     valid_from: vFrom ? new Date(vFrom).toISOString() : null,
     valid_to: vTo ? new Date(vTo).toISOString() : null,
     attributes: parseJSON(document.getElementById('node-attributes').value),
+    media: nodeMediaItems,
   };
 
   const targetSpaceId = graphSpaceId(targetGraphId);
@@ -719,7 +1140,9 @@ async function loadEdges() {
     relation: document.getElementById('edge-relation-filter').value.trim() || undefined,
     flavor: document.getElementById('edge-flavor-filter').value || undefined,
     node_id: document.getElementById('edge-node-filter').value.trim() || undefined,
+    sort: sortParam(State.edgesSort),
   };
+  updateSortIndicators('edges');
 
   const spaceId = graphSpaceId(State.activeGraphId);
   try {
@@ -826,6 +1249,8 @@ async function openEdgeModal(edgeId = null) {
       document.getElementById('edge-valid-to').value = e.valid_to ? e.valid_to.slice(0,16) : '';
       document.getElementById('edge-attributes').value = JSON.stringify(e.attributes || {}, null, 2);
       (e.members || []).forEach(m => addMemberRow(m));
+      edgeMediaItems = (e.media || []).map(m => ({ ...m }));
+      renderMediaList('edge-media-list', edgeMediaItems);
     } catch {}
   } else if (!isEdit) {
     document.getElementById('form-edge').reset();
@@ -833,6 +1258,8 @@ async function openEdgeModal(edgeId = null) {
     document.getElementById('edge-attributes').value = '{}';
     addMemberRow({ seq: 0 });
     addMemberRow({ seq: 1 });
+    edgeMediaItems = [];
+    renderMediaList('edge-media-list', edgeMediaItems);
   }
   modal.show();
 }
@@ -889,6 +1316,7 @@ document.getElementById('btn-save-edge').addEventListener('click', async () => {
     valid_to: vTo ? new Date(vTo).toISOString() : null,
     attributes: parseJSON(document.getElementById('edge-attributes').value),
     members,
+    media: edgeMediaItems,
   };
 
   const targetSpaceId = graphSpaceId(targetGraphId);
@@ -1133,7 +1561,7 @@ function initViz3D() {
       return `<div>${vizEsc(n.label)}<br/><span style="opacity:.6">${vizEsc(n.type)}</span></div>`;
     })
     .linkColor(l => l._dim ? VIZ_DIM_LINK_COLOR : l.color)
-    .linkWidth(l => l.kind === 'hyperedge' ? 0.8 : 1.0)
+    .linkWidth(l => l.kind === 'hyperedge' ? 0.8 : 0.5)
     .linkCurvature(l => l.curvature || 0)
     .linkOpacity(0.75)
     .linkLabel(l => vizEsc(l.label))

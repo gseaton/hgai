@@ -58,6 +58,7 @@
     <a class="sidebar-link" data-screen="graphs" href="#"><i class="bi bi-diagram-3-fill"></i> Hypergraphs</a>
     <a class="sidebar-link" data-screen="nodes" href="#"><i class="bi bi-circle-fill"></i> Hypernodes</a>
     <a class="sidebar-link" data-screen="edges" href="#"><i class="bi bi-share-fill"></i> Hyperedges</a>
+    <a class="sidebar-link" data-screen="media" href="#"><i class="bi bi-file-earmark-fill"></i> Media</a>
     <a class="sidebar-link" data-screen="viz" href="#"><i class="bi bi-bezier2"></i> Visualize</a>
     <a class="sidebar-link" data-screen="query" href="#"><i class="bi bi-terminal-fill"></i> Query (HQL)</a>
     <a class="sidebar-link" data-screen="shql" href="#"><i class="bi bi-braces"></i> Query (SHQL)</a>
@@ -218,8 +219,14 @@
             <table class="table table-hover mb-0">
               <thead>
                 <tr>
-                  <th>ID</th><th>Label</th><th>Type</th><th>Status</th><th>Tags</th>
-                  <th>Valid From</th><th>Valid To</th><th></th>
+                  <th class="sortable-th" data-table="nodes" data-sort-field="id">ID<span class="sort-indicator"></span></th>
+                  <th class="sortable-th" data-table="nodes" data-sort-field="label">Label<span class="sort-indicator"></span></th>
+                  <th class="sortable-th" data-table="nodes" data-sort-field="type">Type<span class="sort-indicator"></span></th>
+                  <th class="sortable-th" data-table="nodes" data-sort-field="status">Status<span class="sort-indicator"></span></th>
+                  <th>Tags</th>
+                  <th class="sortable-th" data-table="nodes" data-sort-field="valid_from">Valid From<span class="sort-indicator"></span></th>
+                  <th class="sortable-th" data-table="nodes" data-sort-field="valid_to">Valid To<span class="sort-indicator"></span></th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody id="tbody-nodes"></tbody>
@@ -277,8 +284,13 @@
             <table class="table table-hover mb-0">
               <thead>
                 <tr>
-                  <th>ID</th><th>Relation</th><th>Flavor</th><th>Members</th>
-                  <th>Status</th><th>Tags</th><th></th>
+                  <th class="sortable-th" data-table="edges" data-sort-field="id">ID<span class="sort-indicator"></span></th>
+                  <th class="sortable-th" data-table="edges" data-sort-field="relation">Relation<span class="sort-indicator"></span></th>
+                  <th class="sortable-th" data-table="edges" data-sort-field="flavor">Flavor<span class="sort-indicator"></span></th>
+                  <th>Members</th>
+                  <th class="sortable-th" data-table="edges" data-sort-field="status">Status<span class="sort-indicator"></span></th>
+                  <th>Tags</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody id="tbody-edges"></tbody>
@@ -287,6 +299,58 @@
           <div class="card-footer d-flex justify-content-between align-items-center">
             <span id="edges-pagination-info" class="text-muted small"></span>
             <div class="btn-group btn-group-sm" id="edges-pagination"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── MEDIA ───────────────────────────────────────────────────── -->
+      <div id="screen-media" class="screen d-none">
+        <div class="screen-header">
+          <h4><i class="bi bi-file-earmark-fill text-primary me-2"></i>Media</h4>
+          <button class="btn btn-primary btn-sm" id="btn-upload-media">
+            <i class="bi bi-upload me-1"></i>Upload Media
+          </button>
+        </div>
+        <div class="card mb-3">
+          <div class="card-body py-2">
+            <div class="row g-2 align-items-center">
+              <div class="col-auto">
+                <input type="text" id="media-search" class="form-control form-control-sm" placeholder="Search filename..." style="width:200px"/>
+              </div>
+              <div class="col-auto">
+                <input type="text" id="media-type-filter" class="form-control form-control-sm" placeholder="Filter by content type..." style="width:200px"/>
+              </div>
+              <div class="col-auto">
+                <select id="media-status-filter" class="form-select form-select-sm">
+                  <option value="">All Statuses</option>
+                  <option value="active">active</option>
+                  <option value="archived">archived</option>
+                  <option value="draft">draft</option>
+                </select>
+              </div>
+              <div class="col-auto">
+                <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-media">
+                  <i class="bi bi-arrow-clockwise"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+              <thead>
+                <tr>
+                  <th>File</th><th>Type</th><th>Size</th><th>Refs</th>
+                  <th>Uploaded By</th><th>Tags</th><th>Status</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="tbody-media"></tbody>
+            </table>
+          </div>
+          <div class="card-footer d-flex justify-content-between align-items-center">
+            <span id="media-pagination-info" class="text-muted small"></span>
+            <div class="btn-group btn-group-sm" id="media-pagination"></div>
           </div>
         </div>
       </div>
@@ -829,6 +893,26 @@
             </div>
           </div>
 
+          <!-- ── Section: Media ── -->
+          <div class="node-form-section">
+            <div class="node-form-section-header">
+              Media
+              <span class="node-form-section-hint">— attached files</span>
+            </div>
+            <div id="node-media-list" class="mb-2"></div>
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+              <input type="file" id="node-media-file" class="form-control form-control-sm" style="max-width:220px"/>
+              <input type="text" id="node-media-role" class="form-control form-control-sm" placeholder="role (optional)" style="max-width:160px"/>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-node-media-upload">
+                <span id="node-media-upload-spinner" class="spinner-border spinner-border-sm d-none me-1"></span>
+                <i class="bi bi-upload me-1"></i>Upload &amp; Attach
+              </button>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-node-media-browse">
+                <i class="bi bi-search me-1"></i>Browse Existing
+              </button>
+            </div>
+          </div>
+
           <!-- ── Section: Attributes ── -->
           <div class="node-form-section node-form-section-last">
             <div class="node-form-section-header">
@@ -971,6 +1055,26 @@
             </button>
           </div>
 
+          <!-- ── Section: Media ── -->
+          <div class="node-form-section">
+            <div class="node-form-section-header">
+              Media
+              <span class="node-form-section-hint">— attached files</span>
+            </div>
+            <div id="edge-media-list" class="mb-2"></div>
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+              <input type="file" id="edge-media-file" class="form-control form-control-sm" style="max-width:220px"/>
+              <input type="text" id="edge-media-role" class="form-control form-control-sm" placeholder="role (optional)" style="max-width:160px"/>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-edge-media-upload">
+                <span id="edge-media-upload-spinner" class="spinner-border spinner-border-sm d-none me-1"></span>
+                <i class="bi bi-upload me-1"></i>Upload &amp; Attach
+              </button>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-edge-media-browse">
+                <i class="bi bi-search me-1"></i>Browse Existing
+              </button>
+            </div>
+          </div>
+
           <!-- ── Section: Attributes ── -->
           <div class="node-form-section node-form-section-last">
             <div class="node-form-section-header">
@@ -991,6 +1095,184 @@
         </button>
       </div>
 
+    </div>
+  </div>
+</div>
+
+<!-- Media Upload Modal -->
+<div class="modal fade" id="modal-media-upload" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Upload Media</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">File <span class="text-danger">*</span></label>
+          <input type="file" id="upload-media-file" class="form-control"/>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Tags</label>
+          <input type="text" id="upload-media-tags" class="form-control" placeholder="tag1, tag2, tag3"/>
+          <div class="form-text">Comma-separated list, optional</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Attributes <span class="text-muted fw-normal small">— arbitrary JSON key-value metadata</span></label>
+          <textarea id="upload-media-attributes" class="form-control font-monospace node-attributes-editor" rows="5" placeholder='{"key": "value"}'>{}</textarea>
+        </div>
+        <div class="form-text">Not yet attached to any hypernode/hyperedge — attach it from a node/edge's Media section, or leave it here to browse and manage independently.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btn-confirm-upload-media">
+          <span id="upload-media-spinner" class="spinner-border spinner-border-sm d-none me-1"></span>
+          <i class="bi bi-upload me-1"></i>Upload
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Media Edit Modal -->
+<div class="modal fade" id="modal-media-edit" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit Media</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="media-edit-id" value=""/>
+        <table class="table table-sm mb-3">
+          <tbody>
+            <tr><th class="text-muted fw-normal" style="width:35%">ID</th><td><code id="media-info-id"></code></td></tr>
+            <tr><th class="text-muted fw-normal">Content Type</th><td id="media-info-content-type"></td></tr>
+            <tr><th class="text-muted fw-normal">Size</th><td id="media-info-size"></td></tr>
+            <tr><th class="text-muted fw-normal">Checksum</th><td><code id="media-info-checksum" class="small"></code></td></tr>
+            <tr><th class="text-muted fw-normal">Uploaded By</th><td id="media-info-uploaded-by"></td></tr>
+            <tr><th class="text-muted fw-normal">References</th><td id="media-info-ref-count"></td></tr>
+            <tr><th class="text-muted fw-normal">Created</th><td id="media-info-created"></td></tr>
+          </tbody>
+        </table>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Filename</label>
+            <input type="text" id="media-edit-filename" class="form-control"/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Status</label>
+            <select id="media-edit-status" class="form-select">
+              <option value="active">active</option>
+              <option value="draft">draft</option>
+              <option value="archived">archived</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Tags</label>
+            <input type="text" id="media-edit-tags" class="form-control" placeholder="tag1, tag2, tag3"/>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Attributes <span class="text-muted fw-normal small">— arbitrary JSON key-value metadata</span></label>
+            <textarea id="media-edit-attributes" class="form-control font-monospace node-attributes-editor" rows="5" placeholder='{"key": "value"}'>{}</textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer d-flex justify-content-between">
+        <div>
+          <button type="button" class="btn btn-outline-secondary" id="btn-media-edit-download">
+            <i class="bi bi-download me-1"></i>Download
+          </button>
+          <button type="button" class="btn btn-outline-danger" id="btn-media-edit-delete">
+            <i class="bi bi-trash me-1"></i>Delete
+          </button>
+        </div>
+        <div>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btn-save-media-edit">
+            <i class="bi bi-floppy me-1"></i>Save
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Media Reference (attachment) Edit Modal — shared by the node & edge Media sections -->
+<div class="modal fade" id="modal-media-ref-edit" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit Media Association</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">File</label>
+          <div id="media-ref-edit-name" class="form-control-plaintext font-monospace small text-muted py-0"></div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Role <span class="text-muted fw-normal small">— how this media relates to this entity</span></label>
+          <input type="text" id="media-ref-edit-role" class="form-control" placeholder="e.g. profile-photo, attachment, source-document"/>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Attributes <span class="text-muted fw-normal small">— arbitrary JSON key-value metadata for this association</span></label>
+          <textarea id="media-ref-edit-attributes" class="form-control font-monospace node-attributes-editor" rows="5" placeholder='{"key": "value"}'>{}</textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btn-save-media-ref-edit">
+          <i class="bi bi-floppy me-1"></i>Save
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Media Picker Modal — attach an already-uploaded media file, shared by the node & edge Media sections -->
+<div class="modal fade" id="modal-media-picker" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Attach Existing Media</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-2 align-items-center mb-2">
+          <div class="col-auto">
+            <input type="text" id="media-picker-search" class="form-control form-control-sm" placeholder="Search filename..." style="width:180px"/>
+          </div>
+          <div class="col-auto">
+            <input type="text" id="media-picker-type-filter" class="form-control form-control-sm" placeholder="Filter by content type..." style="width:180px"/>
+          </div>
+          <div class="col-auto">
+            <input type="text" id="media-picker-role" class="form-control form-control-sm" placeholder="role to apply (optional)" style="width:180px"/>
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-media-picker">
+              <i class="bi bi-arrow-clockwise"></i>
+            </button>
+          </div>
+        </div>
+        <div class="table-responsive" style="max-height:360px">
+          <table class="table table-hover table-sm mb-0">
+            <thead>
+              <tr>
+                <th>File</th><th>Type</th><th>Size</th><th>Tags</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="tbody-media-picker"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer d-flex justify-content-between align-items-center">
+        <span id="mediaPicker-pagination-info" class="text-muted small"></span>
+        <div class="d-flex gap-2">
+          <div class="btn-group btn-group-sm" id="mediaPicker-pagination"></div>
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>

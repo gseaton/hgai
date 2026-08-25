@@ -54,7 +54,8 @@ class MongoHypernodeStore(HypernodeStore):
             query["$and"] = _pit_clause(filters.pit)
 
         total = await _col().count_documents(query)
-        cursor = _col().find(query).skip(skip).limit(limit).sort("system_created", -1)
+        sort_spec = filters.sort or [("system_created", -1)]
+        cursor = _col().find(query).skip(skip).limit(limit).sort(sort_spec)
         docs = await cursor.to_list(length=limit)
         nodes = []
         for doc in docs:
@@ -70,7 +71,7 @@ class MongoHypernodeStore(HypernodeStore):
     ) -> Optional[HypernodeInDB]:
         from hgai.models.common import now_utc
         update_fields: Dict[str, Any] = {}
-        for attr in ("label", "description", "type", "status", "tags", "attributes", "valid_from", "valid_to"):
+        for attr in ("label", "description", "type", "status", "tags", "attributes", "valid_from", "valid_to", "media"):
             val = getattr(patch, attr, None)
             if val is not None:
                 update_fields[attr] = val

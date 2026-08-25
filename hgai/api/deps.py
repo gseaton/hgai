@@ -1,12 +1,37 @@
 """FastAPI dependency injection for HypergraphAI."""
 
-from typing import Optional
+from typing import List, Optional, Set, Tuple
 
 from fastapi import Depends, HTTPException, status
 
 from hgai.core.auth import can_access_graph, can_perform, get_current_account
 from hgai.models.account import AccountInDB
 from hgai.models.space import SpaceRole
+
+
+def parse_sort_param(sort: Optional[str], allowed_fields: Set[str]) -> Optional[List[Tuple[str, int]]]:
+    """Parse a comma-separated multi-column sort spec into [(field, direction), ...].
+
+    Format: "field1,-field2,field3" — a leading '-' means descending; fields
+    are applied in the order given (first = primary sort key). Raises 400 if
+    a field isn't in `allowed_fields`.
+    """
+    if not sort:
+        return None
+    result: List[Tuple[str, int]] = []
+    for part in sort.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        direction = -1 if part.startswith("-") else 1
+        field = part[1:] if part.startswith("-") else part
+        if field not in allowed_fields:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid sort field '{field}'. Allowed: {sorted(allowed_fields)}",
+            )
+        result.append((field, direction))
+    return result or None
 
 
 async def get_current_active_account(

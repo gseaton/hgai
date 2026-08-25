@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -34,6 +34,7 @@ class HypernodeFilters:
     tags: Optional[List[str]] = None
     search: Optional[str] = None  # text search on label
     pit: Optional[datetime] = None  # point-in-time
+    sort: Optional[List[Tuple[str, int]]] = None  # [(field, 1|-1), ...] priority order; None = default
 
 
 @dataclass
@@ -46,6 +47,7 @@ class HypernodePatch:
     attributes: Optional[Dict[str, Any]] = None
     valid_from: Optional[datetime] = None
     valid_to: Optional[datetime] = None
+    media: Optional[List[Any]] = None
     updated_by: str = ""
 
 
@@ -58,6 +60,7 @@ class HyperedgeFilters:
     tags: Optional[List[str]] = None
     member_node_id: Optional[str] = None  # edges containing this node
     pit: Optional[datetime] = None
+    sort: Optional[List[Tuple[str, int]]] = None  # [(field, 1|-1), ...] priority order; None = default
 
 
 @dataclass
@@ -75,6 +78,7 @@ class HyperedgePatch:
     skos_broader: Optional[List[str]] = None
     skos_narrower: Optional[List[str]] = None
     skos_related: Optional[List[str]] = None
+    media: Optional[List[Any]] = None
     updated_by: str = ""
 
 
@@ -158,6 +162,23 @@ class MeshPatch:
     description: Optional[str] = None
     status: Optional[str] = None
     servers: Optional[List[Any]] = None
+    updated_by: str = ""
+
+
+@dataclass
+class MediaFilters:
+    search: Optional[str] = None  # filename search
+    content_type: Optional[str] = None
+    status: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+
+@dataclass
+class MediaPatch:
+    filename: Optional[str] = None
+    tags: Optional[List[str]] = None
+    attributes: Optional[Dict[str, Any]] = None
+    status: Optional[str] = None
     updated_by: str = ""
 
 

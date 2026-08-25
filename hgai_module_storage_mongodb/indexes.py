@@ -118,6 +118,12 @@ async def ensure_indexes() -> None:
         ),
     ])
 
+    # ── media ─────────────────────────────────────────────────────────────────
+    await db["media"].create_indexes([
+        IndexModel([("id", ASCENDING)], unique=True, name="id_unique"),
+        IndexModel([("checksum", ASCENDING)], name="checksum"),
+    ])
+
     # ── audit_log ─────────────────────────────────────────────────────────────
     await db["audit_log"].create_indexes([
         IndexModel([("timestamp", DESCENDING)], name="timestamp_desc"),

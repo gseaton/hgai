@@ -84,6 +84,43 @@ def _headers(server: MeshServer) -> Dict[str, str]:
     return headers
 
 
+async def find_server_by_id(server_id: str) -> Optional[MeshServer]:
+    """Find a MeshServer by its server_id, searching across every active mesh.
+
+    A bare `server_id` (as parsed from a mesh-qualified media_id) doesn't carry
+    which mesh it belongs to, unlike the `mesh.server.graph` dot-notation used
+    for queries — so this scans all active meshes rather than looking one up
+    by mesh_id. If the same server_id is registered in more than one mesh, the
+    first match found wins.
+    """
+    docs = await get_storage().meshes.list_active()
+    for doc in docs:
+        for srv_data in doc.get("servers", []):
+            if srv_data.get("server_id") == server_id:
+                return MeshServer(**srv_data)
+    return None
+
+
+def qualify_media_ids(item: Dict[str, Any], server_id: str) -> None:
+    """Rewrite bare media_ids in item['media'] to '<server_id>/<media_id>' in place.
+
+    Mirrors the `_mesh_server_id` annotation below: media stored on the
+    origin server is only resolvable by callers if they know which server to
+    ask, so every bare (unqualified) media_id must be tagged with this
+    server's id before the item crosses the mesh boundary. Already-qualified
+    ids (containing '/') are left untouched — they were mesh-qualified on
+    their own origin server and refer elsewhere, not here.
+    """
+    media_list = item.get("media")
+    if not isinstance(media_list, list):
+        return
+    for ref in media_list:
+        if isinstance(ref, dict):
+            media_id = ref.get("media_id")
+            if media_id and "/" not in media_id:
+                ref["media_id"] = f"{server_id}/{media_id}"
+
+
 async def ping_server(server: MeshServer) -> Dict[str, Any]:
     """Health-check a remote hgai server. Returns status dict."""
     try:
@@ -204,6 +241,7 @@ async def _query_server(
 
     for item in items:
         item["_mesh_server_id"] = server.server_id
+        qualify_media_ids(item, server.server_id)
     return {"server_id": server.server_id, "items": items}
 
 

@@ -186,6 +186,21 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 .table th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; font-weight: 600; background: #f9fafb; }
 .table-hover tbody tr:hover { background: #f0f4ff; cursor: pointer; }
 
+/* ── Sortable table headers ───────────────────────────────────────────────── */
+.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
+.sortable-th:hover { color: var(--hgai-primary); }
+.sortable-th.sort-active { color: var(--hgai-primary); }
+.sort-indicator {
+  display: inline-flex; align-items: center; gap: 2px;
+  margin-left: 4px; font-size: 0.68rem; font-weight: 700;
+  text-transform: none; letter-spacing: normal;
+}
+.sort-indicator .sort-priority {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 13px; height: 13px; border-radius: 50%;
+  background: var(--hgai-primary); color: #fff; font-size: 0.6rem;
+}
+
 /* ── Badges ────────────────────────────────────────────────────────────────── */
 .badge-status-active { background: #d1fae5; color: #065f46; }
 .badge-status-draft { background: #fef3c7; color: #92400e; }
@@ -202,6 +217,18 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 }
 .member-row .member-seq { width: 60px; flex-shrink: 0; }
 .member-row .member-node-id { flex: 1; }
+
+/* ── Media Item ────────────────────────────────────────────────────────────── */
+.media-item {
+  display: flex; gap: 8px; align-items: center;
+  background: #f9fafb; border: 1px solid #e5e7eb;
+  border-radius: 8px; padding: 6px 10px; margin-bottom: 6px;
+}
+.media-item .media-item-name {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.85rem; color: #374151;
+}
+.media-item-empty { color: #9ca3af; font-size: 0.85rem; padding: 4px 2px; }
 
 /* ── Query Editor ──────────────────────────────────────────────────────────── */
 .CodeMirror {

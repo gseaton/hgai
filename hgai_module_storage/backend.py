@@ -16,6 +16,8 @@ from .filters import (
     HypernodeFilters,
     HypernodePatch,
     HypernodeSearchFilters,
+    MediaFilters,
+    MediaPatch,
     MeshFilters,
     MeshPatch,
     TransitiveSearchFilter,
@@ -394,6 +396,70 @@ class MeshStore(ABC):
         """Return all active mesh documents (used by scheduler)."""
 
 
+# ─── Media Store ──────────────────────────────────────────────────────────────
+
+class MediaStore(ABC):
+    """Metadata + blob storage operations for media (binary file) attachments.
+
+    `media_id` here is always a bare local identifier (never mesh-qualified) —
+    qualification with a mesh server id happens only at the API/response layer.
+    """
+
+    @abstractmethod
+    async def put(
+        self,
+        media_id: str,
+        stream: Any,
+        content_type: str,
+        filename: Optional[str],
+        uploaded_by: str,
+    ) -> Any:
+        """Stream `stream`'s bytes into the blob store and create the Media metadata
+        record. Returns the created Media model (with size_bytes/checksum computed
+        from the actual bytes written, not trusted from the caller)."""
+
+    @abstractmethod
+    async def get_stream(self, media_id: str) -> Optional[Tuple[Any, Any]]:
+        """Return (Media metadata, async byte-chunk iterator) for a local media_id,
+        or None if not found."""
+
+    @abstractmethod
+    async def get_metadata(self, media_id: str) -> Optional[Any]:
+        """Return the Media metadata record, or None if not found."""
+
+    @abstractmethod
+    async def delete(self, media_id: str) -> bool:
+        """Delete the Media record and its blob. Caller must have already verified
+        ref_count == 0. Returns True if deleted."""
+
+    @abstractmethod
+    async def adjust_ref_count(self, media_id: str, delta: int) -> None:
+        """Atomically add `delta` to ref_count. No-op (does not raise) if the
+        media_id does not exist, since a referencing entity may have been created
+        from an import/sync payload that predates the media record."""
+
+    @abstractmethod
+    async def list_orphaned(self, older_than) -> List[Any]:
+        """Return Media records with ref_count == 0 created before `older_than`
+        (a datetime) — candidates for the GC sweep. A grace period (rather than
+        sweeping every ref_count==0 record immediately) avoids racing a media
+        item that was just uploaded but not yet attached to its entity."""
+
+    @abstractmethod
+    async def list(
+        self,
+        filters: MediaFilters,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> Tuple[int, List[Any]]:
+        """Return (total_count, [Media, ...]) matching filters, for browsing."""
+
+    @abstractmethod
+    async def update(self, media_id: str, patch: MediaPatch) -> Optional[Any]:
+        """Update a media record's editable metadata (filename/tags/attributes/
+        status — never the bytes or checksum). Returns updated Media or None."""
+
+
 # ─── Cache Store ──────────────────────────────────────────────────────────────
 
 class CacheStore(ABC):
@@ -479,3 +545,8 @@ class StorageBackend(ABC):
     @abstractmethod
     def cache(self) -> CacheStore:
         """Cache store."""
+
+    @property
+    @abstractmethod
+    def media(self) -> MediaStore:
+        """Media store."""

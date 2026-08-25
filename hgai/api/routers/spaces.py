@@ -4,7 +4,9 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from hgai.api.deps import get_current_active_account, require_graph_access, require_space_role
+from hgai.api.deps import get_current_active_account, parse_sort_param, require_graph_access, require_space_role
+from hgai.api.routers.hyperedges import EDGE_SORT_FIELDS
+from hgai.api.routers.hypernodes import NODE_SORT_FIELDS
 from hgai.core import engine, space_engine
 from hgai.models.account import AccountInDB
 from hgai.models.common import PaginatedResponse
@@ -246,11 +248,13 @@ async def list_space_nodes(
     search: Optional[str] = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=500),
+    sort: Optional[str] = Query(default=None, description=f"Comma-separated fields, '-' prefix = descending. Allowed: {sorted(NODE_SORT_FIELDS)}"),
     account: AccountInDB = Depends(require_graph_access("read")),
 ):
     total, nodes = await engine.list_hypernodes(
         graph_id, node_type=node_type, status=status,
         tags=tags, search=search, skip=skip, limit=limit, space_id=space_id,
+        sort=parse_sort_param(sort, NODE_SORT_FIELDS),
     )
     return PaginatedResponse(total=total, skip=skip, limit=limit, items=[n.model_dump() for n in nodes])
 
@@ -324,11 +328,13 @@ async def list_space_edges(
     node_id: Optional[str] = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=500),
+    sort: Optional[str] = Query(default=None, description=f"Comma-separated fields, '-' prefix = descending. Allowed: {sorted(EDGE_SORT_FIELDS)}"),
     account: AccountInDB = Depends(require_graph_access("read")),
 ):
     total, edges = await engine.list_hyperedges(
         graph_id, relation=relation, flavor=flavor, status=status,
         tags=tags, node_id=node_id, skip=skip, limit=limit, space_id=space_id,
+        sort=parse_sort_param(sort, EDGE_SORT_FIELDS),
     )
     return PaginatedResponse(total=total, skip=skip, limit=limit, items=[e.model_dump() for e in edges])
 

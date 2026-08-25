@@ -2,7 +2,8 @@
 
 import logging
 
-from hgai_module_storage.backend import StorageBackend
+from hgai.config import get_settings
+from hgai_module_storage.backend import MediaStore, StorageBackend
 
 from . import connection, indexes
 from .stores.accounts import MongoAccountStore
@@ -10,6 +11,7 @@ from .stores.cache import MongoCacheStore
 from .stores.hyperedges import MongoHyperedgeStore
 from .stores.hypergraphs import MongoHypergraphStore
 from .stores.hypernodes import MongoHypernodeStore
+from .stores.media import MongoMediaStore
 from .stores.meshes import MongoMeshStore
 from .stores.spaces import MongoSpaceStore
 
@@ -30,6 +32,15 @@ class MongoStorageBackend(StorageBackend):
         self._spaces = MongoSpaceStore()
         self._meshes = MongoMeshStore()
         self._cache = MongoCacheStore()
+
+        # Media blob backend is independently config-toggled (HGAI_MEDIA_BACKEND)
+        # from the primary storage_backend — metadata always stays in this same
+        # Mongo instance either way; only where the bytes live changes.
+        if get_settings().media_backend == "s3":
+            from .stores.media_s3 import S3MediaStore
+            self._media = S3MediaStore()
+        else:
+            self._media = MongoMediaStore()
 
     async def connect(self) -> None:
         await connection.connect(self._mongo_uri, self._mongo_db)
@@ -68,3 +79,7 @@ class MongoStorageBackend(StorageBackend):
     @property
     def cache(self) -> MongoCacheStore:
         return self._cache
+
+    @property
+    def media(self) -> "MediaStore":
+        return self._media

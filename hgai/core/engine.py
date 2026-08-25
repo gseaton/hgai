@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from hgai.db.storage import get_storage
 from hgai.core.cache import invalidate_cache
+from hgai.core.media import adjust_media_refs, apply_media_diff
 from hgai.models.common import Status, now_utc
 from hgai.models.hyperedge import HyperedgeCreate, HyperedgeInDB, HyperedgeUpdate
 from hgai.models.hypergraph import HypergraphCreate, HypergraphInDB, HypergraphUpdate
@@ -153,6 +154,7 @@ async def create_hypernode(
     )
     node = await get_storage().hypernodes.create(doc)
     await get_storage().hypergraphs.increment_counts(graph_id, space_id, node_delta=1)
+    await adjust_media_refs(data.media, 1)
     await invalidate_cache(graph_id)
     return node
 
@@ -176,6 +178,7 @@ async def list_hypernodes(
     limit: int = 50,
     pit: Optional[datetime] = None,
     space_id: Optional[str] = None,
+    sort: Optional[List[Tuple[str, int]]] = None,
 ) -> Tuple[int, List[HypernodeInDB]]:
     filters = HypernodeFilters(
         hypergraph_id=_hypergraph_ref(graph_id, space_id),
@@ -184,6 +187,7 @@ async def list_hypernodes(
         tags=tags,
         search=search,
         pit=pit,
+        sort=sort,
     )
     return await get_storage().hypernodes.list(filters, skip=skip, limit=limit)
 
@@ -193,6 +197,7 @@ async def update_hypernode(
     space_id: Optional[str] = None,
 ) -> Optional[HypernodeInDB]:
     dumped = {k: v for k, v in data.model_dump(exclude_none=True).items() if k != "version"}
+    existing = await get_hypernode(graph_id, node_id, space_id=space_id)
     patch = HypernodePatch(
         label=dumped.get("label"),
         description=dumped.get("description"),
@@ -202,6 +207,7 @@ async def update_hypernode(
         attributes=dumped.get("attributes"),
         valid_from=dumped.get("valid_from"),
         valid_to=dumped.get("valid_to"),
+        media=dumped.get("media"),
         updated_by=updated_by,
     )
     result = await get_storage().hypernodes.update(
@@ -210,17 +216,22 @@ async def update_hypernode(
         patch=patch,
     )
     if result:
+        if existing:
+            await apply_media_diff(existing.media, dumped.get("media"))
         await invalidate_cache(graph_id)
     return result
 
 
 async def delete_hypernode(graph_id: str, node_id: str, space_id: Optional[str] = None) -> bool:
+    existing = await get_hypernode(graph_id, node_id, space_id=space_id)
     deleted = await get_storage().hypernodes.delete(
         hypergraph_id=_hypergraph_ref(graph_id, space_id),
         node_id=node_id,
     )
     if deleted:
         await get_storage().hypergraphs.increment_counts(graph_id, space_id, node_delta=-1)
+        if existing:
+            await adjust_media_refs(existing.media, -1)
         await invalidate_cache(graph_id)
         return True
     return False
@@ -251,6 +262,7 @@ async def create_hyperedge(
     )
     edge = await get_storage().hyperedges.create(doc)
     await get_storage().hypergraphs.increment_counts(graph_id, space_id, edge_delta=1)
+    await adjust_media_refs(data.media, 1)
     await invalidate_cache(graph_id)
     return edge
 
@@ -275,6 +287,7 @@ async def list_hyperedges(
     limit: int = 50,
     pit: Optional[datetime] = None,
     space_id: Optional[str] = None,
+    sort: Optional[List[Tuple[str, int]]] = None,
 ) -> Tuple[int, List[HyperedgeInDB]]:
     filters = HyperedgeFilters(
         hypergraph_id=_hypergraph_ref(graph_id, space_id),
@@ -284,6 +297,7 @@ async def list_hyperedges(
         tags=tags,
         member_node_id=node_id,
         pit=pit,
+        sort=sort,
     )
     return await get_storage().hyperedges.list(filters, skip=skip, limit=limit)
 
@@ -317,6 +331,7 @@ async def update_hyperedge(
         skos_broader=dumped.get("skos_broader"),
         skos_narrower=dumped.get("skos_narrower"),
         skos_related=dumped.get("skos_related"),
+        media=dumped.get("media"),
         updated_by=updated_by,
     )
     # Pass the regenerated hyperkey as an extra field to the store.
@@ -339,17 +354,22 @@ async def update_hyperedge(
         )
 
     if result:
+        if existing:
+            await apply_media_diff(existing.media, dumped.get("media"))
         await invalidate_cache(graph_id)
     return result
 
 
 async def delete_hyperedge(graph_id: str, edge_id: str, space_id: Optional[str] = None) -> bool:
+    existing = await get_hyperedge(graph_id, edge_id, space_id=space_id)
     deleted = await get_storage().hyperedges.delete(
         hypergraph_id=_hypergraph_ref(graph_id, space_id),
         edge_id=edge_id,
     )
     if deleted:
         await get_storage().hypergraphs.increment_counts(graph_id, space_id, edge_delta=-1)
+        if existing:
+            await adjust_media_refs(existing.media, -1)
         await invalidate_cache(graph_id)
         return True
     return False

@@ -120,6 +120,53 @@ const HGAI_API = (() => {
   async function updateSpaceEdge(spaceId, graphId, edgeId, data) { return request('PUT', `/spaces/${spaceId}/graphs/${graphId}/edges/${edgeId}`, data); }
   async function deleteSpaceEdge(spaceId, graphId, edgeId) { return request('DELETE', `/spaces/${spaceId}/graphs/${graphId}/edges/${edgeId}`); }
 
+  // ── Media ─────────────────────────────────────────────────────────────────
+  async function uploadMedia(file) {
+    const url = new URL(BASE + '/media', window.location.origin);
+    const headers = {};
+    const token = getToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const form = new FormData();
+    form.append('file', file);
+
+    const resp = await fetch(url.toString(), { method: 'POST', headers, body: form });
+    if (resp.status === 401) {
+      clearSession();
+      window.dispatchEvent(new Event('hgai:unauthorized'));
+      throw new Error('Unauthorized');
+    }
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      const msg = data.detail || data.message || `HTTP ${resp.status}`;
+      throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    }
+    return data;
+  }
+
+  async function downloadMedia(mediaId) {
+    const url = new URL(BASE + `/media/${mediaId}`, window.location.origin);
+    const headers = {};
+    const token = getToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const resp = await fetch(url.toString(), { headers });
+    if (resp.status === 401) {
+      clearSession();
+      window.dispatchEvent(new Event('hgai:unauthorized'));
+      throw new Error('Unauthorized');
+    }
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      const msg = data.detail || data.message || `HTTP ${resp.status}`;
+      throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    }
+    return resp.blob();
+  }
+
+  async function deleteMedia(mediaId) { return request('DELETE', `/media/${mediaId}`); }
+  async function listMedia(params = {}) { return request('GET', '/media', null, params); }
+  async function updateMedia(mediaId, data) { return request('PUT', `/media/${mediaId}`, data); }
+
   // ── Query (HQL) ───────────────────────────────────────────────────────────
   async function runQuery(hql, useCache = true) {
     return request('POST', '/query', { hql, use_cache: useCache });
@@ -186,6 +233,8 @@ const HGAI_API = (() => {
     // edges
     listEdges, getEdge, createEdge, updateEdge, deleteEdge,
     listSpaceEdges, getSpaceEdge, createSpaceEdge, updateSpaceEdge, deleteSpaceEdge,
+    // media
+    uploadMedia, downloadMedia, deleteMedia, listMedia, updateMedia,
     // query (HQL)
     runQuery, validateQuery, flushCache,
     // query (SHQL)
