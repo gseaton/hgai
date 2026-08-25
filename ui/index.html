@@ -58,6 +58,7 @@
     <a class="sidebar-link" data-screen="graphs" href="#"><i class="bi bi-diagram-3-fill"></i> Hypergraphs</a>
     <a class="sidebar-link" data-screen="nodes" href="#"><i class="bi bi-circle-fill"></i> Hypernodes</a>
     <a class="sidebar-link" data-screen="edges" href="#"><i class="bi bi-share-fill"></i> Hyperedges</a>
+    <a class="sidebar-link" data-screen="viz" href="#"><i class="bi bi-bezier2"></i> Visualize</a>
     <a class="sidebar-link" data-screen="query" href="#"><i class="bi bi-terminal-fill"></i> Query (HQL)</a>
     <a class="sidebar-link" data-screen="shql" href="#"><i class="bi bi-braces"></i> Query (SHQL)</a>
 
@@ -286,6 +287,85 @@
           <div class="card-footer d-flex justify-content-between align-items-center">
             <span id="edges-pagination-info" class="text-muted small"></span>
             <div class="btn-group btn-group-sm" id="edges-pagination"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── VISUALIZE ───────────────────────────────────────────────── -->
+      <div id="screen-viz" class="screen d-none">
+        <div class="screen-header">
+          <h4><i class="bi bi-bezier2 text-primary me-2"></i>Visualize</h4>
+          <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary btn-sm" id="btn-viz-fit">
+              <i class="bi bi-aspect-ratio me-1"></i>Fit
+            </button>
+            <button class="btn btn-outline-danger btn-sm" id="btn-viz-clear">
+              <i class="bi bi-x-circle me-1"></i>Clear
+            </button>
+            <button class="btn btn-primary btn-sm" id="btn-viz-render">
+              <i class="bi bi-play-fill me-1"></i>Render
+            </button>
+          </div>
+        </div>
+        <div class="card mb-3">
+          <div class="card-body py-2">
+            <div class="row g-2 align-items-end">
+              <div class="col-auto">
+                <label class="form-label small mb-1">Hypergraph(s)</label>
+                <select id="viz-graph-select" class="form-select form-select-sm" multiple size="4" style="width:260px"></select>
+                <div class="form-text">Ctrl/Cmd-click to select multiple</div>
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">Status</label>
+                <select id="viz-status-filter" class="form-select form-select-sm" style="width:120px">
+                  <option value="active" selected>Active</option>
+                  <option value="">All</option>
+                  <option value="archived">Archived</option>
+                  <option value="draft">Draft</option>
+                </select>
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">Search</label>
+                <input type="text" id="viz-search" class="form-control form-control-sm" placeholder="Filter by label..." style="width:180px"/>
+              </div>
+              <div class="col-auto">
+                <div class="form-check form-switch mb-1">
+                  <input class="form-check-input" type="checkbox" id="viz-show-labels" checked/>
+                  <label class="form-check-label small" for="viz-show-labels">Labels</label>
+                </div>
+              </div>
+              <div class="col-auto">
+                <div class="form-check form-switch mb-1">
+                  <input class="form-check-input" type="checkbox" id="viz-auto-rotate"/>
+                  <label class="form-check-label small" for="viz-auto-rotate">Auto-rotate</label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="row g-3" style="height: calc(100vh - 260px);">
+          <div class="col-md-9 d-flex flex-column">
+            <div id="viz-cy-wrapper" class="flex-grow-1 border rounded position-relative">
+              <div id="viz-canvas"></div>
+              <div id="viz-label-layer"></div>
+              <div id="viz-empty-state" class="viz-empty-state">
+                <i class="bi bi-bezier2"></i>
+                <p>Select one or more hypergraphs and click <strong>Render</strong> to visualize in 3D.</p>
+              </div>
+            </div>
+            <div id="viz-legend" class="viz-legend"></div>
+          </div>
+          <div class="col-md-3 d-flex flex-column">
+            <div class="card flex-grow-1 d-flex flex-column">
+              <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                <span>Element Details</span>
+                <span id="viz-stats" class="badge bg-light text-dark"></span>
+              </div>
+              <div class="card-body overflow-auto flex-grow-1">
+                <div id="viz-detail-empty" class="text-muted small">Click a node, hyperedge, or link to inspect it.</div>
+                <pre id="viz-detail-content" class="d-none bg-dark text-light p-3 rounded" style="font-size:0.75rem;white-space:pre-wrap;"></pre>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1277,6 +1357,7 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/yaml/yaml.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/3d-force-graph@1.80.0/dist/3d-force-graph.min.js"></script>
 <script src="/ui/js/api.js"></script>
 <script src="/ui/js/app.js"></script>
 </body>

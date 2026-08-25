@@ -1,0 +1,16 @@
+# Mutation Summary
+
+## Intent
+The Visualize tab had "Fit" (re-frame the camera) and "Render" (fetch and draw the selected hypergraph(s)) but no way to empty the 3D scene back to a blank state without navigating away and back. The user asked for a "Clear" button to reset the visualization.
+
+## Context
+By this point the Visualize tab (built across several prior mutations) holds render state in several places beyond just the `3d-force-graph` instance's `graphData`: a DOM label-overlay layer (`#viz-label-layer`, one element per node/link, added for the label on/off toggle), a legend (`#viz-legend`), a stats badge (`#viz-stats`), an Element Details side panel that can be showing a clicked node/edge's JSON, a search input that filters/dims the current scene, and an empty-state placeholder overlay that gets hidden on render and had its message overwritten in the "no results" case. All of these needed resetting together for "Clear" to actually leave the tab in a clean, coherent state rather than a rendered-looking-empty scene with stale legend/detail/search leftovers.
+
+## What Changed and Why
+- Added the button in the header row, positioned between Fit and Render (danger-outline styling to visually signal it's a destructive/reset action, consistent with how delete buttons are styled elsewhere in the app).
+- `vizClear()` resets every piece of that state in one call: empties `graphData`, clears the label layer, legend, stats text, and search box, resets the details panel, and restores the empty-state overlay's original call-to-action text (rather than leaving it blank or showing a stale "no results" message from a prior render).
+- Deliberately left the hypergraph multi-select and Status filter alone — Clear is scoped to "empty the visualization," not "reset my filter choices," so a user can Clear and then immediately Render the same selection again without having to re-pick graphs.
+
+## Key Decisions
+- **Scope: visualization state only, not form inputs** — the hypergraph selection and status filter are user intent/configuration, not visualization output; clearing them alongside the rendered scene would be a bigger, unrequested behavior change and would make "Clear then Render again" needlessly annoying.
+- **Verification**: reused the CDP-over-headless-Chrome harness (still no Claude-in-Chrome extension in this environment) against the seeded `hello-world` graph (13 hypernodes, 10 hyperedges from prior testing). Rendered the graph, set a search filter and clicked a node to populate the details panel, then clicked Clear and confirmed: `graphData` nodes/links both reach 0, the stats badge, legend, and label layer are all empty, the search box is cleared, the details panel returns to its empty placeholder, and the empty-state overlay reappears with its original "Render" call-to-action restored (not the "no results" text). Confirmed the hypergraph selection survived Clear untouched, and that clicking Render again afterward produces the exact same node/hyperedge counts as before — i.e. the underlying `3d-force-graph` instance remains fully functional after being cleared, not left in a broken state. Zero console errors. Test infrastructure (local mongod, the hgai server process, headless Chrome) was torn down afterward.

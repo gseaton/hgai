@@ -14,6 +14,7 @@ const State = {
   editorCM: null,
   graphsCache: {},       // id -> graph object (includes space_id)
   activeSpaceDetailId: null,
+  viz3d: null,
 };
 
 // ── Utilities ──────────────────────────────────────────────────────────────
@@ -89,7 +90,7 @@ function showScreen(name) {
 
   const titles = {
     dashboard: 'Dashboard', graphs: 'Hypergraphs', nodes: 'Hypernodes',
-    edges: 'Hyperedges', query: 'HQL Query', shql: 'SHQL Query',
+    edges: 'Hyperedges', viz: 'Visualize', query: 'HQL Query', shql: 'SHQL Query',
     spaces: 'Spaces', accounts: 'Accounts', meshes: 'Meshes', system: 'System',
   };
   document.getElementById('topbar-screen-title').textContent = titles[name] || name;
@@ -101,6 +102,7 @@ function showScreen(name) {
     graphs: loadGraphs,
     nodes: () => { State.nodesPage = 0; populateNodesGraphSelect(); loadNodes(); },
     edges: () => { State.edgesPage = 0; populateEdgesGraphSelect(); loadEdges(); },
+    viz: loadVizScreen,
     query: initQueryEditor,
     shql: initShqlEditor,
     spaces: loadSpaces,
@@ -916,6 +918,466 @@ document.getElementById('btn-save-edge').addEventListener('click', async () => {
     loadEdges();
   } catch (err) { toast(err.message, 'danger'); }
 });
+
+// ── Visualize (3D) ────────────────────────────────────────────────────────
+// Structure follows docs/architecture/hypergraph-3d-viz.md: a hyperedge is its
+// own node, linked via a virtual "hyperedge" edge to a virtual "members" node,
+// which fans out — via edges labeled with the hyperedge's relation — to each
+// member node. This keeps every hyperedge, of any arity, a first-class,
+// uniformly clickable element instead of a special-cased plain line.
+const VIZ_TYPE_PALETTE = ['#4f46e5','#059669','#0891b2','#d97706','#dc2626','#7c3aed','#db2777','#65a30d','#0d9488','#c026d3','#2563eb','#ea580c'];
+// Edge-kind colors, matching docs/design/hypergraphai-hyperedge-virtual-3d-graph-via-representation.png:
+// the hyperedge→members link is always "flavor/<flavor>" in magenta; every members→member
+// link is always "rel:<relation>" in amber. Color encodes structural role, not the specific
+// flavor/relation value — that's carried in the label text instead.
+// The hyperedge->members link is colored by the hyperedge's flavor, so the
+// topology pattern it implies (hub/symmetric/direct/...) reads at a glance.
+const VIZ_FLAVOR_LINK_COLOR = {
+  hub: '#f97316',                 // orange
+  symmetric: '#22c55e',           // green
+  direct: '#06b6d4',              // cyan
+  transitive: '#8b5cf6',          // violet
+  'inverse-transitive': '#f43f5e', // rose
+};
+const VIZ_LINK_RELATION_COLOR = '#f59e0b';
+const VIZ_LINK_FIRST_MEMBER_COLOR = '#3b82f6';
+const VIZ_DIM_NODE_COLOR = '#2a2a3d';
+const VIZ_DIM_LINK_COLOR = '#20202f';
+const VIZ_STRUCTURAL_COLOR = '#9ca3af';
+const VIZ_FETCH_LIMIT = 500;
+// Vertical tier (world Y) each node kind is pulled toward, echoing the reference
+// diagram's top-down layout: hyperedge on top, its virtual members-hub in the
+// middle, actual member hypernodes at the bottom.
+const VIZ_LAYER_Y = { henode: 160, members: 0, hnode: -160 };
+
+let vizRotateTimer = null;
+let vizRotateAngle = 0;
+let vizLabelsEnabled = true;
+const vizLabelNodeEls = new Map();
+const vizLabelLinkEls = new Map();
+
+function vizColorForType(type) {
+  const key = type || 'Entity';
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  return VIZ_TYPE_PALETTE[hash % VIZ_TYPE_PALETTE.length];
+}
+
+function vizEsc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function populateVizGraphSelect() {
+  const sel = document.getElementById('viz-graph-select');
+  const picked = new Set(Array.from(sel.selectedOptions).map(o => o.value));
+  try {
+    const items = await _fetchAndCacheGraphs();
+    sel.innerHTML = '';
+    items.forEach(g => {
+      const opt = document.createElement('option');
+      opt.value = g.id;
+      opt.textContent = g.space_id ? `${g.label} (${g.space_id}/${g.id})` : `${g.label} (${g.id})`;
+      if (picked.size ? picked.has(g.id) : g.id === State.activeGraphId) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  } catch {}
+}
+
+function loadVizScreen() {
+  populateVizGraphSelect();
+  if (!State.viz3d) initViz3D();
+}
+
+function vizShowDetail(raw) {
+  document.getElementById('viz-detail-empty').classList.add('d-none');
+  const content = document.getElementById('viz-detail-content');
+  content.classList.remove('d-none');
+  content.textContent = JSON.stringify(raw, null, 2);
+}
+
+function vizClearDetail() {
+  document.getElementById('viz-detail-empty').classList.remove('d-none');
+  document.getElementById('viz-detail-content').classList.add('d-none');
+}
+
+function vizResizeCanvas() {
+  if (!State.viz3d) return;
+  const el = document.getElementById('viz-cy-wrapper');
+  if (!el || !el.clientWidth || !el.clientHeight) return;
+  State.viz3d.width(el.clientWidth).height(el.clientHeight);
+}
+
+// Assigns a distinct curvature to every link so that multiple relationships
+// fanning out from the same source node (e.g. a hyperedge's "members" node
+// with many participants) render as visually separate arcs instead of
+// overlapping straight lines.
+function vizAssignCurvature(links) {
+  const groups = new Map();
+  links.forEach(l => {
+    const src = typeof l.source === 'object' ? l.source.id : l.source;
+    if (!groups.has(src)) groups.set(src, []);
+    groups.get(src).push(l);
+  });
+  groups.forEach(group => {
+    const n = group.length;
+    group.forEach((l, i) => { l.curvature = n <= 1 ? 0 : (i - (n - 1) / 2) * 0.28; });
+  });
+}
+
+// Projects a 3D world point to normalized (0..1) canvas space using the live
+// camera's own view/projection matrices — plain arithmetic on THREE.Matrix4's
+// `.elements` (column-major), so no THREE.js reference is needed on our side.
+function vizProjectPoint(camera, x, y, z) {
+  const ve = camera.matrixWorldInverse.elements;
+  const vx = ve[0] * x + ve[4] * y + ve[8] * z + ve[12];
+  const vy = ve[1] * x + ve[5] * y + ve[9] * z + ve[13];
+  const vz = ve[2] * x + ve[6] * y + ve[10] * z + ve[14];
+  const vw = ve[3] * x + ve[7] * y + ve[11] * z + ve[15];
+  const pe = camera.projectionMatrix.elements;
+  const cx = pe[0] * vx + pe[4] * vy + pe[8] * vz + pe[12] * vw;
+  const cy = pe[1] * vx + pe[5] * vy + pe[9] * vz + pe[13] * vw;
+  const cw = pe[3] * vx + pe[7] * vy + pe[11] * vz + pe[15] * vw;
+  if (cw <= 0) return null;
+  return { x: cx / cw * 0.5 + 0.5, y: 1 - (cy / cw * 0.5 + 0.5) };
+}
+
+function vizClearLabelLayer() {
+  document.getElementById('viz-label-layer').innerHTML = '';
+  vizLabelNodeEls.clear();
+  vizLabelLinkEls.clear();
+}
+
+function vizBuildLabelLayer(nodes, links) {
+  vizClearLabelLayer();
+  const layer = document.getElementById('viz-label-layer');
+  const frag = document.createDocumentFragment();
+  nodes.forEach(n => {
+    const el = document.createElement('div');
+    el.className = 'viz-label viz-label-node' + (n.kind === 'members' ? ' viz-label-virtual' : '');
+    el.textContent = n.label;
+    frag.appendChild(el);
+    vizLabelNodeEls.set(n.id, { el, node: n });
+  });
+  links.forEach(l => {
+    if (!l.label) return;
+    const el = document.createElement('div');
+    el.className = 'viz-label viz-label-link';
+    el.style.color = l.color;
+    el.textContent = l.label;
+    frag.appendChild(el);
+    vizLabelLinkEls.set(l, { el, link: l });
+  });
+  layer.appendChild(frag);
+}
+
+function vizLabelTick() {
+  requestAnimationFrame(vizLabelTick);
+  if (!vizLabelsEnabled || !State.viz3d) return;
+  if (document.getElementById('screen-viz').classList.contains('d-none')) return;
+  const wrapper = document.getElementById('viz-cy-wrapper');
+  const w = wrapper.clientWidth, h = wrapper.clientHeight;
+  if (!w || !h) return;
+  const camera = State.viz3d.camera();
+
+  vizLabelNodeEls.forEach(({ el, node }) => {
+    const p = vizProjectPoint(camera, node.x || 0, node.y || 0, node.z || 0);
+    if (!p || p.x < -0.1 || p.x > 1.1 || p.y < -0.1 || p.y > 1.1) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    el.style.left = (p.x * w) + 'px';
+    el.style.top = (p.y * h) + 'px';
+  });
+
+  vizLabelLinkEls.forEach(({ el, link }) => {
+    const s = typeof link.source === 'object' ? link.source : null;
+    const t = typeof link.target === 'object' ? link.target : null;
+    if (!s || !t) { el.style.display = 'none'; return; }
+    const p = vizProjectPoint(camera, (s.x + t.x) / 2, (s.y + t.y) / 2, (s.z + t.z) / 2);
+    if (!p || p.x < -0.1 || p.x > 1.1 || p.y < -0.1 || p.y > 1.1) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    el.style.left = (p.x * w) + 'px';
+    el.style.top = (p.y * h) + 'px';
+  });
+}
+
+// A d3-force-compatible custom force (the standard initialize(nodes)/force(alpha)
+// contract) that gently pulls each node toward its kind's vertical tier, so the
+// scene settles into the reference diagram's hyperedge/members/entity layering
+// instead of one undifferentiated organic cloud.
+function vizLayerForce() {
+  let nodes = [];
+  function force(alpha) {
+    const k = alpha * 0.3;
+    nodes.forEach(n => {
+      const targetY = VIZ_LAYER_Y[n.kind] ?? 0;
+      n.vy = (n.vy || 0) + (targetY - n.y) * k;
+    });
+  }
+  force.initialize = ns => { nodes = ns; };
+  return force;
+}
+
+function initViz3D() {
+  const container = document.getElementById('viz-canvas');
+  const g = ForceGraph3D()(container)
+    .backgroundColor('#0f0f1a')
+    .showNavInfo(false)
+    .nodeRelSize(3)
+    .d3Force('layer', vizLayerForce())
+    .nodeVal(n => n.val)
+    .nodeColor(n => n._dim ? VIZ_DIM_NODE_COLOR : n.color)
+    .nodeLabel(n => {
+      if (n.kind === 'members') return `<div>members <span style="opacity:.6">(virtual)</span></div>`;
+      if (n.kind === 'henode') {
+        return `<div>${vizEsc(n.label)}<br/><span style="opacity:.6">${vizEsc(n.relation)} · flavor:${vizEsc(n.flavor)} · ${n.arity} member${n.arity === 1 ? '' : 's'}</span></div>`;
+      }
+      return `<div>${vizEsc(n.label)}<br/><span style="opacity:.6">${vizEsc(n.type)}</span></div>`;
+    })
+    .linkColor(l => l._dim ? VIZ_DIM_LINK_COLOR : l.color)
+    .linkWidth(l => l.kind === 'hyperedge' ? 0.8 : 1.0)
+    .linkCurvature(l => l.curvature || 0)
+    .linkOpacity(0.75)
+    .linkLabel(l => vizEsc(l.label))
+    .linkDirectionalArrowLength(4)
+    .linkDirectionalArrowRelPos(1)
+    .linkDirectionalArrowColor(l => l._dim ? VIZ_DIM_LINK_COLOR : l.color)
+    .onNodeClick(node => {
+      const dist = 90;
+      const ratio = 1 + dist / (Math.hypot(node.x || 0, node.y || 0, node.z || 0) || 1);
+      g.cameraPosition({ x: node.x * ratio, y: node.y * ratio, z: node.z * ratio }, node, 700);
+      if (node.kind === 'members') {
+        vizShowDetail({
+          virtual: true,
+          note: "Structural node representing this hyperedge's member set — not a persisted entity.",
+          hyperedge_id: node.parentRaw?.id || node.parentRaw?.hyperkey,
+          relation: node.parentRaw?.relation,
+          member_count: (node.parentRaw?.members || []).length,
+        });
+      } else {
+        vizShowDetail(node.raw);
+      }
+    })
+    .onLinkClick(link => {
+      if (link.kind === 'hyperedge') {
+        vizShowDetail({
+          virtual: true,
+          note: 'Structural link connecting the hyperedge node to its virtual members node.',
+          hyperedge_id: link.parentRaw?.id || link.parentRaw?.hyperkey,
+        });
+      } else {
+        vizShowDetail(link.raw);
+      }
+    })
+    .onBackgroundClick(vizClearDetail);
+
+  State.viz3d = g;
+  vizResizeCanvas();
+  window.addEventListener('resize', vizResizeCanvas);
+}
+
+async function fetchGraphElements(graphId) {
+  const spaceId = graphSpaceId(graphId);
+  const status = document.getElementById('viz-status-filter').value || undefined;
+  const [nodesResp, edgesResp] = await Promise.all([
+    spaceId ? HGAI_API.listSpaceNodes(spaceId, graphId, { limit: VIZ_FETCH_LIMIT, status })
+            : HGAI_API.listNodes(graphId, { limit: VIZ_FETCH_LIMIT, status }),
+    spaceId ? HGAI_API.listSpaceEdges(spaceId, graphId, { limit: VIZ_FETCH_LIMIT })
+            : HGAI_API.listEdges(graphId, { limit: VIZ_FETCH_LIMIT }),
+  ]);
+  return {
+    nodes: nodesResp.items || [], nodesTotal: nodesResp.total || 0,
+    edges: edgesResp.items || [], edgesTotal: edgesResp.total || 0,
+  };
+}
+
+async function renderViz() {
+  const sel = document.getElementById('viz-graph-select');
+  const graphIds = Array.from(sel.selectedOptions).map(o => o.value);
+  if (!graphIds.length) { toast('Select at least one hypergraph', 'warning'); return; }
+  if (!State.viz3d) initViz3D();
+
+  document.getElementById('viz-empty-state').classList.add('d-none');
+  vizResizeCanvas();
+
+  const nodes = [];
+  const links = [];
+  const typeCount = {};
+  const flavorSeen = new Set();
+  let truncated = false;
+  let hyperedgeCount = 0;
+
+  try {
+    for (const gid of graphIds) {
+      const { nodes: rawNodes, edges, nodesTotal, edgesTotal } = await fetchGraphElements(gid);
+      if (rawNodes.length < nodesTotal || edges.length < edgesTotal) truncated = true;
+
+      const nodeIdSet = new Set();
+      rawNodes.forEach(n => {
+        nodeIdSet.add(n.id);
+        const type = n.type || 'Entity';
+        typeCount[type] = (typeCount[type] || 0) + 1;
+        nodes.push({
+          id: `${gid}::${n.id}`, kind: 'hnode', label: n.label || n.id, type,
+          color: vizColorForType(type), val: 4, graphId: gid, raw: n,
+        });
+      });
+
+      edges.forEach(e => {
+        const members = (e.members || []).slice().sort((a, b) => (a.seq || 0) - (b.seq || 0));
+        const flavor = e.flavor || 'hub';
+        const validMembers = members.filter(m => nodeIdSet.has(m.node_id));
+        if (!validMembers.length) return;
+        hyperedgeCount++;
+        flavorSeen.add(flavor);
+        const heid = `${gid}::he::${e.id || e.hyperkey}`;
+        const membersId = `${heid}::members`;
+
+        // edge:<id> (node) — the hyperedge's own identity, matching the top box
+        // in docs/design/hypergraphai-hyperedge-virtual-3d-graph-via-representation.png
+        nodes.push({
+          id: heid, kind: 'henode', label: e.label || e.id || e.hyperkey || '(hyperedge)',
+          flavor, color: VIZ_STRUCTURAL_COLOR, val: Math.min(6 + validMembers.length, 16),
+          arity: validMembers.length, relation: e.relation, graphId: gid, raw: e,
+        });
+        // "members" (virtual node)
+        nodes.push({
+          id: membersId, kind: 'members', label: 'members', color: VIZ_STRUCTURAL_COLOR,
+          val: 1.6, graphId: gid, raw: null, parentRaw: e,
+        });
+        // "hyperedge" (virtual edge): hyperedge-node -> members-node, typed
+        // by the hyperedge's flavor (e.g. "flavor:hub") per the reference diagram.
+        links.push({
+          source: heid, target: membersId, kind: 'hyperedge', label: `flavor:${flavor}`,
+          color: VIZ_FLAVOR_LINK_COLOR[flavor] || VIZ_STRUCTURAL_COLOR, raw: null, parentRaw: e,
+        });
+        // relation-labeled edges: members-node -> each member node. The first
+        // member (lowest seq) gets a distinct blue so it stands out from the rest.
+        validMembers.forEach((m, i) => {
+          links.push({
+            source: membersId, target: `${gid}::${m.node_id}`, kind: 'relation',
+            label: e.relation || '', seq: m.seq,
+            color: i === 0 ? VIZ_LINK_FIRST_MEMBER_COLOR : VIZ_LINK_RELATION_COLOR, raw: e,
+          });
+        });
+      });
+    }
+
+    vizAssignCurvature(links);
+    State.viz3d.graphData({ nodes, links });
+    vizBuildLabelLayer(nodes, links);
+    buildVizLegend(typeCount, flavorSeen);
+    document.getElementById('viz-stats').textContent =
+      `${nodes.filter(n => n.kind === 'hnode').length} hypernodes · ${hyperedgeCount} hyperedges`;
+    if (truncated) toast(`Some graphs exceeded the display limit (${VIZ_FETCH_LIMIT}) — showing a partial view`, 'warning');
+    if (!nodes.length) {
+      const empty = document.getElementById('viz-empty-state');
+      empty.classList.remove('d-none');
+      empty.querySelector('p').textContent = 'No hypernodes found for the selected hypergraph(s).';
+    } else {
+      setTimeout(() => State.viz3d?.zoomToFit(600, 60), 500);
+    }
+  } catch (err) {
+    toast(err.message, 'danger');
+  }
+}
+
+function vizClear() {
+  if (State.viz3d) State.viz3d.graphData({ nodes: [], links: [] });
+  vizClearLabelLayer();
+  document.getElementById('viz-legend').innerHTML = '';
+  document.getElementById('viz-stats').textContent = '';
+  document.getElementById('viz-search').value = '';
+  vizClearDetail();
+  const empty = document.getElementById('viz-empty-state');
+  empty.querySelector('p').innerHTML = 'Select one or more hypergraphs and click <strong>Render</strong> to visualize in 3D.';
+  empty.classList.remove('d-none');
+}
+
+function buildVizLegend(typeCount, flavorSeen) {
+  const el = document.getElementById('viz-legend');
+  el.innerHTML = '';
+  Object.keys(typeCount).sort().forEach(type => {
+    const item = document.createElement('div');
+    item.className = 'viz-legend-item';
+    item.innerHTML = `<span class="viz-legend-swatch" style="background:${vizColorForType(type)}"></span>${type} (${typeCount[type]})`;
+    item.addEventListener('click', () => toggleVizType(type, item));
+    el.appendChild(item);
+  });
+  Array.from(flavorSeen).sort().forEach(flavor => {
+    const item = document.createElement('div');
+    item.className = 'viz-legend-item';
+    const color = VIZ_FLAVOR_LINK_COLOR[flavor] || VIZ_STRUCTURAL_COLOR;
+    item.innerHTML = `<span class="viz-legend-swatch bag" style="background:${color}"></span>flavor:${flavor}`;
+    el.appendChild(item);
+  });
+  if (flavorSeen.size) {
+    [
+      ['rel:*  edge', VIZ_LINK_RELATION_COLOR],
+      ['rel:*  edge (first member)', VIZ_LINK_FIRST_MEMBER_COLOR],
+    ].forEach(([label, color]) => {
+      const item = document.createElement('div');
+      item.className = 'viz-legend-item';
+      item.innerHTML = `<span class="viz-legend-swatch bag" style="background:${color}"></span>${label}`;
+      el.appendChild(item);
+    });
+  }
+}
+
+function vizRecomputeDim() {
+  if (!State.viz3d) return;
+  const data = State.viz3d.graphData();
+  data.nodes.forEach(n => { n._dim = !!(n._typeHidden || n._searchDim); });
+  data.links.forEach(l => {
+    const s = typeof l.source === 'object' ? l.source : data.nodes.find(n => n.id === l.source);
+    const t = typeof l.target === 'object' ? l.target : data.nodes.find(n => n.id === l.target);
+    l._dim = !!(s && s._dim) || !!(t && t._dim);
+  });
+  const g = State.viz3d;
+  g.nodeColor(g.nodeColor()).linkColor(g.linkColor()).linkDirectionalArrowColor(g.linkDirectionalArrowColor());
+}
+
+function toggleVizType(type, item) {
+  if (!State.viz3d) return;
+  const hidden = item.classList.toggle('dimmed');
+  State.viz3d.graphData().nodes.forEach(n => { if (n.type === type) n._typeHidden = hidden; });
+  vizRecomputeDim();
+}
+
+function vizStartAutoRotate() {
+  if (vizRotateTimer) return;
+  vizRotateTimer = setInterval(() => {
+    if (!State.viz3d || document.getElementById('screen-viz').classList.contains('d-none')) return;
+    const pos = State.viz3d.cameraPosition();
+    const r = Math.hypot(pos.x, pos.z) || 400;
+    vizRotateAngle += 0.003;
+    State.viz3d.cameraPosition({ x: r * Math.sin(vizRotateAngle), y: pos.y, z: r * Math.cos(vizRotateAngle) });
+  }, 30);
+}
+
+function vizStopAutoRotate() {
+  if (vizRotateTimer) { clearInterval(vizRotateTimer); vizRotateTimer = null; }
+}
+
+document.getElementById('btn-viz-render').addEventListener('click', renderViz);
+document.getElementById('btn-viz-fit').addEventListener('click', () => State.viz3d?.zoomToFit(600, 60));
+document.getElementById('btn-viz-clear').addEventListener('click', vizClear);
+document.getElementById('viz-auto-rotate').addEventListener('change', function() {
+  this.checked ? vizStartAutoRotate() : vizStopAutoRotate();
+});
+document.getElementById('viz-show-labels').addEventListener('change', function() {
+  vizLabelsEnabled = this.checked;
+  if (!vizLabelsEnabled) {
+    vizLabelNodeEls.forEach(({ el }) => { el.style.display = 'none'; });
+    vizLabelLinkEls.forEach(({ el }) => { el.style.display = 'none'; });
+  }
+});
+document.getElementById('viz-search').addEventListener('input', function() {
+  if (!State.viz3d) return;
+  const q = this.value.trim().toLowerCase();
+  State.viz3d.graphData().nodes.forEach(n => { n._searchDim = q ? !(n.label || '').toLowerCase().includes(q) : false; });
+  vizRecomputeDim();
+});
+
+vizLabelTick();
 
 // ── JSON syntax highlighter ────────────────────────────────────────────────
 function syntaxHighlightJson(obj) {

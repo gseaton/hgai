@@ -1,0 +1,6 @@
+# Mutation Log
+
+## Modified
+- **ui/index.html** — Added a "Visualize" sidebar link (`data-screen="viz"`) between Hyperedges and Query (HQL). Added a new `#screen-viz` screen containing: a multi-select hypergraph picker, layout/status/search controls, a `#cy` Cytoscape canvas with an empty-state overlay, a dynamic legend row, and a right-hand "Element Details" panel. Added a `cytoscape@3.30.2` CDN `<script>` tag before `app.js`.
+- **ui/css/hgai.css** — Added `.viz-*` styles: canvas wrapper sizing, the centered empty-state placeholder, and the clickable legend chips (circular swatches for node types, diamond swatches for hyperedge flavors, dimmed state).
+- **ui/js/app.js** — Added `vizCy` to the global `State` object. Registered `viz: 'Visualize'` in the screen-title map and `viz: loadVizScreen` in the screen-loader map inside `showScreen()`. Added a new "Visualize" module: `populateVizGraphSelect`, `loadVizScreen`, `initVizCy` (Cytoscape instance + stylesheet + tap handlers), `fetchGraphElements` (fetches nodes/edges per graph via the existing space-aware API helpers), `renderViz` (builds Cytoscape elements from hypernodes/hyperedges), `runVizLayout`, `buildVizLegend`, `toggleVizType`, plus event listeners for the Render/Fit buttons, layout select, label toggle, and live search input.

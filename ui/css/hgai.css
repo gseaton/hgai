@@ -389,6 +389,51 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 #modal-graph .modal-body { padding: 0; }
 #modal-graph .form-label { font-weight: 600; color: #111827; }
 
+/* ── Visualize ─────────────────────────────────────────────────────────────── */
+#viz-cy-wrapper { background: #0f0f1a; overflow: hidden; min-height: 300px; }
+#viz-canvas { width: 100%; height: 100%; }
+#viz-canvas canvas { display: block; }
+#viz-label-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.viz-label {
+  position: absolute; top: 0; left: 0;
+  transform: translate(-50%, -50%);
+  white-space: nowrap; pointer-events: none; user-select: none;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+/* Node labels read as boxes, echoing the reference diagram's rounded-rectangle
+   node style — color lives on the edges, not the nodes. */
+.viz-label-node {
+  color: #111827; font-size: 11px; font-weight: 600;
+  background: #eef0f4; border: 1px solid #cbd5e1; border-radius: 7px;
+  padding: 3px 9px; box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+}
+.viz-label-node.viz-label-virtual { color: #15803d; border-color: #86efac; }
+.viz-label-link {
+  color: #e5e7eb; font-size: 10px; font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.7);
+}
+.viz-empty-state {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: rgba(255,255,255,0.35); pointer-events: none; text-align: center; gap: 8px;
+}
+.viz-empty-state i { font-size: 2.5rem; }
+.viz-empty-state p { max-width: 280px; margin: 0; font-size: 0.85rem; }
+.viz-legend {
+  display: flex; flex-wrap: wrap; gap: 6px 14px;
+  padding: 10px 4px 0; font-size: 0.75rem; color: #374151;
+}
+.viz-legend-item {
+  display: flex; align-items: center; gap: 5px; cursor: pointer;
+  opacity: 1; transition: opacity 0.15s; user-select: none;
+}
+.viz-legend-item.dimmed { opacity: 0.35; }
+.viz-legend-swatch {
+  width: 11px; height: 11px; border-radius: 50%;
+  display: inline-block; flex-shrink: 0;
+}
+.viz-legend-swatch.bag { border-radius: 3px; width: 14px; height: 10px; }
+
 /* ── Hyperedge Modal ───────────────────────────────────────────────────────── */
 .edge-modal-header {
   padding: 18px 24px;
