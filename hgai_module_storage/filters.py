@@ -167,15 +167,20 @@ class MeshPatch:
 
 @dataclass
 class MediaFilters:
-    search: Optional[str] = None  # filename search
+    id: Optional[str] = None  # exact-match, for refreshing a single record's authoritative metadata
+    search: Optional[str] = None  # substring match against filename, name, label, or description
     content_type: Optional[str] = None
     status: Optional[str] = None
     tags: Optional[List[str]] = None
+    sort: Optional[List[Tuple[str, int]]] = None  # [(field, 1|-1), ...], priority order
 
 
 @dataclass
 class MediaPatch:
     filename: Optional[str] = None
+    name: Optional[str] = None
+    label: Optional[str] = None
+    description: Optional[str] = None
     tags: Optional[List[str]] = None
     attributes: Optional[Dict[str, Any]] = None
     status: Optional[str] = None

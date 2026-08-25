@@ -23,6 +23,28 @@ def parse_media_id(media_id: str) -> Tuple[Optional[str], str]:
     return None, media_id
 
 
+def extract_media_duration(content_type: Optional[str], data: bytes) -> Optional[float]:
+    """Best-effort duration (seconds) for an audio/video upload, via mutagen.
+
+    Returns None for non-audio/video content, unrecognized/corrupt formats, or
+    any extraction error — duration is a nice-to-have display field, never
+    something an upload should fail over.
+    """
+    if not content_type or not (content_type.startswith("audio/") or content_type.startswith("video/")):
+        return None
+    try:
+        import io
+
+        import mutagen
+
+        parsed = mutagen.File(io.BytesIO(data))
+        if parsed is not None and parsed.info is not None and hasattr(parsed.info, "length"):
+            return round(float(parsed.info.length), 2)
+    except Exception:
+        pass
+    return None
+
+
 def _extract_local_ids(media_refs: Optional[List[Any]]) -> Set[str]:
     """Return the set of *local* media ids referenced by a media list.
 
@@ -110,3 +132,40 @@ async def sweep_orphaned_media(older_than_hours: int = 24) -> Dict[str, int]:
         if await get_storage().media.delete(m.id):
             deleted += 1
     return {"scanned": len(orphans), "deleted": deleted}
+
+
+async def backfill_media_durations(limit: int = 1000) -> Dict[str, int]:
+    """One-time enrichment sweep: compute `duration_seconds` for audio/video
+    media that predates duration extraction (uploaded before that feature
+    existed, so it was never computed). New uploads already get this at
+    upload time (see extract_media_duration + the store `put()` methods) —
+    this only backfills existing records that are missing it.
+
+    Reads each candidate's full blob into memory to run extraction (same
+    tradeoff already accepted for regular audio/video uploads); this is an
+    admin-triggered maintenance sweep, not a per-request path, so that's fine
+    at the scale this is meant for.
+    """
+    from hgai_module_storage.filters import MediaFilters
+
+    store = get_storage().media
+    _, items = await store.list(MediaFilters(), skip=0, limit=limit)
+    candidates = [
+        m for m in items
+        if m.duration_seconds is None
+        and m.content_type
+        and (m.content_type.startswith("audio/") or m.content_type.startswith("video/"))
+    ]
+
+    updated = 0
+    for m in candidates:
+        result = await store.get_stream(m.id)
+        if not result:
+            continue
+        _, chunks = result
+        data = b"".join([chunk async for chunk in chunks])
+        duration = extract_media_duration(m.content_type, data)
+        if duration is not None:
+            await store.set_duration(m.id, duration)
+            updated += 1
+    return {"scanned": len(candidates), "updated": updated}

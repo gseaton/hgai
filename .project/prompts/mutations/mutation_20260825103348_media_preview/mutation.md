@@ -1,0 +1,6 @@
+# Mutation Log
+
+## Modified
+- **ui/index.html** — Added an inline preview area (`#media-edit-preview`) to the Media Edit modal, above the metadata table. Added a new shared `modal-media-preview` modal (image/audio/video viewer with a Download button) placed after the Media Edit modal.
+- **ui/css/hgai.css** — Added `.media-preview-body`/`.media-preview-inline` rules sizing and centering the `<img>`/`<video>`/`<audio>` elements in both the popup preview modal and the inline edit-modal preview.
+- **ui/js/app.js** — Added shared preview infrastructure: `isPreviewableMediaType()`, `renderMediaPreviewInto(containerId, mediaId, filename, contentType)` (fetches the blob via `HGAI_API.downloadMedia`, renders an `<img>`/`<video controls>`/`<audio controls>`, or a "no preview available" fallback for other types, tracking and revoking its own object URL per container), `clearMediaPreview()`, and `openMediaPreview()` (opens the shared popup modal). Wired a "Preview" (eye icon) button into: the node/edge Media attachment list (`renderMediaList`), the standalone Media tab's table rows (`previewMediaRow`, new), the Media Edit modal (auto-loads inline via `editMedia()`), and the "Browse Existing" media picker's rows (`loadMediaPicker`).

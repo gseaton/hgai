@@ -285,6 +285,7 @@
               <thead>
                 <tr>
                   <th class="sortable-th" data-table="edges" data-sort-field="id">ID<span class="sort-indicator"></span></th>
+                  <th class="sortable-th" data-table="edges" data-sort-field="label">Label<span class="sort-indicator"></span></th>
                   <th class="sortable-th" data-table="edges" data-sort-field="relation">Relation<span class="sort-indicator"></span></th>
                   <th class="sortable-th" data-table="edges" data-sort-field="flavor">Flavor<span class="sort-indicator"></span></th>
                   <th>Members</th>
@@ -315,7 +316,7 @@
           <div class="card-body py-2">
             <div class="row g-2 align-items-center">
               <div class="col-auto">
-                <input type="text" id="media-search" class="form-control form-control-sm" placeholder="Search filename..." style="width:200px"/>
+                <input type="text" id="media-search" class="form-control form-control-sm" placeholder="Search filename, name, label..." style="width:200px"/>
               </div>
               <div class="col-auto">
                 <input type="text" id="media-type-filter" class="form-control form-control-sm" placeholder="Filter by content type..." style="width:200px"/>
@@ -341,8 +342,17 @@
             <table class="table table-hover mb-0">
               <thead>
                 <tr>
-                  <th>File</th><th>Type</th><th>Size</th><th>Refs</th>
-                  <th>Uploaded By</th><th>Tags</th><th>Status</th><th></th>
+                  <th class="sortable-th" data-table="media" data-sort-field="filename">File<span class="sort-indicator"></span></th>
+                  <th class="sortable-th" data-table="media" data-sort-field="name">Name<span class="sort-indicator"></span></th>
+                  <th class="sortable-th" data-table="media" data-sort-field="label">Label<span class="sort-indicator"></span></th>
+                  <th class="sortable-th" data-table="media" data-sort-field="content_type">Type<span class="sort-indicator"></span></th>
+                  <th class="sortable-th" data-table="media" data-sort-field="size_bytes">Size<span class="sort-indicator"></span></th>
+                  <th class="sortable-th" data-table="media" data-sort-field="duration_seconds">Duration<span class="sort-indicator"></span></th>
+                  <th class="sortable-th" data-table="media" data-sort-field="ref_count">Refs<span class="sort-indicator"></span></th>
+                  <th class="sortable-th" data-table="media" data-sort-field="uploaded_by">Uploaded By<span class="sort-indicator"></span></th>
+                  <th>Tags</th>
+                  <th class="sortable-th" data-table="media" data-sort-field="status">Status<span class="sort-indicator"></span></th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody id="tbody-media"></tbody>
@@ -1112,6 +1122,20 @@
           <label class="form-label">File <span class="text-danger">*</span></label>
           <input type="file" id="upload-media-file" class="form-control"/>
         </div>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label">Name <span class="text-muted fw-normal small">— short internal/searchable name</span></label>
+            <input type="text" id="upload-media-name" class="form-control"/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Label <span class="text-muted fw-normal small">— display label</span></label>
+            <input type="text" id="upload-media-label" class="form-control"/>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Description</label>
+          <textarea id="upload-media-description" class="form-control" rows="2"></textarea>
+        </div>
         <div class="mb-3">
           <label class="form-label">Tags</label>
           <input type="text" id="upload-media-tags" class="form-control" placeholder="tag1, tag2, tag3"/>
@@ -1144,6 +1168,7 @@
       </div>
       <div class="modal-body">
         <input type="hidden" id="media-edit-id" value=""/>
+        <div id="media-edit-preview" class="media-preview-inline mb-3"></div>
         <table class="table table-sm mb-3">
           <tbody>
             <tr><th class="text-muted fw-normal" style="width:35%">ID</th><td><code id="media-info-id"></code></td></tr>
@@ -1167,6 +1192,18 @@
               <option value="draft">draft</option>
               <option value="archived">archived</option>
             </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Name <span class="text-muted fw-normal small">— short internal/searchable name</span></label>
+            <input type="text" id="media-edit-name" class="form-control"/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Label <span class="text-muted fw-normal small">— display label</span></label>
+            <input type="text" id="media-edit-label" class="form-control"/>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Description</label>
+            <textarea id="media-edit-description" class="form-control" rows="2"></textarea>
           </div>
           <div class="col-12">
             <label class="form-label">Tags</label>
@@ -1198,9 +1235,39 @@
   </div>
 </div>
 
+<!-- Media Preview Modal — shared everywhere a media file is referenced -->
+<div class="modal fade" id="modal-media-preview" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title text-truncate" id="media-preview-title">Preview</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="media-preview-body" class="media-preview-body mb-3 text-center"></div>
+        <table class="table table-sm mb-0">
+          <tbody>
+            <tr><th class="text-muted fw-normal" style="width:30%">Name</th><td id="media-preview-meta-name"></td></tr>
+            <tr><th class="text-muted fw-normal">Label</th><td id="media-preview-meta-label"></td></tr>
+            <tr><th class="text-muted fw-normal">Size</th><td id="media-preview-meta-size"></td></tr>
+            <tr><th class="text-muted fw-normal">Duration</th><td id="media-preview-meta-duration"></td></tr>
+            <tr><th class="text-muted fw-normal">Description</th><td id="media-preview-meta-description"></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" id="btn-media-preview-download">
+          <i class="bi bi-download me-1"></i>Download
+        </button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Media Reference (attachment) Edit Modal — shared by the node & edge Media sections -->
 <div class="modal fade" id="modal-media-ref-edit" tabindex="-1">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title">Edit Media Association</h5>
@@ -1211,6 +1278,29 @@
           <label class="form-label">File</label>
           <div id="media-ref-edit-name" class="form-control-plaintext font-monospace small text-muted py-0"></div>
         </div>
+
+        <h6 class="text-uppercase text-muted small fw-bold mb-2">Media File <span class="text-muted fw-normal text-lowercase">— shared across every entity that references this file</span></h6>
+        <div id="media-ref-edit-remote-note" class="alert alert-secondary small py-2 d-none">
+          This media file is hosted on another mesh server — its name, label, and description can't be edited from here.
+        </div>
+        <div class="row g-3 mb-2">
+          <div class="col-md-6">
+            <label class="form-label">Name <span class="text-muted fw-normal small">— short internal/searchable name</span></label>
+            <input type="text" id="media-ref-edit-media-name" class="form-control"/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Label <span class="text-muted fw-normal small">— display label</span></label>
+            <input type="text" id="media-ref-edit-media-label" class="form-control"/>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Description</label>
+          <textarea id="media-ref-edit-media-description" class="form-control" rows="2"></textarea>
+        </div>
+
+        <hr/>
+
+        <h6 class="text-uppercase text-muted small fw-bold mb-2">This Association <span class="text-muted fw-normal text-lowercase">— specific to this entity's reference to the file</span></h6>
         <div class="mb-3">
           <label class="form-label">Role <span class="text-muted fw-normal small">— how this media relates to this entity</span></label>
           <input type="text" id="media-ref-edit-role" class="form-control" placeholder="e.g. profile-photo, attachment, source-document"/>
@@ -1223,6 +1313,7 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-primary" id="btn-save-media-ref-edit">
+          <span id="media-ref-edit-spinner" class="spinner-border spinner-border-sm d-none me-1"></span>
           <i class="bi bi-floppy me-1"></i>Save
         </button>
       </div>
@@ -1241,7 +1332,7 @@
       <div class="modal-body">
         <div class="row g-2 align-items-center mb-2">
           <div class="col-auto">
-            <input type="text" id="media-picker-search" class="form-control form-control-sm" placeholder="Search filename..." style="width:180px"/>
+            <input type="text" id="media-picker-search" class="form-control form-control-sm" placeholder="Search filename, name, label..." style="width:180px"/>
           </div>
           <div class="col-auto">
             <input type="text" id="media-picker-type-filter" class="form-control form-control-sm" placeholder="Filter by content type..." style="width:180px"/>

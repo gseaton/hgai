@@ -25,6 +25,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from hgai.config import get_settings
+from hgai.core.media import extract_media_duration
 from hgai.models.common import now_utc
 from hgai.models.media import Media
 from hgai_module_storage.backend import MediaStore
@@ -78,6 +79,7 @@ class S3MediaStore(MediaStore):
             chunks.append(chunk)
         body = b"".join(chunks)
         checksum = hasher.hexdigest()
+        duration_seconds = extract_media_duration(content_type, body)
 
         # Dedup — see MongoMediaStore.put() for the same best-effort rationale.
         existing_raw = await _col().find_one({"checksum": checksum})
@@ -99,6 +101,7 @@ class S3MediaStore(MediaStore):
             "content_type": content_type,
             "filename": filename,
             "size_bytes": size_bytes,
+            "duration_seconds": duration_seconds,
             "checksum": checksum,
             "uploaded_by": uploaded_by,
             "ref_count": 0,
@@ -177,6 +180,8 @@ class S3MediaStore(MediaStore):
         limit: int = 50,
     ) -> Tuple[int, List[Media]]:
         query: Dict[str, Any] = {}
+        if filters.id:
+            query["id"] = filters.id
         if filters.status:
             query["status"] = filters.status
         if filters.content_type:
@@ -184,10 +189,12 @@ class S3MediaStore(MediaStore):
         if filters.tags:
             query["tags"] = {"$all": filters.tags}
         if filters.search:
-            query["filename"] = {"$regex": filters.search, "$options": "i"}
+            regex = {"$regex": filters.search, "$options": "i"}
+            query["$or"] = [{"filename": regex}, {"name": regex}, {"label": regex}, {"description": regex}]
 
         total = await _col().count_documents(query)
-        cursor = _col().find(query).skip(skip).limit(limit).sort("system_created", -1)
+        sort_spec = filters.sort or [("system_created", -1)]
+        cursor = _col().find(query).skip(skip).limit(limit).sort(sort_spec)
         docs = await cursor.to_list(length=limit)
         items = []
         for doc in docs:
@@ -197,7 +204,7 @@ class S3MediaStore(MediaStore):
 
     async def update(self, media_id: str, patch: MediaPatch) -> Optional[Media]:
         update_fields: Dict[str, Any] = {}
-        for attr in ("filename", "tags", "attributes", "status"):
+        for attr in ("filename", "name", "label", "description", "tags", "attributes", "status"):
             val = getattr(patch, attr, None)
             if val is not None:
                 update_fields[attr] = val
@@ -214,3 +221,6 @@ class S3MediaStore(MediaStore):
             return None
         result.pop("_id", None)
         return Media(**result)
+
+    async def set_duration(self, media_id: str, duration_seconds: float) -> None:
+        await _col().update_one({"id": media_id}, {"$set": {"duration_seconds": duration_seconds}})

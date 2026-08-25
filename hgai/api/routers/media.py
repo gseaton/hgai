@@ -13,10 +13,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
-from hgai.api.deps import get_current_active_account
+from hgai.api.deps import get_current_active_account, parse_sort_param
 from hgai.config import get_settings
 from hgai.core.auth import require_admin
-from hgai.core.media import delete_media_checked, parse_media_id, sweep_orphaned_media
+from hgai.core.media import backfill_media_durations, delete_media_checked, parse_media_id, sweep_orphaned_media
 from hgai.db.storage import get_storage
 from hgai.models.account import AccountInDB
 from hgai.models.common import PaginatedResponse
@@ -25,18 +25,29 @@ from hgai_module_storage.filters import MediaFilters, MediaPatch
 
 router = APIRouter(prefix="/media", tags=["media"])
 
+MEDIA_SORT_FIELDS = {
+    "id", "filename", "name", "label", "content_type", "size_bytes",
+    "duration_seconds", "ref_count", "uploaded_by", "status",
+    "system_created", "system_updated",
+}
+
 
 @router.get("", response_model=PaginatedResponse)
 async def list_media(
-    search: Optional[str] = Query(default=None, description="Filename search (case-insensitive substring)"),
+    id: Optional[str] = Query(default=None, description="Exact-match on media id, for refreshing a single record's authoritative metadata"),
+    search: Optional[str] = Query(default=None, description="Case-insensitive substring search across filename, name, label, and description"),
     content_type: Optional[str] = Query(default=None),
     status: Optional[str] = Query(default=None),
     tags: Optional[List[str]] = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
+    sort: Optional[str] = Query(default=None, description=f"Comma-separated fields, '-' prefix = descending. Allowed: {sorted(MEDIA_SORT_FIELDS)}"),
     account: AccountInDB = Depends(get_current_active_account),
 ):
-    filters = MediaFilters(search=search, content_type=content_type, status=status, tags=tags)
+    filters = MediaFilters(
+        id=id, search=search, content_type=content_type, status=status, tags=tags,
+        sort=parse_sort_param(sort, MEDIA_SORT_FIELDS),
+    )
     total, items = await get_storage().media.list(filters, skip=skip, limit=limit)
     return PaginatedResponse(
         total=total, skip=skip, limit=limit,
@@ -159,6 +170,9 @@ async def update_media(
         )
     patch = MediaPatch(
         filename=data.filename,
+        name=data.name,
+        label=data.label,
+        description=data.description,
         tags=data.tags,
         attributes=data.attributes,
         status=data.status,
@@ -195,3 +209,13 @@ async def sweep_orphaned(
     """GC safety net: permanently delete media with ref_count == 0 older than
     `older_than_hours` (default 24h grace period). Admin-only."""
     return await sweep_orphaned_media(older_than_hours=older_than_hours)
+
+
+@router.post("/backfill-duration")
+async def backfill_duration(
+    limit: int = 1000,
+    _admin: AccountInDB = Depends(require_admin),
+):
+    """One-time enrichment: compute duration_seconds for audio/video media
+    uploaded before duration extraction existed. Admin-only."""
+    return await backfill_media_durations(limit=limit)

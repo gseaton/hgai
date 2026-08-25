@@ -19,8 +19,9 @@ const State = {
   graphsCache: {},       // id -> graph object (includes space_id)
   mediaCache: {},        // id -> media object, from the last list load
   activeSpaceDetailId: null,
-  nodesSort: [],         // [{field, dir: 'asc'|'desc'}, ...] — priority order, first = primary sort key
-  edgesSort: [],
+  nodesSort: [{ field: 'label', dir: 'asc' }],  // [{field, dir: 'asc'|'desc'}, ...] — priority order, first = primary sort key
+  edgesSort: [{ field: 'label', dir: 'asc' }],  // default until the user clicks a column header, then their choice persists for the session
+  mediaSort: [],
   viz3d: null,
 };
 
@@ -558,13 +559,9 @@ function handleSortableThClick(th, shiftKey) {
   }
 
   State[key] = sortState;
-  if (table === 'nodes') {
-    State.nodesPage = 0;
-    loadNodes();
-  } else if (table === 'edges') {
-    State.edgesPage = 0;
-    loadEdges();
-  }
+  State[table + 'Page'] = 0;
+  const reload = PAGINATION_LOADERS[table];
+  if (reload) reload();
 }
 
 document.querySelectorAll('.sortable-th').forEach(th => {
@@ -666,15 +663,29 @@ function renderMediaList(containerId, items) {
   items.forEach((ref, i) => {
     const div = document.createElement('div');
     div.className = 'media-item';
+    const primaryText = ref.label || ref.filename || ref.media_id;
+    const secondaryName = ref.name && ref.name !== primaryText ? ref.name : null;
+    const sizeDuration = mediaSizeDurationText(ref.size_bytes, ref.duration_seconds);
     div.innerHTML = `
       <i class="bi bi-file-earmark-fill text-secondary"></i>
-      <span class="media-item-name" title="${escapeHtml(ref.media_id)}">${escapeHtml(ref.filename || ref.media_id)}</span>
+      <div class="media-item-text">
+        <div class="media-item-name" title="${escapeHtml(ref.media_id)}">${escapeHtml(primaryText)}</div>
+        ${secondaryName ? `<div class="media-item-subname" title="${escapeHtml(secondaryName)}">${escapeHtml(secondaryName)}</div>` : ''}
+      </div>
+      ${ref.content_type ? `<span class="badge bg-light text-dark">${escapeHtml(ref.content_type)}</span>` : ''}
+      ${sizeDuration !== '—' ? `<span class="badge bg-light text-dark">${escapeHtml(sizeDuration)}</span>` : ''}
       ${ref.role ? `<span class="badge bg-light text-dark">${escapeHtml(ref.role)}</span>` : ''}
       ${ref.attributes && Object.keys(ref.attributes).length ? '<span class="badge bg-light text-dark" title="Has custom attributes"><i class="bi bi-braces"></i></span>' : ''}
+      <button type="button" class="btn btn-xs btn-outline-secondary" title="Preview"><i class="bi bi-eye"></i></button>
       <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit role &amp; attributes"><i class="bi bi-pencil"></i></button>
       <button type="button" class="btn btn-xs btn-outline-secondary" title="Download"><i class="bi bi-download"></i></button>
       <button type="button" class="btn btn-xs btn-outline-danger" title="Remove"><i class="bi bi-x"></i></button>`;
-    const [editBtn, downloadBtn, removeBtn] = div.querySelectorAll('button');
+    const [previewBtn, editBtn, downloadBtn, removeBtn] = div.querySelectorAll('button');
+    previewBtn.addEventListener('click', () => openMediaPreview({
+      id: ref.media_id, filename: ref.filename, content_type: ref.content_type,
+      name: ref.name, label: ref.label, description: ref.description,
+      size_bytes: ref.size_bytes, duration_seconds: ref.duration_seconds,
+    }));
     editBtn.addEventListener('click', () => openMediaRefEditModal(items, i, containerId));
     downloadBtn.addEventListener('click', () => downloadMediaFile(ref.media_id, ref.filename));
     removeBtn.addEventListener('click', () => { items.splice(i, 1); renderMediaList(containerId, items); });
@@ -682,24 +693,84 @@ function renderMediaList(containerId, items) {
   });
 }
 
-function openMediaRefEditModal(items, index, containerId) {
-  const ref = items[index];
+async function openMediaRefEditModal(items, index, containerId) {
+  let ref = items[index];
   mediaRefEditContext = { items, index, containerId };
-  document.getElementById('media-ref-edit-name').textContent = ref.filename || ref.media_id;
+  document.getElementById('media-ref-edit-name').textContent = ref.label || ref.filename || ref.media_id;
   document.getElementById('media-ref-edit-role').value = ref.role || '';
   document.getElementById('media-ref-edit-attributes').value = JSON.stringify(ref.attributes || {}, null, 2);
+
+  // media_id fields are read-only for mesh-remote media — the backend refuses
+  // to update a record owned by another server, so don't offer the illusion of editing it.
+  const isRemote = ref.media_id.includes('/');
+  document.getElementById('media-ref-edit-remote-note').classList.toggle('d-none', !isRemote);
+
+  // The ref's cached name/label/description may predate this caching (media
+  // attached before this feature existed) or have drifted if the file's
+  // metadata was edited elsewhere since — refresh from the authoritative
+  // record before showing an edit form, so Save can't silently blank out
+  // real values with what was just an incomplete cache.
+  if (!isRemote) {
+    const fresh = await fetchMediaMetadata(ref.media_id);
+    if (fresh) {
+      ref = { ...ref, ...mediaToPreviewInfo(fresh), media_id: ref.media_id };
+      delete ref.id;
+      items[index] = ref;
+      renderMediaList(containerId, items);
+    }
+  }
+
+  document.getElementById('media-ref-edit-media-name').value = ref.name || '';
+  document.getElementById('media-ref-edit-media-label').value = ref.label || '';
+  document.getElementById('media-ref-edit-media-description').value = ref.description || '';
+  ['media-ref-edit-media-name', 'media-ref-edit-media-label', 'media-ref-edit-media-description'].forEach(id => {
+    document.getElementById(id).disabled = isRemote;
+  });
+
   new bootstrap.Modal(document.getElementById('modal-media-ref-edit')).show();
 }
 
-document.getElementById('btn-save-media-ref-edit').addEventListener('click', () => {
+document.getElementById('btn-save-media-ref-edit').addEventListener('click', async () => {
   if (!mediaRefEditContext) return;
   const { items, index, containerId } = mediaRefEditContext;
+  const ref = items[index];
   const role = document.getElementById('media-ref-edit-role').value.trim();
   const attributes = parseJSON(document.getElementById('media-ref-edit-attributes').value);
-  items[index] = { ...items[index], role: role || null, attributes };
+
+  // Name/label/description belong to the shared Media record, not this one
+  // association, so saving them here patches the record itself (same call the
+  // standalone Media Edit modal makes) — every other entity referencing this
+  // file sees the change too, and this ref's own cache is refreshed from the
+  // response so the attachment widget doesn't need a page reload to show it.
+  let mediaUpdates = {};
+  const isRemote = ref.media_id.includes('/');
+  if (!isRemote) {
+    const name = document.getElementById('media-ref-edit-media-name').value.trim();
+    const label = document.getElementById('media-ref-edit-media-label').value.trim();
+    const description = document.getElementById('media-ref-edit-media-description').value.trim();
+    const spinner = document.getElementById('media-ref-edit-spinner');
+    spinner.classList.remove('d-none');
+    try {
+      const media = await HGAI_API.updateMedia(ref.media_id, {
+        name: name || null, label: label || null, description: description || null,
+      });
+      mediaUpdates = {
+        content_type: media.content_type, filename: media.filename,
+        name: media.name, label: media.label, description: media.description,
+        size_bytes: media.size_bytes, duration_seconds: media.duration_seconds,
+      };
+    } catch (err) {
+      toast(err.message, 'danger');
+      spinner.classList.add('d-none');
+      return;
+    }
+    spinner.classList.add('d-none');
+  }
+
+  items[index] = { ...items[index], ...mediaUpdates, role: role || null, attributes };
   renderMediaList(containerId, items);
   bootstrap.Modal.getInstance(document.getElementById('modal-media-ref-edit'))?.hide();
-  toast('Media association updated');
+  toast('Media updated');
 });
 
 async function downloadMediaFile(mediaId, filename) {
@@ -716,6 +787,107 @@ async function downloadMediaFile(mediaId, filename) {
   } catch (err) { toast(err.message, 'danger'); }
 }
 
+// ── Media preview (image / audio / video) — shared wherever media is referenced ──
+const _mediaPreviewUrls = {}; // containerId -> object URL currently rendered into it
+
+function isPreviewableMediaType(contentType) {
+  return /^(image|audio|video)\//.test(contentType || '');
+}
+
+function clearMediaPreview(containerId) {
+  if (_mediaPreviewUrls[containerId]) {
+    URL.revokeObjectURL(_mediaPreviewUrls[containerId]);
+    delete _mediaPreviewUrls[containerId];
+  }
+  const el = document.getElementById(containerId);
+  if (el) el.innerHTML = '';
+}
+
+async function renderMediaPreviewInto(containerId, mediaId, filename, contentType) {
+  const el = document.getElementById(containerId);
+  if (_mediaPreviewUrls[containerId]) {
+    URL.revokeObjectURL(_mediaPreviewUrls[containerId]);
+    delete _mediaPreviewUrls[containerId];
+  }
+  if (!isPreviewableMediaType(contentType)) {
+    el.innerHTML = `<div class="text-muted py-3"><i class="bi bi-file-earmark display-6 d-block mb-2"></i>No preview available${contentType ? ` for "${escapeHtml(contentType)}"` : ''}</div>`;
+    return;
+  }
+  el.innerHTML = '<div class="spinner-border spinner-border-sm"></div>';
+  try {
+    const blob = await HGAI_API.downloadMedia(mediaId);
+    const objectUrl = URL.createObjectURL(blob);
+    _mediaPreviewUrls[containerId] = objectUrl;
+    const altText = escapeHtml(filename || mediaId);
+    if (contentType.startsWith('image/')) {
+      el.innerHTML = `<img src="${objectUrl}" alt="${altText}"/>`;
+    } else if (contentType.startsWith('video/')) {
+      el.innerHTML = `<video src="${objectUrl}" controls></video>`;
+    } else if (contentType.startsWith('audio/')) {
+      el.innerHTML = `<audio src="${objectUrl}" controls></audio>`;
+    }
+  } catch (err) {
+    el.innerHTML = `<div class="text-danger small py-3">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+// Builds the openMediaPreview() info object from a full Media record (as opposed
+// to a MediaRef, which already carries the same field names directly).
+function mediaToPreviewInfo(m) {
+  return {
+    id: m.id, filename: m.filename, content_type: m.content_type,
+    name: m.name, label: m.label, description: m.description,
+    size_bytes: m.size_bytes, duration_seconds: m.duration_seconds,
+  };
+}
+
+function renderMediaPreviewMetadata(info) {
+  document.getElementById('media-preview-meta-name').textContent = info.name || '—';
+  document.getElementById('media-preview-meta-label').textContent = info.label || '—';
+  document.getElementById('media-preview-meta-size').textContent = fmtBytes(info.size_bytes);
+  document.getElementById('media-preview-meta-duration').textContent = fmtDuration(info.duration_seconds) || '-';
+  document.getElementById('media-preview-meta-description').textContent = info.description || '—';
+}
+
+// Refetches the authoritative Media record for `mediaId`, so the preview modal's
+// metadata table is always correct even when the caller only had a MediaRef
+// cached before name/label/description/size/duration were added to that cache
+// (e.g. media attached to a hypernode/hyperedge in an earlier session) — or when
+// the record's metadata was edited after it was attached. Mesh-qualified ids
+// have no local record to refresh from, so those are left as-is.
+async function fetchMediaMetadata(mediaId) {
+  if (!mediaId || mediaId.includes('/')) return null;
+  try {
+    const resp = await HGAI_API.listMedia({ id: mediaId, limit: 1 });
+    return (resp.items && resp.items[0]) || null;
+  } catch {
+    return null;
+  }
+}
+
+// info: { id, filename, content_type, name, label, description, size_bytes, duration_seconds }
+async function openMediaPreview(info) {
+  const mediaId = info.id;
+  document.getElementById('media-preview-title').textContent = info.label || info.filename || mediaId;
+  document.getElementById('btn-media-preview-download').onclick = () => downloadMediaFile(mediaId, info.filename);
+  renderMediaPreviewMetadata(info);
+  new bootstrap.Modal(document.getElementById('modal-media-preview')).show();
+
+  const [, fresh] = await Promise.all([
+    renderMediaPreviewInto('media-preview-body', mediaId, info.filename, info.content_type),
+    fetchMediaMetadata(mediaId),
+  ]);
+  if (fresh) {
+    const freshInfo = mediaToPreviewInfo(fresh);
+    document.getElementById('media-preview-title').textContent = freshInfo.label || freshInfo.filename || mediaId;
+    document.getElementById('btn-media-preview-download').onclick = () => downloadMediaFile(mediaId, freshInfo.filename);
+    renderMediaPreviewMetadata(freshInfo);
+  }
+}
+
+document.getElementById('modal-media-preview').addEventListener('hidden.bs.modal', () => clearMediaPreview('media-preview-body'));
+document.getElementById('modal-media-edit').addEventListener('hidden.bs.modal', () => clearMediaPreview('media-edit-preview'));
+
 async function handleMediaUpload(fileInputId, roleInputId, spinnerId, items, containerId) {
   const fileInput = document.getElementById(fileInputId);
   const file = fileInput.files[0];
@@ -730,6 +902,11 @@ async function handleMediaUpload(fileInputId, roleInputId, spinnerId, items, con
       role: role || null,
       content_type: media.content_type,
       filename: media.filename,
+      name: media.name,
+      label: media.label,
+      description: media.description,
+      size_bytes: media.size_bytes,
+      duration_seconds: media.duration_seconds,
       attributes: {},
     });
     renderMediaList(containerId, items);
@@ -791,8 +968,13 @@ async function loadMediaPicker() {
           <td><span class="badge bg-light text-dark">${escapeHtml(m.content_type || '—')}</span></td>
           <td class="small text-muted">${fmtBytes(m.size_bytes)}</td>
           <td>${tagBadges(m.tags)}</td>
-          <td class="text-end"><button type="button" class="btn btn-xs btn-primary">Attach</button></td>`;
-        tr.querySelector('button').addEventListener('click', () => attachExistingMedia(m));
+          <td class="text-end">
+            <button type="button" class="btn btn-xs btn-outline-secondary me-1" title="Preview"><i class="bi bi-eye"></i></button>
+            <button type="button" class="btn btn-xs btn-primary">Attach</button>
+          </td>`;
+        const [previewBtn, attachBtn] = tr.querySelectorAll('button');
+        previewBtn.addEventListener('click', () => openMediaPreview(mediaToPreviewInfo(m)));
+        attachBtn.addEventListener('click', () => attachExistingMedia(m));
         tbody.appendChild(tr);
       });
     }
@@ -822,6 +1004,11 @@ function attachExistingMedia(m) {
     role: role || null,
     content_type: m.content_type,
     filename: m.filename,
+    name: m.name,
+    label: m.label,
+    description: m.description,
+    size_bytes: m.size_bytes,
+    duration_seconds: m.duration_seconds,
     attributes: {},
   });
   renderMediaList(containerId, items);
@@ -838,9 +1025,27 @@ function fmtBytes(n) {
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
+// Always renders hours:minutes:seconds (e.g. "0:00:32", "1:02:15") — never omits the hours place.
+function fmtDuration(seconds) {
+  if (seconds == null) return null;
+  const total = Math.round(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+// Size always shown when known; duration appended when this is audio/video with a known length.
+function mediaSizeDurationText(sizeBytes, durationSeconds) {
+  const size = fmtBytes(sizeBytes);
+  const duration = fmtDuration(durationSeconds);
+  if (size === '—' && !duration) return '—';
+  return duration ? (size === '—' ? duration : `${size} · ${duration}`) : size;
+}
+
 async function loadMedia() {
   const tbody = document.getElementById('tbody-media');
-  tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
 
   const params = {
     skip: State.mediaPage * State.mediaPageSize,
@@ -848,30 +1053,37 @@ async function loadMedia() {
     search: document.getElementById('media-search').value.trim() || undefined,
     content_type: document.getElementById('media-type-filter').value.trim() || undefined,
     status: document.getElementById('media-status-filter').value || undefined,
+    sort: sortParam(State.mediaSort),
   };
+  updateSortIndicators('media');
 
   try {
     const resp = await HGAI_API.listMedia(params);
     tbody.innerHTML = '';
     State.mediaCache = {};
     if (!resp.items || !resp.items.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No media found</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">No media found</td></tr>';
     } else {
       resp.items.forEach(m => {
         State.mediaCache[m.id] = m;
         const tr = document.createElement('tr');
+        const duration = fmtDuration(m.duration_seconds);
         tr.innerHTML = `
           <td class="table-id-link" onclick="editMedia('${m.id}')">
             <i class="bi bi-file-earmark-fill text-secondary me-1"></i>
             <code class="text-truncate-150" title="${escapeHtml(m.filename || m.id)}">${escapeHtml(truncate(m.filename || m.id, 28))}</code>
           </td>
+          <td class="small text-muted">${escapeHtml(m.name || '—')}</td>
+          <td>${escapeHtml(m.label || '—')}</td>
           <td><span class="badge bg-light text-dark">${escapeHtml(m.content_type || '—')}</span></td>
           <td class="small text-muted">${fmtBytes(m.size_bytes)}</td>
+          <td class="small text-muted">${duration || '-'}</td>
           <td>${m.ref_count > 0 ? `<span class="badge bg-info text-dark">${m.ref_count}</span>` : '<span class="text-muted small">0</span>'}</td>
           <td class="small">${escapeHtml(m.uploaded_by || '—')}</td>
           <td>${tagBadges(m.tags)}</td>
           <td>${statusBadge(m.status)}</td>
           <td class="text-end">
+            <button class="btn btn-xs btn-outline-secondary me-1" onclick="previewMediaRow('${m.id}')"><i class="bi bi-eye"></i></button>
             <button class="btn btn-xs btn-outline-secondary me-1" onclick="editMedia('${m.id}')"><i class="bi bi-pencil"></i></button>
             <button class="btn btn-xs btn-outline-secondary me-1" onclick="downloadMediaFile('${m.id}')"><i class="bi bi-download"></i></button>
             <button class="btn btn-xs btn-outline-danger" onclick="deleteMediaRow('${m.id}')"><i class="bi bi-trash"></i></button>
@@ -881,7 +1093,7 @@ async function loadMedia() {
     }
     renderPagination('media', resp.total, State.mediaPage, State.mediaPageSize);
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="8" class="text-danger text-center">${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" class="text-danger text-center">${err.message}</td></tr>`;
   }
 }
 
@@ -896,6 +1108,9 @@ document.getElementById('media-status-filter').addEventListener('change', () => 
 // Standalone upload (not attached to any node/edge — browse-and-manage independently)
 document.getElementById('btn-upload-media').addEventListener('click', () => {
   document.getElementById('upload-media-file').value = '';
+  document.getElementById('upload-media-name').value = '';
+  document.getElementById('upload-media-label').value = '';
+  document.getElementById('upload-media-description').value = '';
   document.getElementById('upload-media-tags').value = '';
   document.getElementById('upload-media-attributes').value = '{}';
   new bootstrap.Modal(document.getElementById('modal-media-upload')).show();
@@ -905,17 +1120,23 @@ document.getElementById('btn-confirm-upload-media').addEventListener('click', as
   const fileInput = document.getElementById('upload-media-file');
   const file = fileInput.files[0];
   if (!file) { toast('Choose a file first', 'warning'); return; }
+  const name = document.getElementById('upload-media-name').value.trim();
+  const label = document.getElementById('upload-media-label').value.trim();
+  const description = document.getElementById('upload-media-description').value.trim();
   const tags = parseTags(document.getElementById('upload-media-tags').value);
   const attributes = parseJSON(document.getElementById('upload-media-attributes').value);
   const spinner = document.getElementById('upload-media-spinner');
   spinner.classList.remove('d-none');
   try {
     const media = await HGAI_API.uploadMedia(file);
-    if (tags.length || Object.keys(attributes).length) {
-      await HGAI_API.updateMedia(media.id, { tags, attributes });
+    if (name || label || description || tags.length || Object.keys(attributes).length) {
+      await HGAI_API.updateMedia(media.id, {
+        name: name || null, label: label || null, description: description || null,
+        tags, attributes,
+      });
     }
     bootstrap.Modal.getInstance(document.getElementById('modal-media-upload'))?.hide();
-    toast(`"${media.filename || media.id}" uploaded`);
+    toast(`"${label || media.filename || media.id}" uploaded`);
     loadMedia();
   } catch (err) {
     toast(err.message, 'danger');
@@ -924,10 +1145,17 @@ document.getElementById('btn-confirm-upload-media').addEventListener('click', as
   }
 });
 
+window.previewMediaRow = (id) => {
+  const m = State.mediaCache[id];
+  if (!m) return;
+  openMediaPreview(mediaToPreviewInfo(m));
+};
+
 window.editMedia = (id) => {
   const m = State.mediaCache[id];
   if (!m) return;
   document.getElementById('media-edit-id').value = m.id;
+  renderMediaPreviewInto('media-edit-preview', m.id, m.filename, m.content_type);
   document.getElementById('media-info-id').textContent = m.id;
   document.getElementById('media-info-content-type').textContent = m.content_type || '—';
   document.getElementById('media-info-size').textContent = fmtBytes(m.size_bytes);
@@ -937,6 +1165,9 @@ window.editMedia = (id) => {
   document.getElementById('media-info-created').textContent = fmtDate(m.system_created);
   document.getElementById('media-edit-filename').value = m.filename || '';
   document.getElementById('media-edit-status').value = m.status || 'active';
+  document.getElementById('media-edit-name').value = m.name || '';
+  document.getElementById('media-edit-label').value = m.label || '';
+  document.getElementById('media-edit-description').value = m.description || '';
   document.getElementById('media-edit-tags').value = (m.tags || []).join(', ');
   document.getElementById('media-edit-attributes').value = JSON.stringify(m.attributes || {}, null, 2);
   new bootstrap.Modal(document.getElementById('modal-media-edit')).show();
@@ -947,6 +1178,9 @@ document.getElementById('btn-save-media-edit').addEventListener('click', async (
   const data = {
     filename: document.getElementById('media-edit-filename').value.trim() || null,
     status: document.getElementById('media-edit-status').value,
+    name: document.getElementById('media-edit-name').value.trim() || null,
+    label: document.getElementById('media-edit-label').value.trim() || null,
+    description: document.getElementById('media-edit-description').value.trim() || null,
     tags: parseTags(document.getElementById('media-edit-tags').value),
     attributes: parseJSON(document.getElementById('media-edit-attributes').value),
   };
@@ -1128,7 +1362,7 @@ async function loadEdges() {
   const screenSel = document.getElementById('edges-graph-select');
   if (screenSel.value) State.activeGraphId = screenSel.value;
   if (!State.activeGraphId) {
-    document.getElementById('tbody-edges').innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Select a hypergraph above</td></tr>';
+    document.getElementById('tbody-edges').innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Select a hypergraph above</td></tr>';
     return;
   }
   const tbody = document.getElementById('tbody-edges');
@@ -1151,15 +1385,16 @@ async function loadEdges() {
       : await HGAI_API.listEdges(State.activeGraphId, params);
     tbody.innerHTML = '';
     if (!resp.items || !resp.items.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No hyperedges found</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No hyperedges found</td></tr>';
     } else {
       resp.items.forEach(e => {
         const membersSummary = (e.members || []).map(m => m.node_id).join(' · ') || '—';
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td class="table-id-link" onclick="editEdge('${e.id||e.hyperkey}')"><code class="text-truncate-150" title="${e.id||e.hyperkey}">${truncate(e.id||e.hyperkey, 24)}</code></td>
-          <td><strong>${e.relation||'—'}</strong></td>
-          <td><span class="badge badge-flavor">${e.flavor||'—'}</span></td>
+          <td class="table-id-link" onclick="editEdge('${e.id||e.hyperkey}')"><code class="text-truncate-150" title="${escapeHtml(e.id||e.hyperkey)}">${escapeHtml(truncate(e.id||e.hyperkey, 24))}</code></td>
+          <td>${escapeHtml(e.label||'—')}</td>
+          <td><strong>${escapeHtml(e.relation||'—')}</strong></td>
+          <td><span class="badge badge-flavor">${escapeHtml(e.flavor||'—')}</span></td>
           <td><small class="text-muted" title="${membersSummary}">${truncate(membersSummary, 60)}</small></td>
           <td>${statusBadge(e.status)}</td>
           <td>${tagBadges(e.tags)}</td>
@@ -1173,7 +1408,7 @@ async function loadEdges() {
     }
     renderPagination('edges', resp.total, State.edgesPage, State.edgePageSize);
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="7" class="text-danger text-center">${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="text-danger text-center">${err.message}</td></tr>`;
   }
 }
 

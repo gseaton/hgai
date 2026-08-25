@@ -12,7 +12,7 @@ from hgai.models.hyperedge import HyperedgeCreate, HyperedgeResponse, HyperedgeU
 
 router = APIRouter(prefix="/graphs/{graph_id}/edges", tags=["hyperedges"])
 
-EDGE_SORT_FIELDS = {"id", "relation", "flavor", "status", "valid_from", "valid_to", "system_created", "system_updated"}
+EDGE_SORT_FIELDS = {"id", "label", "relation", "flavor", "status", "valid_from", "valid_to", "system_created", "system_updated"}
 
 
 @router.get("", response_model=PaginatedResponse)

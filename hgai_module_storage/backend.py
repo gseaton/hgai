@@ -459,6 +459,14 @@ class MediaStore(ABC):
         """Update a media record's editable metadata (filename/tags/attributes/
         status — never the bytes or checksum). Returns updated Media or None."""
 
+    @abstractmethod
+    async def set_duration(self, media_id: str, duration_seconds: float) -> None:
+        """Set the computed `duration_seconds` on an existing record. Used only by
+        the duration-backfill sweep (hgai.core.media.backfill_media_durations) for
+        audio/video media uploaded before duration extraction existed — not a
+        user-editable field via MediaUpdate/MediaPatch, so this bypasses that path
+        deliberately rather than adding duration to MediaPatch."""
+
 
 # ─── Cache Store ──────────────────────────────────────────────────────────────
 

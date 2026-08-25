@@ -6,6 +6,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
+from hgai.core.media import extract_media_duration
 from hgai.models.common import now_utc
 from hgai.models.media import Media
 from hgai_module_storage.backend import MediaStore
@@ -38,6 +39,13 @@ class MongoMediaStore(MediaStore):
         hasher = hashlib.sha256()
         size_bytes = 0
 
+        # Duration extraction needs the full bytes in hand (mutagen isn't a
+        # streaming parser), so only audio/video uploads get buffered
+        # alongside the GridFS stream-through — everything else stays
+        # unbuffered, keeping large non-media uploads memory-cheap.
+        is_av = bool(content_type) and (content_type.startswith("audio/") or content_type.startswith("video/"))
+        av_chunks = [] if is_av else None
+
         # open_upload_stream_with_id() is NOT a coroutine — it returns the GridIn
         # synchronously; only .write()/.close() on it are awaitable.
         grid_in = bucket.open_upload_stream_with_id(
@@ -51,12 +59,15 @@ class MongoMediaStore(MediaStore):
                 hasher.update(chunk)
                 size_bytes += len(chunk)
                 await grid_in.write(chunk)
+                if av_chunks is not None:
+                    av_chunks.append(chunk)
             await grid_in.close()
         except Exception:
             await grid_in.abort()
             raise
 
         checksum = hasher.hexdigest()
+        duration_seconds = extract_media_duration(content_type, b"".join(av_chunks)) if av_chunks else None
 
         # Dedup: the checksum can only be known once the stream is fully
         # consumed, so the blob is always written first — if another media
@@ -80,6 +91,7 @@ class MongoMediaStore(MediaStore):
             "content_type": content_type,
             "filename": filename,
             "size_bytes": size_bytes,
+            "duration_seconds": duration_seconds,
             "checksum": checksum,
             "uploaded_by": uploaded_by,
             "ref_count": 0,
@@ -139,6 +151,8 @@ class MongoMediaStore(MediaStore):
         limit: int = 50,
     ) -> Tuple[int, List[Media]]:
         query: Dict[str, Any] = {}
+        if filters.id:
+            query["id"] = filters.id
         if filters.status:
             query["status"] = filters.status
         if filters.content_type:
@@ -146,10 +160,12 @@ class MongoMediaStore(MediaStore):
         if filters.tags:
             query["tags"] = {"$all": filters.tags}
         if filters.search:
-            query["filename"] = {"$regex": filters.search, "$options": "i"}
+            regex = {"$regex": filters.search, "$options": "i"}
+            query["$or"] = [{"filename": regex}, {"name": regex}, {"label": regex}, {"description": regex}]
 
         total = await _col().count_documents(query)
-        cursor = _col().find(query).skip(skip).limit(limit).sort("system_created", -1)
+        sort_spec = filters.sort or [("system_created", -1)]
+        cursor = _col().find(query).skip(skip).limit(limit).sort(sort_spec)
         docs = await cursor.to_list(length=limit)
         items = []
         for doc in docs:
@@ -159,7 +175,7 @@ class MongoMediaStore(MediaStore):
 
     async def update(self, media_id: str, patch: MediaPatch) -> Optional[Media]:
         update_fields: Dict[str, Any] = {}
-        for attr in ("filename", "tags", "attributes", "status"):
+        for attr in ("filename", "name", "label", "description", "tags", "attributes", "status"):
             val = getattr(patch, attr, None)
             if val is not None:
                 update_fields[attr] = val
@@ -176,3 +192,6 @@ class MongoMediaStore(MediaStore):
             return None
         result.pop("_id", None)
         return Media(**result)
+
+    async def set_duration(self, media_id: str, duration_seconds: float) -> None:
+        await _col().update_one({"id": media_id}, {"$set": {"duration_seconds": duration_seconds}})
