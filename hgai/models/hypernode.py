@@ -17,6 +17,11 @@ class HypernodeBase(TimestampedModel):
     type: str = Field(default="Entity", description="Entity type (e.g., Person, Organization)")
     description: Optional[str] = Field(default=None)
     media: List[MediaRef] = Field(default_factory=list, description="Associated media attachments")
+    default_media_id: Optional[str] = Field(
+        default=None,
+        description="media_id of the item in `media` designated as this hypernode's default visual "
+        "representation (e.g. for visualizations), used in addition to or in lieu of label/name",
+    )
 
     # Temporal existential qualifiers
     valid_from: Optional[datetime] = Field(
@@ -45,6 +50,7 @@ class HypernodeUpdate(TimestampedModel):
     valid_from: Optional[datetime] = None
     valid_to: Optional[datetime] = None
     media: Optional[List[MediaRef]] = None
+    default_media_id: Optional[str] = None
 
 
 class HypernodeInDB(HypernodeBase):

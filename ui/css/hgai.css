@@ -224,6 +224,14 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
   background: #f9fafb; border: 1px solid #e5e7eb;
   border-radius: 8px; padding: 6px 10px; margin-bottom: 6px;
 }
+.media-item.media-item-default {
+  background: #fffbeb; border-color: #fcd34d;
+}
+
+.table-thumb {
+  width: 32px; height: 32px; object-fit: cover; border-radius: 6px;
+  vertical-align: middle; background: #f0f2f9;
+}
 .media-item .media-item-text {
   flex: 1; min-width: 0; display: flex; flex-direction: column;
 }
@@ -450,6 +458,20 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
   padding: 3px 9px; box-shadow: 0 2px 6px rgba(0,0,0,0.35);
 }
 .viz-label-node.viz-label-virtual { color: #15803d; border-color: #86efac; }
+/* width/height are set per-frame in JS (vizLabelTick) to match the node's
+   actual rendered sphere size at its current camera distance — not fixed. */
+/* width/height are set per-frame in JS to the image's own natural aspect
+   ratio (see vizLabelTick) — object-fit: contain is just a safety net, not
+   the mechanism keeping the image uncropped. */
+.viz-thumb {
+  position: absolute; top: 0; left: 0;
+  transform: translate(-50%, -50%);
+  object-fit: contain; border-radius: 6px;
+  border: 2px solid rgba(255,255,255,0.85);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  background: rgba(15,15,26,0.6);
+  pointer-events: none;
+}
 .viz-label-link {
   color: #e5e7eb; font-size: 10px; font-weight: 700;
   text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.7);

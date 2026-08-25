@@ -574,11 +574,11 @@ async function loadNodes() {
   const screenSel = document.getElementById('nodes-graph-select');
   if (screenSel.value) State.activeGraphId = screenSel.value;
   if (!State.activeGraphId) {
-    document.getElementById('tbody-nodes').innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Select a hypergraph above</td></tr>';
+    document.getElementById('tbody-nodes').innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Select a hypergraph above</td></tr>';
     return;
   }
   const tbody = document.getElementById('tbody-nodes');
-  tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
 
   const params = {
     skip: State.nodesPage * State.nodePageSize,
@@ -590,6 +590,9 @@ async function loadNodes() {
   };
   updateSortIndicators('nodes');
 
+  const showMedia = document.getElementById('node-show-media').checked;
+  document.querySelector('#screen-nodes thead .td-media')?.classList.toggle('d-none', !showMedia);
+
   const spaceId = graphSpaceId(State.activeGraphId);
   try {
     const resp = spaceId
@@ -597,12 +600,13 @@ async function loadNodes() {
       : await HGAI_API.listNodes(State.activeGraphId, params);
     tbody.innerHTML = '';
     if (!resp.items || !resp.items.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No hypernodes found</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">No hypernodes found</td></tr>';
     } else {
       resp.items.forEach(n => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td class="table-id-link" onclick="editNode('${n.id}')"><code class="text-truncate-150" title="${n.id}">${n.id}</code></td>
+          <td class="td-media text-center ${showMedia ? '' : 'd-none'}">${showMedia ? mediaThumbCellHtml(n) : ''}</td>
           <td>${n.label||'—'}</td>
           <td><span class="badge bg-light text-dark">${n.type||'—'}</span></td>
           <td>${statusBadge(n.status)}</td>
@@ -616,14 +620,61 @@ async function loadNodes() {
           </td>`;
         tbody.appendChild(tr);
       });
+      if (showMedia) await loadTableThumbnails(tbody, _nodeThumbUrls);
     }
     renderPagination('nodes', resp.total, State.nodesPage, State.nodePageSize);
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="8" class="text-danger text-center">${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="text-danger text-center">${err.message}</td></tr>`;
   }
 }
 
 const PAGINATION_LOADERS = { nodes: () => loadNodes(), edges: () => loadEdges(), media: () => loadMedia(), mediaPicker: () => loadMediaPicker() };
+
+// ── Default-media thumbnails (Nodes/Edges list tables) ────────────────────────
+let _nodeThumbUrls = [];
+let _edgeThumbUrls = [];
+
+// The default media's own metadata is already cached on the MediaRef (see
+// handleMediaUpload/attachExistingMedia) inside the entity's own `media` list,
+// so no extra round-trip is needed just to know its content type.
+function defaultMediaRefFor(entity) {
+  if (!entity.default_media_id) return null;
+  return (entity.media || []).find(m => m.media_id === entity.default_media_id) || null;
+}
+
+function mediaThumbCellHtml(entity) {
+  const ref = defaultMediaRefFor(entity);
+  if (!ref) return '<span class="text-muted small">—</span>';
+  if (ref.content_type && ref.content_type.startsWith('image/')) {
+    return `<img class="table-thumb" data-thumb-media-id="${escapeHtml(ref.media_id)}" alt="${escapeHtml(ref.label || ref.filename || '')}">`;
+  }
+  const icon = ref.content_type && ref.content_type.startsWith('audio/') ? 'bi-music-note-beamed'
+    : ref.content_type && ref.content_type.startsWith('video/') ? 'bi-camera-reels-fill'
+    : 'bi-file-earmark-fill';
+  return `<i class="bi ${icon} text-secondary fs-5" title="${escapeHtml(ref.label || ref.filename || ref.media_id)}"></i>`;
+}
+
+// Thumbnails are only actually fetched (as authenticated blobs, same as every
+// other media view in this app) for rows whose default media is an image —
+// audio/video/other default media render as a plain icon (no fetch needed,
+// content_type is already cached) since there's no cheap static preview frame
+// to show for those without real transcoding, which is out of scope here.
+async function loadTableThumbnails(tbody, urlStore) {
+  urlStore.forEach(u => URL.revokeObjectURL(u));
+  urlStore.length = 0;
+  const imgs = tbody.querySelectorAll('img[data-thumb-media-id]');
+  await Promise.all([...imgs].map(async img => {
+    const mediaId = img.dataset.thumbMediaId;
+    try {
+      const blob = await HGAI_API.downloadMedia(mediaId);
+      const url = URL.createObjectURL(blob);
+      urlStore.push(url);
+      img.src = url;
+    } catch {
+      img.replaceWith(Object.assign(document.createElement('i'), { className: 'bi bi-image text-muted fs-5' }));
+    }
+  }));
+}
 
 function renderPagination(type, total, page, pageSize) {
   const totalPages = Math.ceil(total / pageSize);
@@ -650,6 +701,17 @@ function renderPagination(type, total, page, pageSize) {
 // ── Media attachment widget (shared by node & edge modals) ──────────────────
 let nodeMediaItems = [];
 let edgeMediaItems = [];
+let nodeDefaultMediaId = '';
+let edgeDefaultMediaId = '';
+
+// containerId is always 'node-media-list' or 'edge-media-list' — this lets
+// renderMediaList() stay a single shared function without every call site
+// needing to know which entity's default-media state it's rendering into.
+function defaultMediaState(containerId) {
+  return containerId === 'edge-media-list'
+    ? { get: () => edgeDefaultMediaId, set: v => { edgeDefaultMediaId = v; } }
+    : { get: () => nodeDefaultMediaId, set: v => { nodeDefaultMediaId = v; } };
+}
 
 let mediaRefEditContext = null; // { items, index, containerId } for the currently-open ref-edit modal
 
@@ -660,9 +722,11 @@ function renderMediaList(containerId, items) {
     el.innerHTML = '<div class="media-item-empty">No media attached</div>';
     return;
   }
+  const defaultState = defaultMediaState(containerId);
   items.forEach((ref, i) => {
     const div = document.createElement('div');
-    div.className = 'media-item';
+    const isDefault = !!ref.media_id && ref.media_id === defaultState.get();
+    div.className = 'media-item' + (isDefault ? ' media-item-default' : '');
     const primaryText = ref.label || ref.filename || ref.media_id;
     const secondaryName = ref.name && ref.name !== primaryText ? ref.name : null;
     const sizeDuration = mediaSizeDurationText(ref.size_bytes, ref.duration_seconds);
@@ -676,11 +740,16 @@ function renderMediaList(containerId, items) {
       ${sizeDuration !== '—' ? `<span class="badge bg-light text-dark">${escapeHtml(sizeDuration)}</span>` : ''}
       ${ref.role ? `<span class="badge bg-light text-dark">${escapeHtml(ref.role)}</span>` : ''}
       ${ref.attributes && Object.keys(ref.attributes).length ? '<span class="badge bg-light text-dark" title="Has custom attributes"><i class="bi bi-braces"></i></span>' : ''}
+      <button type="button" class="btn btn-xs ${isDefault ? 'btn-warning' : 'btn-outline-secondary'}" title="${isDefault ? 'Default representation — click to unset' : 'Set as default representation'}"><i class="bi ${isDefault ? 'bi-star-fill' : 'bi-star'}"></i></button>
       <button type="button" class="btn btn-xs btn-outline-secondary" title="Preview"><i class="bi bi-eye"></i></button>
       <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit role &amp; attributes"><i class="bi bi-pencil"></i></button>
       <button type="button" class="btn btn-xs btn-outline-secondary" title="Download"><i class="bi bi-download"></i></button>
       <button type="button" class="btn btn-xs btn-outline-danger" title="Remove"><i class="bi bi-x"></i></button>`;
-    const [previewBtn, editBtn, downloadBtn, removeBtn] = div.querySelectorAll('button');
+    const [defaultBtn, previewBtn, editBtn, downloadBtn, removeBtn] = div.querySelectorAll('button');
+    defaultBtn.addEventListener('click', () => {
+      defaultState.set(isDefault ? '' : ref.media_id);
+      renderMediaList(containerId, items);
+    });
     previewBtn.addEventListener('click', () => openMediaPreview({
       id: ref.media_id, filename: ref.filename, content_type: ref.content_type,
       name: ref.name, label: ref.label, description: ref.description,
@@ -688,7 +757,11 @@ function renderMediaList(containerId, items) {
     }));
     editBtn.addEventListener('click', () => openMediaRefEditModal(items, i, containerId));
     downloadBtn.addEventListener('click', () => downloadMediaFile(ref.media_id, ref.filename));
-    removeBtn.addEventListener('click', () => { items.splice(i, 1); renderMediaList(containerId, items); });
+    removeBtn.addEventListener('click', () => {
+      items.splice(i, 1);
+      if (isDefault) defaultState.set('');
+      renderMediaList(containerId, items);
+    });
     el.appendChild(div);
   });
 }
@@ -1216,6 +1289,7 @@ window.deleteMediaRow = (id) => {
 
 document.getElementById('btn-create-node').addEventListener('click', () => openNodeModal());
 document.getElementById('btn-refresh-nodes').addEventListener('click', () => loadNodes());
+document.getElementById('node-show-media').addEventListener('change', () => loadNodes());
 document.getElementById('node-status-filter').addEventListener('change', () => { State.nodesPage = 0; loadNodes(); });
 ['node-type-filter', 'node-search'].forEach(id => {
   document.getElementById(id).addEventListener('keydown', e => {
@@ -1270,6 +1344,7 @@ async function openNodeModal(nodeId = null) {
       document.getElementById('node-valid-to').value = n.valid_to ? n.valid_to.slice(0,16) : '';
       document.getElementById('node-attributes').value = JSON.stringify(n.attributes || {}, null, 2);
       nodeMediaItems = (n.media || []).map(m => ({ ...m }));
+      nodeDefaultMediaId = n.default_media_id || '';
       renderMediaList('node-media-list', nodeMediaItems);
     } catch {}
   } else if (!isEdit) {
@@ -1278,6 +1353,7 @@ async function openNodeModal(nodeId = null) {
     document.getElementById('node-attributes').value = '{}';
     document.getElementById('node-type').value = 'Entity';
     nodeMediaItems = [];
+    nodeDefaultMediaId = '';
     renderMediaList('node-media-list', nodeMediaItems);
   }
   modal.show();
@@ -1327,6 +1403,7 @@ document.getElementById('btn-save-node').addEventListener('click', async () => {
     valid_to: vTo ? new Date(vTo).toISOString() : null,
     attributes: parseJSON(document.getElementById('node-attributes').value),
     media: nodeMediaItems,
+    default_media_id: nodeDefaultMediaId,
   };
 
   const targetSpaceId = graphSpaceId(targetGraphId);
@@ -1362,11 +1439,11 @@ async function loadEdges() {
   const screenSel = document.getElementById('edges-graph-select');
   if (screenSel.value) State.activeGraphId = screenSel.value;
   if (!State.activeGraphId) {
-    document.getElementById('tbody-edges').innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Select a hypergraph above</td></tr>';
+    document.getElementById('tbody-edges').innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Select a hypergraph above</td></tr>';
     return;
   }
   const tbody = document.getElementById('tbody-edges');
-  tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
 
   const params = {
     skip: State.edgesPage * State.edgePageSize,
@@ -1378,6 +1455,9 @@ async function loadEdges() {
   };
   updateSortIndicators('edges');
 
+  const showMedia = document.getElementById('edge-show-media').checked;
+  document.querySelector('#screen-edges thead .td-media')?.classList.toggle('d-none', !showMedia);
+
   const spaceId = graphSpaceId(State.activeGraphId);
   try {
     const resp = spaceId
@@ -1385,13 +1465,14 @@ async function loadEdges() {
       : await HGAI_API.listEdges(State.activeGraphId, params);
     tbody.innerHTML = '';
     if (!resp.items || !resp.items.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No hyperedges found</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">No hyperedges found</td></tr>';
     } else {
       resp.items.forEach(e => {
         const membersSummary = (e.members || []).map(m => m.node_id).join(' · ') || '—';
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td class="table-id-link" onclick="editEdge('${e.id||e.hyperkey}')"><code class="text-truncate-150" title="${escapeHtml(e.id||e.hyperkey)}">${escapeHtml(truncate(e.id||e.hyperkey, 24))}</code></td>
+          <td class="td-media text-center ${showMedia ? '' : 'd-none'}">${showMedia ? mediaThumbCellHtml(e) : ''}</td>
           <td>${escapeHtml(e.label||'—')}</td>
           <td><strong>${escapeHtml(e.relation||'—')}</strong></td>
           <td><span class="badge badge-flavor">${escapeHtml(e.flavor||'—')}</span></td>
@@ -1405,15 +1486,17 @@ async function loadEdges() {
           </td>`;
         tbody.appendChild(tr);
       });
+      if (showMedia) await loadTableThumbnails(tbody, _edgeThumbUrls);
     }
     renderPagination('edges', resp.total, State.edgesPage, State.edgePageSize);
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="8" class="text-danger text-center">${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="text-danger text-center">${err.message}</td></tr>`;
   }
 }
 
 document.getElementById('btn-create-edge').addEventListener('click', () => openEdgeModal());
 document.getElementById('btn-refresh-edges').addEventListener('click', () => loadEdges());
+document.getElementById('edge-show-media').addEventListener('change', () => loadEdges());
 ['edge-relation-filter', 'edge-node-filter'].forEach(id => {
   document.getElementById(id).addEventListener('keydown', e => {
     if (e.key === 'Enter') { State.edgesPage = 0; loadEdges(); }
@@ -1485,6 +1568,7 @@ async function openEdgeModal(edgeId = null) {
       document.getElementById('edge-attributes').value = JSON.stringify(e.attributes || {}, null, 2);
       (e.members || []).forEach(m => addMemberRow(m));
       edgeMediaItems = (e.media || []).map(m => ({ ...m }));
+      edgeDefaultMediaId = e.default_media_id || '';
       renderMediaList('edge-media-list', edgeMediaItems);
     } catch {}
   } else if (!isEdit) {
@@ -1494,6 +1578,7 @@ async function openEdgeModal(edgeId = null) {
     addMemberRow({ seq: 0 });
     addMemberRow({ seq: 1 });
     edgeMediaItems = [];
+    edgeDefaultMediaId = '';
     renderMediaList('edge-media-list', edgeMediaItems);
   }
   modal.show();
@@ -1552,6 +1637,7 @@ document.getElementById('btn-save-edge').addEventListener('click', async () => {
     attributes: parseJSON(document.getElementById('edge-attributes').value),
     members,
     media: edgeMediaItems,
+    default_media_id: edgeDefaultMediaId,
   };
 
   const targetSpaceId = graphSpaceId(targetGraphId);
@@ -1608,6 +1694,10 @@ const VIZ_DIM_NODE_COLOR = '#2a2a3d';
 const VIZ_DIM_LINK_COLOR = '#20202f';
 const VIZ_STRUCTURAL_COLOR = '#9ca3af';
 const VIZ_FETCH_LIMIT = 500;
+// Must match the .nodeRelSize() call in initViz3D() — kept as one constant so
+// thumbnail sizing (vizSphereRadius) can never drift out of sync with the
+// actual sphere size 3d-force-graph renders.
+const VIZ_NODE_REL_SIZE = 3;
 // Vertical tier (world Y) each node kind is pulled toward, echoing the reference
 // diagram's top-down layout: hyperedge on top, its virtual members-hub in the
 // middle, actual member hypernodes at the bottom.
@@ -1616,8 +1706,11 @@ const VIZ_LAYER_Y = { henode: 160, members: 0, hnode: -160 };
 let vizRotateTimer = null;
 let vizRotateAngle = 0;
 let vizLabelsEnabled = true;
+let vizMediaEnabled = false;
 const vizLabelNodeEls = new Map();
 const vizLabelLinkEls = new Map();
+const vizThumbNodeEls = new Map();
+let _vizThumbUrls = [];
 
 function vizColorForType(type) {
   const key = type || 'Entity';
@@ -1701,13 +1794,46 @@ function vizProjectPoint(camera, x, y, z) {
   const cy = pe[1] * vx + pe[5] * vy + pe[9] * vz + pe[13] * vw;
   const cw = pe[3] * vx + pe[7] * vy + pe[11] * vz + pe[15] * vw;
   if (cw <= 0) return null;
-  return { x: cx / cw * 0.5 + 0.5, y: 1 - (cy / cw * 0.5 + 0.5) };
+  // For a standard (un-skewed) perspective projection matrix, clip-space w
+  // equals the point's camera-space depth (-viewZ) — i.e. distance along the
+  // view axis — so it's returned here too rather than recomputed separately
+  // wherever perspective-correct on-screen sizing (not just position) is needed.
+  return { x: cx / cw * 0.5 + 0.5, y: 1 - (cy / cw * 0.5 + 0.5), dist: cw };
+}
+
+// The world-space radius 3d-force-graph itself renders each node's sphere at
+// (three-forcegraph's documented convention: radius = cbrt(val) * nodeRelSize) —
+// replicated here (never read back from the library) so thumbnail sizing can
+// match it exactly without needing a live reference into the render internals.
+function vizSphereRadius(val) {
+  return Math.cbrt(val || 1) * VIZ_NODE_REL_SIZE;
+}
+
+// Perspective-correct on-screen size (px) of a world-space diameter at a given
+// camera-space distance, for a vertical field-of-view `fovDeg` rendered into a
+// viewport `viewportHeightPx` tall — the standard "apparent size" formula:
+// the visible world height at that distance is 2*dist*tan(fov/2), which maps
+// to viewportHeightPx pixels.
+function vizWorldSizeToPx(worldDiameter, dist, fovDeg, viewportHeightPx) {
+  const visibleHeight = 2 * dist * Math.tan(fovDeg * Math.PI / 360);
+  return (worldDiameter / visibleHeight) * viewportHeightPx;
 }
 
 function vizClearLabelLayer() {
   document.getElementById('viz-label-layer').innerHTML = '';
   vizLabelNodeEls.clear();
   vizLabelLinkEls.clear();
+  vizThumbNodeEls.clear();
+  _vizThumbUrls.forEach(u => URL.revokeObjectURL(u));
+  _vizThumbUrls = [];
+}
+
+// An hnode/henode's default media — same MediaRef-cache lookup as the
+// Nodes/Edges table thumbnails, so no extra round-trip is needed to know its
+// content type before deciding whether it's even showable as a static image.
+function vizDefaultMediaRefFor(raw) {
+  if (!raw || !raw.default_media_id) return null;
+  return (raw.media || []).find(m => m.media_id === raw.default_media_id) || null;
 }
 
 function vizBuildLabelLayer(nodes, links) {
@@ -1720,6 +1846,17 @@ function vizBuildLabelLayer(nodes, links) {
     el.textContent = n.label;
     frag.appendChild(el);
     vizLabelNodeEls.set(n.id, { el, node: n });
+
+    if (n.kind === 'hnode' || n.kind === 'henode') {
+      const ref = vizDefaultMediaRefFor(n.raw);
+      if (ref && ref.content_type && ref.content_type.startsWith('image/')) {
+        const img = document.createElement('img');
+        img.className = 'viz-thumb';
+        img.dataset.thumbMediaId = ref.media_id;
+        frag.appendChild(img);
+        vizThumbNodeEls.set(n.id, { el: img, node: n, aspect: 1 });
+      }
+    }
   });
   links.forEach(l => {
     if (!l.label) return;
@@ -1731,35 +1868,95 @@ function vizBuildLabelLayer(nodes, links) {
     vizLabelLinkEls.set(l, { el, link: l });
   });
   layer.appendChild(frag);
+  if (vizMediaEnabled) vizLoadThumbnails();
+}
+
+// Fetches each thumbnail as an authenticated blob (same pattern used
+// everywhere else media is displayed in this app) and swaps it into the
+// already-positioned <img> once it arrives; a failed fetch just removes that
+// node's thumbnail from tracking rather than leaving a broken-image icon
+// floating in the 3D scene.
+async function vizLoadThumbnails() {
+  _vizThumbUrls.forEach(u => URL.revokeObjectURL(u));
+  _vizThumbUrls = [];
+  await Promise.all([...vizThumbNodeEls.entries()].map(async ([id, entry]) => {
+    const mediaId = entry.el.dataset.thumbMediaId;
+    try {
+      const blob = await HGAI_API.downloadMedia(mediaId);
+      const url = URL.createObjectURL(blob);
+      _vizThumbUrls.push(url);
+      // Wait for the browser to decode the image so its real dimensions are
+      // known before it's ever sized — vizLabelTick uses this to preserve the
+      // image's own aspect ratio rather than forcing it into a fixed square.
+      await new Promise((resolve, reject) => {
+        entry.el.onload = resolve;
+        entry.el.onerror = reject;
+        entry.el.src = url;
+      });
+      if (entry.el.naturalWidth && entry.el.naturalHeight) {
+        entry.aspect = entry.el.naturalWidth / entry.el.naturalHeight;
+      }
+    } catch {
+      entry.el.remove();
+      vizThumbNodeEls.delete(id);
+    }
+  }));
 }
 
 function vizLabelTick() {
   requestAnimationFrame(vizLabelTick);
-  if (!vizLabelsEnabled || !State.viz3d) return;
+  if (!State.viz3d) return;
   if (document.getElementById('screen-viz').classList.contains('d-none')) return;
+  if (!vizLabelsEnabled && !vizMediaEnabled) return;
   const wrapper = document.getElementById('viz-cy-wrapper');
   const w = wrapper.clientWidth, h = wrapper.clientHeight;
   if (!w || !h) return;
   const camera = State.viz3d.camera();
 
-  vizLabelNodeEls.forEach(({ el, node }) => {
-    const p = vizProjectPoint(camera, node.x || 0, node.y || 0, node.z || 0);
-    if (!p || p.x < -0.1 || p.x > 1.1 || p.y < -0.1 || p.y > 1.1) { el.style.display = 'none'; return; }
-    el.style.display = '';
-    el.style.left = (p.x * w) + 'px';
-    el.style.top = (p.y * h) + 'px';
-  });
+  if (vizLabelsEnabled) {
+    vizLabelNodeEls.forEach(({ el, node }) => {
+      const p = vizProjectPoint(camera, node.x || 0, node.y || 0, node.z || 0);
+      if (!p || p.x < -0.1 || p.x > 1.1 || p.y < -0.1 || p.y > 1.1) { el.style.display = 'none'; return; }
+      el.style.display = '';
+      el.style.left = (p.x * w) + 'px';
+      el.style.top = (p.y * h) + 'px';
+    });
 
-  vizLabelLinkEls.forEach(({ el, link }) => {
-    const s = typeof link.source === 'object' ? link.source : null;
-    const t = typeof link.target === 'object' ? link.target : null;
-    if (!s || !t) { el.style.display = 'none'; return; }
-    const p = vizProjectPoint(camera, (s.x + t.x) / 2, (s.y + t.y) / 2, (s.z + t.z) / 2);
-    if (!p || p.x < -0.1 || p.x > 1.1 || p.y < -0.1 || p.y > 1.1) { el.style.display = 'none'; return; }
-    el.style.display = '';
-    el.style.left = (p.x * w) + 'px';
-    el.style.top = (p.y * h) + 'px';
-  });
+    vizLabelLinkEls.forEach(({ el, link }) => {
+      const s = typeof link.source === 'object' ? link.source : null;
+      const t = typeof link.target === 'object' ? link.target : null;
+      if (!s || !t) { el.style.display = 'none'; return; }
+      const p = vizProjectPoint(camera, (s.x + t.x) / 2, (s.y + t.y) / 2, (s.z + t.z) / 2);
+      if (!p || p.x < -0.1 || p.x > 1.1 || p.y < -0.1 || p.y > 1.1) { el.style.display = 'none'; return; }
+      el.style.display = '';
+      el.style.left = (p.x * w) + 'px';
+      el.style.top = (p.y * h) + 'px';
+    });
+  }
+
+  if (vizMediaEnabled) {
+    vizThumbNodeEls.forEach(({ el, node, aspect }) => {
+      const p = vizProjectPoint(camera, node.x || 0, node.y || 0, node.z || 0);
+      if (!p || p.x < -0.1 || p.x > 1.1 || p.y < -0.1 || p.y > 1.1) { el.style.display = 'none'; return; }
+      el.style.display = '';
+      // Perspective-correct: the larger of the image's two dimensions is
+      // sized to match the node's actual sphere at its current camera
+      // distance (so zooming grows/shrinks it exactly as it does the sphere
+      // it's standing in for), and the other dimension follows the image's
+      // own natural aspect ratio — never stretched or cropped to a square.
+      const diameter = 2 * vizSphereRadius(node.val);
+      const targetSize = Math.max(6, Math.min(vizWorldSizeToPx(diameter, p.dist, camera.fov, h), 400));
+      const ar = aspect || 1;
+      const width = ar >= 1 ? targetSize : targetSize * ar;
+      const height = ar >= 1 ? targetSize / ar : targetSize;
+      el.style.width = width + 'px';
+      el.style.height = height + 'px';
+      el.style.left = (p.x * w) + 'px';
+      // Nudged up by roughly its own half-height (not a fixed pixel offset)
+      // so the label underneath it — sized independently — stays legible.
+      el.style.top = (p.y * h - height * 0.55) + 'px';
+    });
+  }
 }
 
 // A d3-force-compatible custom force (the standard initialize(nodes)/force(alpha)
@@ -1784,7 +1981,7 @@ function initViz3D() {
   const g = ForceGraph3D()(container)
     .backgroundColor('#0f0f1a')
     .showNavInfo(false)
-    .nodeRelSize(3)
+    .nodeRelSize(VIZ_NODE_REL_SIZE)
     .d3Force('layer', vizLayerForce())
     .nodeVal(n => n.val)
     .nodeColor(n => n._dim ? VIZ_DIM_NODE_COLOR : n.color)
@@ -2031,6 +2228,14 @@ document.getElementById('viz-show-labels').addEventListener('change', function()
   if (!vizLabelsEnabled) {
     vizLabelNodeEls.forEach(({ el }) => { el.style.display = 'none'; });
     vizLabelLinkEls.forEach(({ el }) => { el.style.display = 'none'; });
+  }
+});
+document.getElementById('viz-show-media').addEventListener('change', function() {
+  vizMediaEnabled = this.checked;
+  if (vizMediaEnabled) {
+    vizLoadThumbnails();
+  } else {
+    vizThumbNodeEls.forEach(({ el }) => { el.style.display = 'none'; });
   }
 });
 document.getElementById('viz-search').addEventListener('input', function() {

@@ -1,0 +1,5 @@
+# Mutation Log
+
+## Modified
+- **ui/js/app.js** — `vizThumbNodeEls` entries now carry an `aspect` field (default `1`). `vizLoadThumbnails()` waits for each thumbnail's `<img>` to actually decode (via a `load`/`error` Promise around setting `.src`) before reading `naturalWidth`/`naturalHeight` into that field. `vizLabelTick()`'s thumbnail-sizing block now computes width and height independently from the image's real aspect ratio — the larger dimension matches the sphere-derived target size from the previous turn, the other scales proportionally — instead of forcing both to the same square value; the label-avoidance vertical offset now uses the resulting height rather than a single shared size.
+- **ui/css/hgai.css** — `.viz-thumb` changed from `object-fit: cover; border-radius: 50%` (crop-to-circle) to `object-fit: contain; border-radius: 6px` (rectangular, uncropped — `contain` is now just a safety net since width/height are already set to the image's exact aspect ratio) and gained a translucent dark background for the rare case dimensions don't land pixel-exact.

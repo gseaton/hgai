@@ -71,7 +71,7 @@ class MongoHypernodeStore(HypernodeStore):
     ) -> Optional[HypernodeInDB]:
         from hgai.models.common import now_utc
         update_fields: Dict[str, Any] = {}
-        for attr in ("label", "description", "type", "status", "tags", "attributes", "valid_from", "valid_to", "media"):
+        for attr in ("label", "description", "type", "status", "tags", "attributes", "valid_from", "valid_to", "media", "default_media_id"):
             val = getattr(patch, attr, None)
             if val is not None:
                 update_fields[attr] = val

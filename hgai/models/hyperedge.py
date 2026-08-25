@@ -64,6 +64,11 @@ class HyperedgeBase(TimestampedModel):
     )
 
     media: List[MediaRef] = Field(default_factory=list, description="Associated media attachments")
+    default_media_id: Optional[str] = Field(
+        default=None,
+        description="media_id of the item in `media` designated as this hyperedge's default visual "
+        "representation (e.g. for visualizations), used in addition to or in lieu of label/relation",
+    )
 
 
 class HyperedgeCreate(HyperedgeBase):
@@ -88,6 +93,7 @@ class HyperedgeUpdate(TimestampedModel):
     skos_narrower: Optional[List[str]] = None
     skos_related: Optional[List[str]] = None
     media: Optional[List[MediaRef]] = None
+    default_media_id: Optional[str] = None
 
 
 class HyperedgeInDB(HyperedgeBase):

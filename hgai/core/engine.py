@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from hgai.db.storage import get_storage
 from hgai.core.cache import invalidate_cache
-from hgai.core.media import adjust_media_refs, apply_media_diff
+from hgai.core.media import adjust_media_refs, apply_media_diff, validate_default_media_id
 from hgai.models.common import Status, now_utc
 from hgai.models.hyperedge import HyperedgeCreate, HyperedgeInDB, HyperedgeUpdate
 from hgai.models.hypergraph import HypergraphCreate, HypergraphInDB, HypergraphUpdate
@@ -145,6 +145,7 @@ async def create_hypernode(
 ) -> HypernodeInDB:
     now = now_utc()
     doc = data.model_dump()
+    doc["default_media_id"] = validate_default_media_id(doc.get("default_media_id"), doc.get("media"))
     doc.update(
         hypergraph_id=_hypergraph_ref(graph_id, space_id),
         system_created=now,
@@ -198,6 +199,9 @@ async def update_hypernode(
 ) -> Optional[HypernodeInDB]:
     dumped = {k: v for k, v in data.model_dump(exclude_none=True).items() if k != "version"}
     existing = await get_hypernode(graph_id, node_id, space_id=space_id)
+    if "default_media_id" in dumped:
+        effective_media = dumped.get("media", existing.media if existing else [])
+        dumped["default_media_id"] = validate_default_media_id(dumped["default_media_id"], effective_media)
     patch = HypernodePatch(
         label=dumped.get("label"),
         description=dumped.get("description"),
@@ -208,6 +212,7 @@ async def update_hypernode(
         valid_from=dumped.get("valid_from"),
         valid_to=dumped.get("valid_to"),
         media=dumped.get("media"),
+        default_media_id=dumped.get("default_media_id"),
         updated_by=updated_by,
     )
     result = await get_storage().hypernodes.update(
@@ -244,6 +249,7 @@ async def create_hyperedge(
 ) -> HyperedgeInDB:
     now = now_utc()
     doc = data.model_dump()
+    doc["default_media_id"] = validate_default_media_id(doc.get("default_media_id"), doc.get("media"))
 
     member_ids = [m["node_id"] for m in doc.get("members", [])]
     ref = _hypergraph_ref(graph_id, space_id)
@@ -317,6 +323,10 @@ async def update_hyperedge(
         member_ids = [m["node_id"] if isinstance(m, dict) else m.node_id for m in members]
         dumped["hyperkey"] = generate_hyperkey(relation, member_ids, ref)
 
+    if "default_media_id" in dumped:
+        effective_media = dumped.get("media", existing.media if existing else [])
+        dumped["default_media_id"] = validate_default_media_id(dumped["default_media_id"], effective_media)
+
     patch = HyperedgePatch(
         label=dumped.get("label"),
         description=dumped.get("description"),
@@ -332,6 +342,7 @@ async def update_hyperedge(
         skos_narrower=dumped.get("skos_narrower"),
         skos_related=dumped.get("skos_related"),
         media=dumped.get("media"),
+        default_media_id=dumped.get("default_media_id"),
         updated_by=updated_by,
     )
     # Pass the regenerated hyperkey as an extra field to the store.

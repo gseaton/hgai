@@ -1,0 +1,5 @@
+# Mutation Log
+
+## Modified
+- **ui/js/app.js** — Added `VIZ_NODE_REL_SIZE` constant (kept in sync with the `.nodeRelSize()` call in `initViz3D()`, which now reads from it instead of a bare literal). `vizProjectPoint()` now also returns `dist` (the clip-space `w` term, which for a standard perspective matrix equals camera-space depth). Added `vizSphereRadius(val)` (replicates three-forcegraph's own `cbrt(val) * nodeRelSize` sphere-radius convention) and `vizWorldSizeToPx(worldDiameter, dist, fovDeg, viewportHeightPx)` (the standard perspective apparent-size formula). `vizLabelTick()`'s thumbnail-positioning block now computes each thumbnail's on-screen size every frame from the node's actual sphere radius and current camera distance, instead of using a fixed CSS size; the label-avoidance offset is now proportional to the computed size rather than a fixed pixel margin.
+- **ui/css/hgai.css** — `.viz-thumb` no longer sets a fixed `width`/`height` or `margin-top` (both are now computed per-frame in JS); `border-radius` changed from `6px` to `50%` so the thumbnail reads as a circle, matching the sphere it's standing in for.

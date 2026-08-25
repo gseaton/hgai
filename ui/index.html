@@ -207,6 +207,12 @@
                 </select>
               </div>
               <div class="col-auto">
+                <div class="form-check form-switch mb-1">
+                  <input class="form-check-input" type="checkbox" id="node-show-media"/>
+                  <label class="form-check-label small" for="node-show-media">Show media</label>
+                </div>
+              </div>
+              <div class="col-auto">
                 <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-nodes">
                   <i class="bi bi-arrow-clockwise"></i>
                 </button>
@@ -220,6 +226,7 @@
               <thead>
                 <tr>
                   <th class="sortable-th" data-table="nodes" data-sort-field="id">ID<span class="sort-indicator"></span></th>
+                  <th class="td-media d-none">Media</th>
                   <th class="sortable-th" data-table="nodes" data-sort-field="label">Label<span class="sort-indicator"></span></th>
                   <th class="sortable-th" data-table="nodes" data-sort-field="type">Type<span class="sort-indicator"></span></th>
                   <th class="sortable-th" data-table="nodes" data-sort-field="status">Status<span class="sort-indicator"></span></th>
@@ -272,6 +279,12 @@
                 <input type="text" id="edge-node-filter" class="form-control form-control-sm" placeholder="Contains node ID..." style="width:180px"/>
               </div>
               <div class="col-auto">
+                <div class="form-check form-switch mb-1">
+                  <input class="form-check-input" type="checkbox" id="edge-show-media"/>
+                  <label class="form-check-label small" for="edge-show-media">Show media</label>
+                </div>
+              </div>
+              <div class="col-auto">
                 <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-edges">
                   <i class="bi bi-arrow-clockwise"></i>
                 </button>
@@ -285,6 +298,7 @@
               <thead>
                 <tr>
                   <th class="sortable-th" data-table="edges" data-sort-field="id">ID<span class="sort-indicator"></span></th>
+                  <th class="td-media d-none">Media</th>
                   <th class="sortable-th" data-table="edges" data-sort-field="label">Label<span class="sort-indicator"></span></th>
                   <th class="sortable-th" data-table="edges" data-sort-field="relation">Relation<span class="sort-indicator"></span></th>
                   <th class="sortable-th" data-table="edges" data-sort-field="flavor">Flavor<span class="sort-indicator"></span></th>
@@ -406,6 +420,12 @@
                 <div class="form-check form-switch mb-1">
                   <input class="form-check-input" type="checkbox" id="viz-show-labels" checked/>
                   <label class="form-check-label small" for="viz-show-labels">Labels</label>
+                </div>
+              </div>
+              <div class="col-auto">
+                <div class="form-check form-switch mb-1">
+                  <input class="form-check-input" type="checkbox" id="viz-show-media"/>
+                  <label class="form-check-label small" for="viz-show-media">Media</label>
                 </div>
               </div>
               <div class="col-auto">

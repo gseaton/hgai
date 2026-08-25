@@ -23,6 +23,35 @@ def parse_media_id(media_id: str) -> Tuple[Optional[str], str]:
     return None, media_id
 
 
+def validate_default_media_id(default_media_id: Optional[str], media_refs: Optional[List[Any]]) -> str:
+    """Returns `default_media_id` unchanged if it matches a media_id in `media_refs`,
+    otherwise "" (the "no default set" sentinel).
+
+    An entity's `default_media_id` designates one of its own `media` list entries
+    as its default visual representation — it must point at something actually
+    still in that list. Rather than rejecting a save whose media list was edited
+    without also updating (or clearing) the stale pointer, this silently clears
+    it: the alternative (a hard validation error) would make removing an
+    attached file a two-step operation whenever it happened to be the current
+    default, for a field that's a display hint, not a real relationship.
+
+    "" (empty string), not None, is the clear sentinel throughout this field's
+    plumbing — see the frontend's sortParam-adjacent convention for why: the
+    Update-model / patch layers here treat an explicit None as "field not
+    provided, don't touch it" (via `model_dump(exclude_none=True)`), so an
+    intentional clear needs a value that survives that filtering. "" is falsy
+    everywhere this field is read (Python and JS alike), so nothing downstream
+    needs to know about the sentinel specifically.
+    """
+    if not default_media_id:
+        return default_media_id or ""
+    ids = {
+        (ref.media_id if hasattr(ref, "media_id") else ref.get("media_id"))
+        for ref in (media_refs or [])
+    }
+    return default_media_id if default_media_id in ids else ""
+
+
 def extract_media_duration(content_type: Optional[str], data: bytes) -> Optional[float]:
     """Best-effort duration (seconds) for an audio/video upload, via mutagen.
 
