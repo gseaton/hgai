@@ -443,7 +443,10 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 #viz-cy-wrapper { background: #0f0f1a; overflow: hidden; min-height: 300px; }
 #viz-canvas { width: 100%; height: 100%; }
 #viz-canvas canvas { display: block; }
-#viz-label-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+/* isolation: isolate makes this its own stacking context, so the per-frame
+   z-index values assigned to its children (see vizZIndexForDist) only ever
+   compete with each other — they can never affect stacking outside this layer. */
+#viz-label-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; isolation: isolate; }
 .viz-label {
   position: absolute; top: 0; left: 0;
   transform: translate(-50%, -50%);

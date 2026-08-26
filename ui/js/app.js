@@ -1819,6 +1819,20 @@ function vizWorldSizeToPx(worldDiameter, dist, fovDeg, viewportHeightPx) {
   return (worldDiameter / visibleHeight) * viewportHeightPx;
 }
 
+// Every label/thumbnail/link-label lives as a flat 2D div in #viz-label-layer,
+// stacked by plain DOM/paint order by default — with no relation at all to
+// actual 3D depth, so an element for something far from the camera could
+// paint over one for something close just by virtue of being added to the
+// DOM later. Deriving each element's z-index from its camera distance every
+// frame (closer = higher) keeps their stacking consistent with the scene's
+// real depth ordering, across all three element kinds on one shared scale
+// (so a close link label correctly outranks a far node label, etc.).
+// #viz-label-layer is its own isolated stacking context (see CSS), so these
+// values can never affect anything outside that layer.
+function vizZIndexForDist(dist) {
+  return Math.round(1000000 - dist * 10);
+}
+
 function vizClearLabelLayer() {
   document.getElementById('viz-label-layer').innerHTML = '';
   vizLabelNodeEls.clear();
@@ -1926,6 +1940,7 @@ function vizLabelTick() {
       el.style.display = '';
       el.style.left = (p.x * w) + 'px';
       el.style.top = (p.y * h) + 'px';
+      el.style.zIndex = vizZIndexForDist(p.dist);
     });
 
     vizLabelLinkEls.forEach(({ el, link }) => {
@@ -1937,6 +1952,7 @@ function vizLabelTick() {
       el.style.display = '';
       el.style.left = (p.x * w) + 'px';
       el.style.top = (p.y * h) + 'px';
+      el.style.zIndex = vizZIndexForDist(p.dist);
     });
   }
 
@@ -1961,6 +1977,7 @@ function vizLabelTick() {
       // Nudged up by roughly its own half-height (not a fixed pixel offset)
       // so the label underneath it — sized independently — stays legible.
       el.style.top = (p.y * h - height * 0.55) + 'px';
+      el.style.zIndex = vizZIndexForDist(p.dist);
     });
   }
 }
