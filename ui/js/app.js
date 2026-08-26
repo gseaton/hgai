@@ -1841,11 +1841,17 @@ function vizBuildLabelLayer(nodes, links) {
   const layer = document.getElementById('viz-label-layer');
   const frag = document.createDocumentFragment();
   nodes.forEach(n => {
-    const el = document.createElement('div');
-    el.className = 'viz-label viz-label-node' + (n.kind === 'members' ? ' viz-label-virtual' : '');
-    el.textContent = n.label;
-    frag.appendChild(el);
-    vizLabelNodeEls.set(n.id, { el, node: n });
+    // The virtual "members" node is purely structural (fans a hyperedge out
+    // to its participants) — labeling it just adds visual clutter repeated
+    // once per hyperedge, so it's excluded from the label layer entirely.
+    // Its own tooltip (nodeLabel in initViz3D) still explains it on hover.
+    if (n.kind !== 'members') {
+      const el = document.createElement('div');
+      el.className = 'viz-label viz-label-node';
+      el.textContent = n.label;
+      frag.appendChild(el);
+      vizLabelNodeEls.set(n.id, { el, node: n });
+    }
 
     if (n.kind === 'hnode' || n.kind === 'henode') {
       const ref = vizDefaultMediaRefFor(n.raw);
@@ -2032,6 +2038,24 @@ function initViz3D() {
   State.viz3d = g;
   vizResizeCanvas();
   window.addEventListener('resize', vizResizeCanvas);
+
+  // Shift+left-click-drag pans the camera (left/right/up/down) instead of
+  // orbiting it. TrackballControls (3d-force-graph's default controls) reads
+  // `mouseButtons.LEFT` fresh at the start of each drag, so a capture-phase
+  // mousedown listener that reassigns it just before the library's own
+  // pointerdown handler runs is enough — no separate keydown/keyup state to
+  // track, and it can't get stuck if a keyup is ever missed (e.g. losing
+  // focus mid-drag), since it's re-derived from the live shiftKey flag on
+  // every mousedown. Right-click already pans by default in this library, so
+  // its existing mapping is reused rather than hardcoding THREE's MOUSE enum.
+  const controls = g.controls();
+  if (controls && controls.mouseButtons) {
+    const rotateAction = controls.mouseButtons.LEFT;
+    const panAction = controls.mouseButtons.RIGHT;
+    container.addEventListener('mousedown', ev => {
+      controls.mouseButtons.LEFT = ev.shiftKey ? panAction : rotateAction;
+    }, true);
+  }
 }
 
 async function fetchGraphElements(graphId) {

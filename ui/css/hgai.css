@@ -457,7 +457,6 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
   background: #eef0f4; border: 1px solid #cbd5e1; border-radius: 7px;
   padding: 3px 9px; box-shadow: 0 2px 6px rgba(0,0,0,0.35);
 }
-.viz-label-node.viz-label-virtual { color: #15803d; border-color: #86efac; }
 /* width/height are set per-frame in JS (vizLabelTick) to match the node's
    actual rendered sphere size at its current camera distance — not fixed. */
 /* width/height are set per-frame in JS to the image's own natural aspect
