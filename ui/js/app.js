@@ -2113,18 +2113,36 @@ async function renderViz() {
 
       const nodeIdSet = new Set();
       const hedgeIdSet = new Set();
+      rawNodes.forEach(n => nodeIdSet.add(n.id));
+      edges.forEach(e => {
+        const k = e.id || e.hyperkey;
+        if (k) hedgeIdSet.add(k);
+      });
+
+      // "Orphan" here means a hypernode never appears as a member of any
+      // hyperedge in this graph — computed as its own pass over every edge's
+      // members (not just the ones ForceGraph3D also validates), so it
+      // reflects true membership regardless of anything else about that
+      // hyperedge (e.g. it still counts even if the hyperedge itself has no
+      // OTHER resolvable members and would otherwise render with arity 0).
+      const hideOrphanNodes = document.getElementById('viz-hide-orphans').checked;
+      const referencedHypernodeIds = hideOrphanNodes ? new Set() : null;
+      if (hideOrphanNodes) {
+        edges.forEach(e => {
+          (e.members || []).forEach(m => {
+            if (nodeIdSet.has(m.node_id)) referencedHypernodeIds.add(m.node_id);
+          });
+        });
+      }
+
       rawNodes.forEach(n => {
-        nodeIdSet.add(n.id);
+        if (hideOrphanNodes && !referencedHypernodeIds.has(n.id)) return;
         const type = n.type || 'Entity';
         typeCount[type] = (typeCount[type] || 0) + 1;
         nodes.push({
           id: `${gid}::${n.id}`, kind: 'hnode', label: n.label || n.id, type,
           color: vizColorForType(type), val: 4, graphId: gid, raw: n,
         });
-      });
-      edges.forEach(e => {
-        const k = e.id || e.hyperkey;
-        if (k) hedgeIdSet.add(k);
       });
 
       // A member's node_id may point at either a hypernode or another
@@ -2302,6 +2320,12 @@ document.getElementById('btn-viz-details-toggle').addEventListener('click', func
 });
 document.getElementById('viz-auto-rotate').addEventListener('change', function() {
   this.checked ? vizStartAutoRotate() : vizStopAutoRotate();
+});
+// Which nodes exist in the scene is data the renderer holds, not just a
+// display flag like Labels/Media — so, unlike those, this needs a full
+// renderViz() to actually add/remove nodes from 3d-force-graph's dataset.
+document.getElementById('viz-hide-orphans').addEventListener('change', () => {
+  if (State.viz3d) renderViz();
 });
 document.getElementById('viz-show-labels').addEventListener('change', function() {
   vizLabelsEnabled = this.checked;
