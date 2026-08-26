@@ -1,0 +1,6 @@
+# Mutation Log
+
+## Modified
+- **ui/index.html** — Visualize screen: the 3D canvas column changed from a fixed `col-md-9` to a flexible `col` (given `id="viz-canvas-col"`) so it grows to fill whatever width the Element Details panel gives up. The Element Details column (`id="viz-details-col"`, still `col-md-3` when expanded) gained a collapse toggle button in its card header; the header's title+stats badge were wrapped in a new `#viz-details-header-content` div, and the card body given `id="viz-details-body"`, both toggled by the collapse state.
+- **ui/js/app.js** — Added a click handler for `#btn-viz-details-toggle` that toggles the `viz-details-collapsed` class on the details column, hides/shows the header content and body, flips the button's chevron icon, and calls `vizResizeCanvas()` (after the CSS width transition finishes) so 3d-force-graph actually redraws at the new, larger canvas size instead of leaving stale letterboxing.
+- **ui/css/hgai.css** — Added `.viz-details-collapsed` (shrinks the details column to a 48px strip showing only the toggle button, with a `transition` for a smooth resize) and, separately, `#viz-canvas-col { min-width: 0; }` — a fix for a real, independently-discovered layout bug (see summary) that the canvas column's new flexible `.col` sizing exposed.

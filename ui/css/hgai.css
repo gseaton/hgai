@@ -440,6 +440,20 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 #modal-graph .form-label { font-weight: 600; color: #111827; }
 
 /* ── Visualize ─────────────────────────────────────────────────────────────── */
+/* Without this, the flex item's "automatic minimum size" defaults to its
+   content's min-content width — and since 3d-force-graph sets the inner
+   <canvas> element's width via an explicit pixel HTML attribute (a strong
+   intrinsic size), that content-driven minimum can exceed the space actually
+   available once the Element Details column claims its own width, forcing
+   the row to wrap instead of laying the two columns out side by side. */
+#viz-canvas-col { min-width: 0; }
+#viz-details-col { transition: flex-basis 0.15s ease, max-width 0.15s ease; }
+#viz-details-col.viz-details-collapsed {
+  flex: 0 0 48px !important;
+  max-width: 48px !important;
+  width: 48px !important;
+}
+#viz-details-col.viz-details-collapsed .card-header { justify-content: center; padding: 8px 4px; }
 #viz-cy-wrapper { background: #0f0f1a; overflow: hidden; min-height: 300px; }
 #viz-canvas { width: 100%; height: 100%; }
 #viz-canvas canvas { display: block; }

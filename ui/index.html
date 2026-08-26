@@ -438,7 +438,7 @@
           </div>
         </div>
         <div class="row g-3" style="height: calc(100vh - 260px);">
-          <div class="col-md-9 d-flex flex-column">
+          <div class="col d-flex flex-column" id="viz-canvas-col">
             <div id="viz-cy-wrapper" class="flex-grow-1 border rounded position-relative">
               <div id="viz-canvas"></div>
               <div id="viz-label-layer"></div>
@@ -449,13 +449,18 @@
             </div>
             <div id="viz-legend" class="viz-legend"></div>
           </div>
-          <div class="col-md-3 d-flex flex-column">
+          <div class="col-md-3 d-flex flex-column" id="viz-details-col">
             <div class="card flex-grow-1 d-flex flex-column">
               <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
-                <span>Element Details</span>
-                <span id="viz-stats" class="badge bg-light text-dark"></span>
+                <div class="d-flex align-items-center gap-2" id="viz-details-header-content">
+                  <span>Element Details</span>
+                  <span id="viz-stats" class="badge bg-light text-dark"></span>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-viz-details-toggle" title="Collapse panel">
+                  <i class="bi bi-chevron-double-right"></i>
+                </button>
               </div>
-              <div class="card-body overflow-auto flex-grow-1">
+              <div class="card-body overflow-auto flex-grow-1" id="viz-details-body">
                 <div id="viz-detail-empty" class="text-muted small">Click a node, hyperedge, or link to inspect it.</div>
                 <pre id="viz-detail-content" class="d-none bg-dark text-light p-3 rounded" style="font-size:0.75rem;white-space:pre-wrap;"></pre>
               </div>

@@ -2286,6 +2286,20 @@ function vizStopAutoRotate() {
 document.getElementById('btn-viz-render').addEventListener('click', renderViz);
 document.getElementById('btn-viz-fit').addEventListener('click', () => State.viz3d?.zoomToFit(600, 60));
 document.getElementById('btn-viz-clear').addEventListener('click', vizClear);
+
+// Collapsing the Element Details panel frees its column width for the 3D
+// canvas (which uses a flexible `col`, not a fixed `col-md-9`, specifically
+// so it grows to fill whatever space the details panel gives up) — resize
+// the canvas/renderer afterward so 3d-force-graph actually redraws at the
+// new size instead of leaving stale letterboxing until the next window resize.
+document.getElementById('btn-viz-details-toggle').addEventListener('click', function() {
+  const collapsed = document.getElementById('viz-details-col').classList.toggle('viz-details-collapsed');
+  document.getElementById('viz-details-header-content').classList.toggle('d-none', collapsed);
+  document.getElementById('viz-details-body').classList.toggle('d-none', collapsed);
+  this.querySelector('i').className = collapsed ? 'bi bi-chevron-double-left' : 'bi bi-chevron-double-right';
+  this.title = collapsed ? 'Expand panel' : 'Collapse panel';
+  setTimeout(vizResizeCanvas, 160); // after the CSS width transition finishes
+});
 document.getElementById('viz-auto-rotate').addEventListener('change', function() {
   this.checked ? vizStartAutoRotate() : vizStopAutoRotate();
 });
