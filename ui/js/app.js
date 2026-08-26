@@ -2071,6 +2071,7 @@ async function renderViz() {
       if (rawNodes.length < nodesTotal || edges.length < edgesTotal) truncated = true;
 
       const nodeIdSet = new Set();
+      const hedgeIdSet = new Set();
       rawNodes.forEach(n => {
         nodeIdSet.add(n.id);
         const type = n.type || 'Entity';
@@ -2080,24 +2081,47 @@ async function renderViz() {
           color: vizColorForType(type), val: 4, graphId: gid, raw: n,
         });
       });
+      edges.forEach(e => {
+        const k = e.id || e.hyperkey;
+        if (k) hedgeIdSet.add(k);
+      });
+
+      // A member's node_id may point at either a hypernode or another
+      // hyperedge — hyperedges are first-class and may themselves be members
+      // of a hyperedge (see docs/architecture/hypergraph_ai_design_notes.md:
+      // "HypergraphAI hyperedges are treated as hypernodes") — so resolve
+      // against both id spaces, mapping to whichever viz node id scheme that
+      // target actually uses, before treating a member as unresolvable.
+      const vizMemberTargetId = nodeId => {
+        if (nodeIdSet.has(nodeId)) return `${gid}::${nodeId}`;
+        if (hedgeIdSet.has(nodeId)) return `${gid}::he::${nodeId}`;
+        return null;
+      };
 
       edges.forEach(e => {
         const members = (e.members || []).slice().sort((a, b) => (a.seq || 0) - (b.seq || 0));
         const flavor = e.flavor || 'hub';
-        const validMembers = members.filter(m => nodeIdSet.has(m.node_id));
-        if (!validMembers.length) return;
+        const validMembers = members
+          .map(m => ({ ...m, vizTargetId: vizMemberTargetId(m.node_id) }))
+          .filter(m => m.vizTargetId);
         hyperedgeCount++;
         flavorSeen.add(flavor);
         const heid = `${gid}::he::${e.id || e.hyperkey}`;
         const membersId = `${heid}::members`;
 
         // edge:<id> (node) — the hyperedge's own identity, matching the top box
-        // in docs/design/hypergraphai-hyperedge-virtual-3d-graph-via-representation.png
+        // in docs/design/hypergraphai-hyperedge-virtual-3d-graph-via-representation.png.
+        // Always created, even with zero currently-resolvable members, so that
+        // any OTHER hyperedge referencing this one as a member has a real node
+        // to link to, and so a hyperedge — a first-class element — is never
+        // silently hidden just because its own members didn't resolve.
         nodes.push({
           id: heid, kind: 'henode', label: e.label || e.id || e.hyperkey || '(hyperedge)',
           flavor, color: VIZ_STRUCTURAL_COLOR, val: Math.min(6 + validMembers.length, 16),
           arity: validMembers.length, relation: e.relation, graphId: gid, raw: e,
         });
+        if (!validMembers.length) return;
+
         // "members" (virtual node)
         nodes.push({
           id: membersId, kind: 'members', label: 'members', color: VIZ_STRUCTURAL_COLOR,
@@ -2109,11 +2133,12 @@ async function renderViz() {
           source: heid, target: membersId, kind: 'hyperedge', label: `flavor:${flavor}`,
           color: VIZ_FLAVOR_LINK_COLOR[flavor] || VIZ_STRUCTURAL_COLOR, raw: null, parentRaw: e,
         });
-        // relation-labeled edges: members-node -> each member node. The first
-        // member (lowest seq) gets a distinct blue so it stands out from the rest.
+        // relation-labeled edges: members-node -> each member (a hypernode's
+        // hnode, or another hyperedge's henode). The first member (lowest seq)
+        // gets a distinct blue so it stands out from the rest.
         validMembers.forEach((m, i) => {
           links.push({
-            source: membersId, target: `${gid}::${m.node_id}`, kind: 'relation',
+            source: membersId, target: m.vizTargetId, kind: 'relation',
             label: e.relation || '', seq: m.seq,
             color: i === 0 ? VIZ_LINK_FIRST_MEMBER_COLOR : VIZ_LINK_RELATION_COLOR, raw: e,
           });
