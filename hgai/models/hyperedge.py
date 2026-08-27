@@ -23,7 +23,14 @@ class EdgeFlavor(str, Enum):
 class EdgeMember(BaseModel):
     """A member node in a hyperedge."""
 
-    node_id: str = Field(..., description="Hypernode ID")
+    node_id: str = Field(
+        ...,
+        description="Hypernode or hyperedge ID, resolved within this hyperedge's own hypergraph. "
+        "May instead be prefixed with another hypergraph's ID followed by '.' (e.g. 'bravo.person:john') "
+        "to reference a member living in a different hypergraph on this server, using the same "
+        "dot-notation convention as HQL/SHQL's `from:` clause — hypergraph IDs can never contain '.', "
+        "so the substring before the first '.' is unambiguous.",
+    )
     seq: int = Field(default=0, description="Sequence position within the edge")
 
     class Config:

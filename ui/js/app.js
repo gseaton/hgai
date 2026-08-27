@@ -1861,8 +1861,8 @@ function vizBuildLabelLayer(nodes, links) {
     // Its own tooltip (nodeLabel in initViz3D) still explains it on hover.
     if (n.kind !== 'members') {
       const el = document.createElement('div');
-      el.className = 'viz-label viz-label-node';
-      el.textContent = n.label;
+      el.className = 'viz-label viz-label-node' + (n.crossGraph ? ' viz-label-node-external' : '');
+      el.textContent = n.crossGraph ? `${n.label} (${n.graphId})` : n.label;
       frag.appendChild(el);
       vizLabelNodeEls.set(n.id, { el, node: n });
     }
@@ -2010,10 +2010,16 @@ function initViz3D() {
     .nodeColor(n => n._dim ? VIZ_DIM_NODE_COLOR : n.color)
     .nodeLabel(n => {
       if (n.kind === 'members') return `<div>members <span style="opacity:.6">(virtual)</span></div>`;
+      // A cross-graph member (see vizParseMemberRef) is rendered as a leaf —
+      // its own member structure isn't expanded — so showing "0 members"
+      // would misrepresent it; an explicit origin-graph note is clearer.
+      const originNote = n.crossGraph
+        ? `<br/><span style="opacity:.6">↳ external reference · graph ${vizEsc(n.graphId)}</span>` : '';
       if (n.kind === 'henode') {
-        return `<div>${vizEsc(n.label)}<br/><span style="opacity:.6">${vizEsc(n.relation)} · flavor:${vizEsc(n.flavor)} · ${n.arity} member${n.arity === 1 ? '' : 's'}</span></div>`;
+        const arityNote = n.crossGraph ? '' : ` · ${n.arity} member${n.arity === 1 ? '' : 's'}`;
+        return `<div>${vizEsc(n.label)}<br/><span style="opacity:.6">${vizEsc(n.relation)} · flavor:${vizEsc(n.flavor)}${arityNote}</span>${originNote}</div>`;
       }
-      return `<div>${vizEsc(n.label)}<br/><span style="opacity:.6">${vizEsc(n.type)}</span></div>`;
+      return `<div>${vizEsc(n.label)}<br/><span style="opacity:.6">${vizEsc(n.type)}</span>${originNote}</div>`;
     })
     .linkColor(l => l._dim ? VIZ_DIM_LINK_COLOR : l.color)
     .linkWidth(l => l.kind === 'hyperedge' ? 0.8 : 0.5)
@@ -2090,6 +2096,85 @@ async function fetchGraphElements(graphId) {
   };
 }
 
+// Everything one semantic step away from `id` (a raw, unprefixed hypernode or
+// hyperedge id) — a hyperedge is the "relationship" a user actually thinks of
+// as one hop, not an intermediate node to traverse separately, so expanding a
+// hypernode pulls in both the hyperedges it belongs to AND every other member
+// of those hyperedges in the same step (otherwise a 1-degree neighborhood
+// would show a hyperedge with none of its other participants, which is
+// useless). Expanding a hyperedge is simpler: just its own direct members.
+function vizOneHopNeighbors(id, nodeIds, edgeIds, nodeToEdges, edgeToMembers) {
+  const result = new Set();
+  if (nodeIds.has(id)) {
+    (nodeToEdges.get(id) || []).forEach(eid => {
+      result.add(eid);
+      (edgeToMembers.get(eid) || []).forEach(mid => { if (mid !== id) result.add(mid); });
+    });
+  }
+  if (edgeIds.has(id)) {
+    (edgeToMembers.get(id) || []).forEach(mid => result.add(mid));
+  }
+  return result;
+}
+
+// BFS out `degree` one-hop steps (see vizOneHopNeighbors) from `focusId`
+// within one graph's own raw nodes/edges. Returns { nodeIds, edgeIds } (both
+// Sets of raw, unprefixed ids, always including the focus itself) or null if
+// focusId doesn't exist as either a hypernode or hyperedge in this graph.
+function vizComputeNeighborhood(rawNodes, edges, focusId, degree) {
+  const nodeIds = new Set(rawNodes.map(n => n.id));
+  const edgeIds = new Set(edges.map(e => e.id || e.hyperkey).filter(Boolean));
+  if (!nodeIds.has(focusId) && !edgeIds.has(focusId)) return null;
+
+  const nodeToEdges = new Map();
+  const edgeToMembers = new Map();
+  edges.forEach(e => {
+    const eid = e.id || e.hyperkey;
+    if (!eid) return;
+    const memberIds = (e.members || []).map(m => m.node_id);
+    edgeToMembers.set(eid, memberIds);
+    memberIds.forEach(mid => {
+      if (!nodeToEdges.has(mid)) nodeToEdges.set(mid, new Set());
+      nodeToEdges.get(mid).add(eid);
+    });
+  });
+
+  const included = new Set([focusId]);
+  let frontier = new Set([focusId]);
+  for (let hop = 0; hop < degree && frontier.size; hop++) {
+    const next = new Set();
+    frontier.forEach(id => {
+      vizOneHopNeighbors(id, nodeIds, edgeIds, nodeToEdges, edgeToMembers).forEach(nid => {
+        if (!included.has(nid)) { next.add(nid); included.add(nid); }
+      });
+    });
+    frontier = next;
+  }
+
+  return {
+    nodeIds: new Set([...included].filter(id => nodeIds.has(id))),
+    edgeIds: new Set([...included].filter(id => edgeIds.has(id))),
+  };
+}
+
+// A hyperedge member's node_id may carry a "graph_id." prefix designating it
+// as living in a DIFFERENT hypergraph than the hyperedge that references it —
+// e.g. "bravo.person:john" from a hyperedge in graph "alpha" means "person:john"
+// lives in graph "bravo". Uses the same dot-notation convention as HQL/SHQL's
+// `from:` clause: hypergraph IDs can never contain '.', so splitting on the
+// FIRST dot is always unambiguous for a real cross-graph reference. Only
+// treated as one when the prefix names a graph this app actually knows about
+// (State.graphsCache) — otherwise the id is left alone, so any existing plain
+// id that happens to contain a literal '.' keeps resolving within its own
+// graph exactly as before this feature existed.
+function vizParseMemberRef(nodeId) {
+  const dot = nodeId.indexOf('.');
+  if (dot === -1) return null;
+  const graphId = nodeId.slice(0, dot);
+  if (!State.graphsCache[graphId]) return null;
+  return { graphId, localId: nodeId.slice(dot + 1) };
+}
+
 async function renderViz() {
   const sel = document.getElementById('viz-graph-select');
   const graphIds = Array.from(sel.selectedOptions).map(o => o.value);
@@ -2099,25 +2184,117 @@ async function renderViz() {
   document.getElementById('viz-empty-state').classList.add('d-none');
   vizResizeCanvas();
 
-  const nodes = [];
   const links = [];
   const typeCount = {};
   const flavorSeen = new Set();
   let truncated = false;
-  let hyperedgeCount = 0;
+
+  const focusId = document.getElementById('viz-focus-id').value.trim();
+  const focusDegree = parseInt(document.getElementById('viz-focus-degree').value, 10) || 1;
+  let focusVizNodeId = null;
+  let focusFound = false;
 
   try {
+    // Phase 1: fetch every selected graph's own (focus-filtered) data.
+    const graphData = new Map(); // gid -> { rawNodes, edges, nodeIdSet, hedgeIdSet }
     for (const gid of graphIds) {
-      const { nodes: rawNodes, edges, nodesTotal, edgesTotal } = await fetchGraphElements(gid);
+      let { nodes: rawNodes, edges, nodesTotal, edgesTotal } = await fetchGraphElements(gid);
       if (rawNodes.length < nodesTotal || edges.length < edgesTotal) truncated = true;
 
-      const nodeIdSet = new Set();
+      if (focusId) {
+        const neighborhood = vizComputeNeighborhood(rawNodes, edges, focusId, focusDegree);
+        if (neighborhood) {
+          focusFound = true;
+          if (neighborhood.nodeIds.has(focusId)) focusVizNodeId = `${gid}::${focusId}`;
+          else if (neighborhood.edgeIds.has(focusId)) focusVizNodeId = `${gid}::he::${focusId}`;
+          rawNodes = rawNodes.filter(n => neighborhood.nodeIds.has(n.id));
+          edges = edges.filter(e => neighborhood.edgeIds.has(e.id || e.hyperkey));
+        } else {
+          // The focus element doesn't exist in this particular hypergraph
+          // (relevant when multiple graphs are selected at once) — it
+          // contributes nothing rather than dumping its full unfiltered
+          // content into what's supposed to be a filtered neighborhood view.
+          rawNodes = [];
+          edges = [];
+        }
+      }
+
+      const nodeIdSet = new Set(rawNodes.map(n => n.id));
       const hedgeIdSet = new Set();
-      rawNodes.forEach(n => nodeIdSet.add(n.id));
       edges.forEach(e => {
         const k = e.id || e.hyperkey;
         if (k) hedgeIdSet.add(k);
       });
+      graphData.set(gid, { rawNodes, edges, nodeIdSet, hedgeIdSet });
+    }
+
+    // Phase 2: resolve every graph-qualified member reference (see
+    // vizParseMemberRef) via a single-item lookup against its target graph —
+    // not a full graph fetch, since only the one referenced node/hyperedge
+    // needs to be visualized, not the rest of that graph's contents (and a
+    // full-listing fetch could miss it entirely if the target graph exceeds
+    // VIZ_FETCH_LIMIT). A node_id is tried as a hypernode first, then as a
+    // hyperedge, mirroring how same-graph members already resolve against
+    // both id spaces. An unresolvable cross-graph reference is simply
+    // dropped, exactly like any other broken member id.
+    const crossGraphNodes = new Map(); // "graphId::localId" -> { vizId, raw, isEdge }
+    const attemptedCrossRefs = new Set();
+    for (const { edges } of graphData.values()) {
+      for (const e of edges) {
+        for (const m of (e.members || [])) {
+          const ref = vizParseMemberRef(m.node_id);
+          if (!ref) continue;
+          const key = `${ref.graphId}::${ref.localId}`;
+          if (attemptedCrossRefs.has(key)) continue;
+          attemptedCrossRefs.add(key);
+          const spaceId = graphSpaceId(ref.graphId);
+          let raw = null, isEdge = false;
+          try {
+            raw = spaceId ? await HGAI_API.getSpaceNode(spaceId, ref.graphId, ref.localId)
+                          : await HGAI_API.getNode(ref.graphId, ref.localId);
+          } catch {
+            try {
+              raw = spaceId ? await HGAI_API.getSpaceEdge(spaceId, ref.graphId, ref.localId)
+                            : await HGAI_API.getEdge(ref.graphId, ref.localId);
+              isEdge = true;
+            } catch { raw = null; }
+          }
+          if (raw) {
+            const vizId = isEdge ? `${ref.graphId}::he::${ref.localId}` : `${ref.graphId}::${ref.localId}`;
+            crossGraphNodes.set(key, { vizId, raw, isEdge });
+          }
+        }
+      }
+    }
+
+    // A member's node_id may point at a hypernode or hyperedge in the SAME
+    // graph as the hyperedge referencing it, or — via a graph-qualified
+    // prefix — one already resolved into crossGraphNodes above.
+    const vizMemberTargetId = (gid, nodeId) => {
+      const ref = vizParseMemberRef(nodeId);
+      if (ref) {
+        const hit = crossGraphNodes.get(`${ref.graphId}::${ref.localId}`);
+        return hit ? { vizId: hit.vizId, targetGid: ref.graphId, isEdge: hit.isEdge, crossHit: hit } : null;
+      }
+      const target = graphData.get(gid);
+      if (target.nodeIdSet.has(nodeId)) return { vizId: `${gid}::${nodeId}`, targetGid: gid, isEdge: false };
+      if (target.hedgeIdSet.has(nodeId)) return { vizId: `${gid}::he::${nodeId}`, targetGid: gid, isEdge: true };
+      return null;
+    };
+
+    // Every node this render will show, keyed by its final viz id — the
+    // single source of truth for "has this id already been created?" so a
+    // node belonging to a directly-selected graph (Pass A below) is never
+    // clobbered or duplicated by a cross-graph stub for the same id (Pass B).
+    const nodesById = new Map();
+    const validMembersByHeid = new Map();
+
+    // Pass A: push every directly-selected graph's own hnodes and henodes —
+    // unconditionally, exactly as before this feature existed — so these
+    // always exist by the time Pass B resolves cross-graph member links,
+    // regardless of which graph happens to reference which.
+    for (const gid of graphIds) {
+      const { rawNodes, edges, nodeIdSet } = graphData.get(gid);
 
       // "Orphan" here means a hypernode never appears as a member of any
       // hyperedge in this graph — computed as its own pass over every edge's
@@ -2139,34 +2316,21 @@ async function renderViz() {
         if (hideOrphanNodes && !referencedHypernodeIds.has(n.id)) return;
         const type = n.type || 'Entity';
         typeCount[type] = (typeCount[type] || 0) + 1;
-        nodes.push({
+        nodesById.set(`${gid}::${n.id}`, {
           id: `${gid}::${n.id}`, kind: 'hnode', label: n.label || n.id, type,
           color: vizColorForType(type), val: 4, graphId: gid, raw: n,
         });
       });
 
-      // A member's node_id may point at either a hypernode or another
-      // hyperedge — hyperedges are first-class and may themselves be members
-      // of a hyperedge (see docs/architecture/hypergraph_ai_design_notes.md:
-      // "HypergraphAI hyperedges are treated as hypernodes") — so resolve
-      // against both id spaces, mapping to whichever viz node id scheme that
-      // target actually uses, before treating a member as unresolvable.
-      const vizMemberTargetId = nodeId => {
-        if (nodeIdSet.has(nodeId)) return `${gid}::${nodeId}`;
-        if (hedgeIdSet.has(nodeId)) return `${gid}::he::${nodeId}`;
-        return null;
-      };
-
       edges.forEach(e => {
         const members = (e.members || []).slice().sort((a, b) => (a.seq || 0) - (b.seq || 0));
         const flavor = e.flavor || 'hub';
         const validMembers = members
-          .map(m => ({ ...m, vizTargetId: vizMemberTargetId(m.node_id) }))
-          .filter(m => m.vizTargetId);
-        hyperedgeCount++;
+          .map(m => ({ ...m, target: vizMemberTargetId(gid, m.node_id) }))
+          .filter(m => m.target);
         flavorSeen.add(flavor);
         const heid = `${gid}::he::${e.id || e.hyperkey}`;
-        const membersId = `${heid}::members`;
+        validMembersByHeid.set(heid, validMembers);
 
         // edge:<id> (node) — the hyperedge's own identity, matching the top box
         // in docs/design/hypergraphai-hyperedge-virtual-3d-graph-via-representation.png.
@@ -2174,15 +2338,36 @@ async function renderViz() {
         // any OTHER hyperedge referencing this one as a member has a real node
         // to link to, and so a hyperedge — a first-class element — is never
         // silently hidden just because its own members didn't resolve.
-        nodes.push({
+        nodesById.set(heid, {
           id: heid, kind: 'henode', label: e.label || e.id || e.hyperkey || '(hyperedge)',
           flavor, color: VIZ_STRUCTURAL_COLOR, val: Math.min(6 + validMembers.length, 16),
           arity: validMembers.length, relation: e.relation, graphId: gid, raw: e,
         });
+      });
+    }
+
+    // Pass B: build each directly-selected graph's members-node + relation
+    // links. A member's target may not be in nodesById yet — either it's a
+    // genuine cross-graph reference (see vizParseMemberRef), or a directly-
+    // selected graph's own node that Pass A skipped (e.g. hidden by the
+    // orphan-nodes toggle despite being referenced from elsewhere) — either
+    // way it's materialized here as a leaf node carrying its true origin
+    // graphId, deduped by id across every hyperedge anywhere that references
+    // it. Its own further member structure — if it's itself a hyperedge —
+    // is intentionally not expanded; only the referenced node itself is
+    // visualized.
+    for (const gid of graphIds) {
+      const { edges } = graphData.get(gid);
+      edges.forEach(e => {
+        const validMembers = validMembersByHeid.get(`${gid}::he::${e.id || e.hyperkey}`);
         if (!validMembers.length) return;
 
+        const heid = `${gid}::he::${e.id || e.hyperkey}`;
+        const membersId = `${heid}::members`;
+        const flavor = e.flavor || 'hub';
+
         // "members" (virtual node)
-        nodes.push({
+        nodesById.set(membersId, {
           id: membersId, kind: 'members', label: 'members', color: VIZ_STRUCTURAL_COLOR,
           val: 1.6, graphId: gid, raw: null, parentRaw: e,
         });
@@ -2196,8 +2381,33 @@ async function renderViz() {
         // hnode, or another hyperedge's henode). The first member (lowest seq)
         // gets a distinct blue so it stands out from the rest.
         validMembers.forEach((m, i) => {
+          if (!nodesById.has(m.target.vizId) && m.target.crossHit) {
+            const hit = m.target.crossHit;
+            if (m.target.isEdge) {
+              nodesById.set(hit.vizId, {
+                id: hit.vizId, kind: 'henode',
+                label: hit.raw.label || hit.raw.id || hit.raw.hyperkey || '(hyperedge)',
+                flavor: hit.raw.flavor || 'hub', color: VIZ_STRUCTURAL_COLOR, val: 6,
+                arity: 0, relation: hit.raw.relation, graphId: m.target.targetGid,
+                raw: hit.raw, crossGraph: true,
+              });
+              flavorSeen.add(hit.raw.flavor || 'hub');
+            } else {
+              const type = hit.raw.type || 'Entity';
+              typeCount[type] = (typeCount[type] || 0) + 1;
+              nodesById.set(hit.vizId, {
+                id: hit.vizId, kind: 'hnode', label: hit.raw.label || hit.raw.id, type,
+                color: vizColorForType(type), val: 4, graphId: m.target.targetGid,
+                raw: hit.raw, crossGraph: true,
+              });
+            }
+          }
+          // Guards against a link pointing at a node id that, for whatever
+          // reason, never actually got created — 3d-force-graph isn't relied
+          // on to tolerate a dangling link reference.
+          if (!nodesById.has(m.target.vizId)) return;
           links.push({
-            source: membersId, target: m.vizTargetId, kind: 'relation',
+            source: membersId, target: m.target.vizId, kind: 'relation',
             label: e.relation || '', seq: m.seq,
             color: i === 0 ? VIZ_LINK_FIRST_MEMBER_COLOR : VIZ_LINK_RELATION_COLOR, raw: e,
           });
@@ -2205,17 +2415,37 @@ async function renderViz() {
       });
     }
 
+    const nodes = [...nodesById.values()];
+
+    if (focusId && !focusFound) {
+      toast(`No hyperedge or hypernode found with id "${focusId}" in the selected hypergraph(s)`, 'warning');
+    }
+
+    // Pin the focus element at the scene origin — fx/fy/fz makes d3-force
+    // treat it as fixed rather than just seeding its starting position, so
+    // the simulation settles everything else around it instead of it
+    // drifting away from the origin as forces are applied.
+    if (focusVizNodeId) {
+      const focusNode = nodes.find(n => n.id === focusVizNodeId);
+      if (focusNode) {
+        focusNode.x = focusNode.y = focusNode.z = 0;
+        focusNode.fx = focusNode.fy = focusNode.fz = 0;
+      }
+    }
+
     vizAssignCurvature(links);
     State.viz3d.graphData({ nodes, links });
     vizBuildLabelLayer(nodes, links);
     buildVizLegend(typeCount, flavorSeen);
     document.getElementById('viz-stats').textContent =
-      `${nodes.filter(n => n.kind === 'hnode').length} hypernodes · ${hyperedgeCount} hyperedges`;
+      `${nodes.filter(n => n.kind === 'hnode').length} hypernodes · ${nodes.filter(n => n.kind === 'henode').length} hyperedges`;
     if (truncated) toast(`Some graphs exceeded the display limit (${VIZ_FETCH_LIMIT}) — showing a partial view`, 'warning');
     if (!nodes.length) {
       const empty = document.getElementById('viz-empty-state');
       empty.classList.remove('d-none');
-      empty.querySelector('p').textContent = 'No hypernodes found for the selected hypergraph(s).';
+      empty.querySelector('p').textContent = focusId
+        ? `No elements found within ${focusDegree} degree(s) of "${focusId}".`
+        : 'No hypernodes found for the selected hypergraph(s).';
     } else {
       setTimeout(() => State.viz3d?.zoomToFit(600, 60), 500);
     }
@@ -2325,6 +2555,17 @@ document.getElementById('viz-auto-rotate').addEventListener('change', function()
 // display flag like Labels/Media — so, unlike those, this needs a full
 // renderViz() to actually add/remove nodes from 3d-force-graph's dataset.
 document.getElementById('viz-hide-orphans').addEventListener('change', () => {
+  if (State.viz3d) renderViz();
+});
+document.getElementById('btn-viz-focus').addEventListener('click', renderViz);
+document.getElementById('viz-focus-id').addEventListener('keydown', e => {
+  if (e.key === 'Enter') renderViz();
+});
+document.getElementById('viz-focus-degree').addEventListener('change', () => {
+  if (State.viz3d && document.getElementById('viz-focus-id').value.trim()) renderViz();
+});
+document.getElementById('btn-viz-focus-clear').addEventListener('click', () => {
+  document.getElementById('viz-focus-id').value = '';
   if (State.viz3d) renderViz();
 });
 document.getElementById('viz-show-labels').addEventListener('change', function() {
