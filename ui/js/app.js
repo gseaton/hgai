@@ -2366,9 +2366,12 @@ async function renderViz() {
         const membersId = `${heid}::members`;
         const flavor = e.flavor || 'hub';
 
-        // "members" (virtual node)
+        // "members" (virtual node) — colored to match the flavor-typed
+        // "hyperedge" link feeding into it, so the hub visually continues
+        // that link's color rather than reading as a separate element.
         nodesById.set(membersId, {
-          id: membersId, kind: 'members', label: 'members', color: VIZ_STRUCTURAL_COLOR,
+          id: membersId, kind: 'members', label: 'members',
+          color: VIZ_FLAVOR_LINK_COLOR[flavor] || VIZ_STRUCTURAL_COLOR,
           val: 1.6, graphId: gid, raw: null, parentRaw: e,
         });
         // "hyperedge" (virtual edge): hyperedge-node -> members-node, typed
