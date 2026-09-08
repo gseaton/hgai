@@ -616,6 +616,7 @@ async function loadNodes() {
           <td class="text-end">
             <button class="btn btn-xs btn-outline-secondary me-1" onclick="viewNode('${n.id}')"><i class="bi bi-eye"></i></button>
             <button class="btn btn-xs btn-outline-success me-1" onclick="editNode('${n.id}')"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-xs btn-outline-primary me-1" title="Clone" onclick="duplicateNode('${n.id}')"><i class="bi bi-copy"></i></button>
             <button class="btn btn-xs btn-outline-danger" onclick="deleteNode('${n.id}')"><i class="bi bi-trash"></i></button>
           </td>`;
         tbody.appendChild(tr);
@@ -1297,11 +1298,14 @@ document.getElementById('node-status-filter').addEventListener('change', () => {
   });
 });
 
-async function openNodeModal(nodeId = null) {
+async function openNodeModal(nodeId = null, cloneFromId = null) {
   const modal = new bootstrap.Modal(document.getElementById('modal-node'));
   const isEdit = !!nodeId;
+  const isClone = !isEdit && !!cloneFromId;
   document.getElementById('node-form-mode').value = isEdit ? 'edit' : 'create';
-  document.getElementById('modal-node-title').textContent = isEdit ? `Edit: ${nodeId}` : 'New Hypernode';
+  document.getElementById('modal-node-title').textContent = isEdit
+    ? `Edit: ${nodeId}`
+    : (isClone ? `Clone of: ${cloneFromId}` : 'New Hypernode');
 
   // Graph field: dropdown on create, read-only display on edit
   const graphSelectRow = document.getElementById('node-graph-select-row');
@@ -1347,7 +1351,30 @@ async function openNodeModal(nodeId = null) {
       nodeDefaultMediaId = n.default_media_id || '';
       renderMediaList('node-media-list', nodeMediaItems);
     } catch {}
-  } else if (!isEdit) {
+  } else if (isClone && State.activeGraphId) {
+    // Pre-populate a fresh create form from the source node's content. This
+    // never saves anything — it's still a "create" (id is editable and left
+    // for the user to set) until Save is explicitly clicked.
+    try {
+      const spaceId = graphSpaceId(State.activeGraphId);
+      const n = spaceId
+        ? await HGAI_API.getSpaceNode(spaceId, State.activeGraphId, cloneFromId)
+        : await HGAI_API.getNode(State.activeGraphId, cloneFromId);
+      document.getElementById('node-id').value = `${n.id}-copy`;
+      document.getElementById('node-id').readOnly = false;
+      document.getElementById('node-label').value = n.label || '';
+      document.getElementById('node-type').value = n.type || 'Entity';
+      document.getElementById('node-description').value = n.description || '';
+      document.getElementById('node-tags').value = (n.tags || []).join(', ');
+      document.getElementById('node-status').value = n.status || 'active';
+      document.getElementById('node-valid-from').value = n.valid_from ? n.valid_from.slice(0,16) : '';
+      document.getElementById('node-valid-to').value = n.valid_to ? n.valid_to.slice(0,16) : '';
+      document.getElementById('node-attributes').value = JSON.stringify(n.attributes || {}, null, 2);
+      nodeMediaItems = (n.media || []).map(m => ({ ...m }));
+      nodeDefaultMediaId = n.default_media_id || '';
+      renderMediaList('node-media-list', nodeMediaItems);
+    } catch (err) { toast(err.message, 'danger'); }
+  } else {
     document.getElementById('form-node').reset();
     document.getElementById('node-id').readOnly = false;
     document.getElementById('node-attributes').value = '{}';
@@ -1360,6 +1387,11 @@ async function openNodeModal(nodeId = null) {
 }
 
 window.editNode = (id) => openNodeModal(id);
+// Named "duplicateNode" (not "cloneNode") because inline onclick handlers
+// resolve identifiers against the element first, and every DOM element
+// already has a native cloneNode() method — that would shadow a global
+// window.cloneNode and silently no-op the button.
+window.duplicateNode = (id) => openNodeModal(null, id);
 window.viewNode = async (id) => {
   const spaceId = graphSpaceId(State.activeGraphId);
   const n = spaceId
@@ -1482,6 +1514,7 @@ async function loadEdges() {
           <td class="text-end">
             <button class="btn btn-xs btn-outline-secondary me-1" onclick="viewEdge('${e.id||e.hyperkey}')"><i class="bi bi-eye"></i></button>
             <button class="btn btn-xs btn-outline-info me-1" onclick="editEdge('${e.id||e.hyperkey}')"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-xs btn-outline-primary me-1" title="Clone" onclick="duplicateEdge('${e.id||e.hyperkey}')"><i class="bi bi-copy"></i></button>
             <button class="btn btn-xs btn-outline-danger" onclick="deleteEdge('${e.id||e.hyperkey}')"><i class="bi bi-trash"></i></button>
           </td>`;
         tbody.appendChild(tr);
@@ -1519,11 +1552,14 @@ function addMemberRow(member = null) {
 
 document.getElementById('btn-add-member').addEventListener('click', () => addMemberRow());
 
-async function openEdgeModal(edgeId = null) {
+async function openEdgeModal(edgeId = null, cloneFromId = null) {
   const modal = new bootstrap.Modal(document.getElementById('modal-edge'));
   const isEdit = !!edgeId;
+  const isClone = !isEdit && !!cloneFromId;
   document.getElementById('edge-form-mode').value = isEdit ? 'edit' : 'create';
-  document.getElementById('modal-edge-title').textContent = isEdit ? `Edit: ${edgeId}` : 'New Hyperedge';
+  document.getElementById('modal-edge-title').textContent = isEdit
+    ? `Edit: ${edgeId}`
+    : (isClone ? `Clone of: ${cloneFromId}` : 'New Hyperedge');
   document.getElementById('edge-members-list').innerHTML = '';
 
   // Graph field: dropdown on create, read-only display on edit
@@ -1571,7 +1607,31 @@ async function openEdgeModal(edgeId = null) {
       edgeDefaultMediaId = e.default_media_id || '';
       renderMediaList('edge-media-list', edgeMediaItems);
     } catch {}
-  } else if (!isEdit) {
+  } else if (isClone && State.activeGraphId) {
+    // Pre-populate a fresh create form from the source hyperedge's content.
+    // This never saves anything — it's still a "create" (id is editable and
+    // left for the user to set) until Save is explicitly clicked.
+    try {
+      const spaceId = graphSpaceId(State.activeGraphId);
+      const e = spaceId
+        ? await HGAI_API.getSpaceEdge(spaceId, State.activeGraphId, cloneFromId)
+        : await HGAI_API.getEdge(State.activeGraphId, cloneFromId);
+      document.getElementById('edge-id').value = e.id ? `${e.id}-copy` : '';
+      document.getElementById('edge-id').readOnly = false;
+      document.getElementById('edge-relation').value = e.relation || '';
+      document.getElementById('edge-label').value = e.label || '';
+      document.getElementById('edge-flavor').value = e.flavor || 'hub';
+      document.getElementById('edge-status').value = e.status || 'active';
+      document.getElementById('edge-tags').value = (e.tags || []).join(', ');
+      document.getElementById('edge-valid-from').value = e.valid_from ? e.valid_from.slice(0,16) : '';
+      document.getElementById('edge-valid-to').value = e.valid_to ? e.valid_to.slice(0,16) : '';
+      document.getElementById('edge-attributes').value = JSON.stringify(e.attributes || {}, null, 2);
+      (e.members || []).forEach(m => addMemberRow(m));
+      edgeMediaItems = (e.media || []).map(m => ({ ...m }));
+      edgeDefaultMediaId = e.default_media_id || '';
+      renderMediaList('edge-media-list', edgeMediaItems);
+    } catch (err) { toast(err.message, 'danger'); }
+  } else {
     document.getElementById('form-edge').reset();
     document.getElementById('edge-id').readOnly = false;
     document.getElementById('edge-attributes').value = '{}';
@@ -1585,6 +1645,7 @@ async function openEdgeModal(edgeId = null) {
 }
 
 window.editEdge = (id) => openEdgeModal(id);
+window.duplicateEdge = (id) => openEdgeModal(null, id);
 window.viewEdge = async (id) => {
   const spaceId = graphSpaceId(State.activeGraphId);
   const e = spaceId
