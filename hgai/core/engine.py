@@ -28,15 +28,44 @@ from hgai_module_storage.filters import (
 
 # ─── Hyperkey Generation ──────────────────────────────────────────────────────
 
-def generate_hyperkey(relation: str, member_node_ids: List[str], hypergraph_id: str) -> str:
+def _normalize_hyperkey_instant(value: Optional[datetime]) -> Optional[str]:
+    """Canonicalize a valid_from/valid_to bound for hashing.
+
+    None (unbounded) normalizes to the JSON `null` produced by hashing a Python
+    None, not an empty string — so an explicit-but-empty value could never be
+    mistaken for "unbounded". A concrete datetime is normalized to UTC before
+    formatting so the same instant always hashes the same way regardless of
+    which timezone it was originally expressed in.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
+
+
+def generate_hyperkey(
+    relation: str,
+    member_node_ids: List[str],
+    hypergraph_id: str,
+    valid_from: Optional[datetime] = None,
+    valid_to: Optional[datetime] = None,
+) -> str:
     """Generate a deterministic SHA-256 hyperkey for a hyperedge.
 
-    The key is based on: normalized relation + sorted member node IDs + hypergraph ID.
+    The key is based on: normalized relation + sorted member node IDs +
+    hypergraph ID + the edge's validity window (valid_from/valid_to). Including
+    the validity window lets the same relation/member-set exist as multiple,
+    distinct hyperedges as long as they represent different points in time
+    (e.g. "moe, larry, shemp" as a lineup during two separate eras) while still
+    rejecting an exact duplicate (same relation, members, AND window).
     """
     normalized = {
         "relation": relation.lower().strip(),
         "graph": hypergraph_id,
         "members": sorted(member_node_ids),
+        "valid_from": _normalize_hyperkey_instant(valid_from),
+        "valid_to": _normalize_hyperkey_instant(valid_to),
     }
     payload = json.dumps(normalized, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode()).hexdigest()[:32]
@@ -253,7 +282,9 @@ async def create_hyperedge(
 
     member_ids = [m["node_id"] for m in doc.get("members", [])]
     ref = _hypergraph_ref(graph_id, space_id)
-    hyperkey = generate_hyperkey(doc["relation"], member_ids, ref)
+    hyperkey = generate_hyperkey(
+        doc["relation"], member_ids, ref, doc.get("valid_from"), doc.get("valid_to")
+    )
 
     if not doc.get("id"):
         doc["id"] = hyperkey
@@ -279,6 +310,28 @@ async def get_hyperedge(
     return await get_storage().hyperedges.get_by_id_or_hyperkey(
         hypergraph_id=_hypergraph_ref(graph_id, space_id),
         edge_id=edge_id,
+    )
+
+
+async def find_duplicate_hyperedge(
+    graph_id: str,
+    relation: str,
+    member_ids: List[str],
+    valid_from: Optional[datetime] = None,
+    valid_to: Optional[datetime] = None,
+    space_id: Optional[str] = None,
+) -> Optional[HyperedgeInDB]:
+    """Look up an existing hyperedge with the same identity a new one would get.
+
+    Lets callers (API routers) turn what would otherwise be a raw DB
+    hyperkey_graph_unique constraint violation into a clean 409 before ever
+    attempting the insert — the same courtesy already given to `id` collisions.
+    """
+    ref = _hypergraph_ref(graph_id, space_id)
+    hyperkey = generate_hyperkey(relation, member_ids, ref, valid_from, valid_to)
+    return await get_storage().hyperedges.get_by_id_or_hyperkey(
+        hypergraph_id=ref,
+        edge_id=hyperkey,
     )
 
 
@@ -315,13 +368,15 @@ async def update_hyperedge(
     ref = _hypergraph_ref(graph_id, space_id)
     dumped = {k: v for k, v in data.model_dump(exclude_none=True).items() if k != "version"}
 
-    # Regenerate hyperkey if members or relation changed
+    # Regenerate hyperkey if relation, members, or the validity window changed
     existing = await get_hyperedge(graph_id, edge_id, space_id=space_id)
     if existing:
         relation = dumped.get("relation", existing.relation)
         members = dumped.get("members", [m.model_dump() for m in existing.members])
         member_ids = [m["node_id"] if isinstance(m, dict) else m.node_id for m in members]
-        dumped["hyperkey"] = generate_hyperkey(relation, member_ids, ref)
+        valid_from = dumped.get("valid_from", existing.valid_from)
+        valid_to = dumped.get("valid_to", existing.valid_to)
+        dumped["hyperkey"] = generate_hyperkey(relation, member_ids, ref, valid_from, valid_to)
 
     if "default_media_id" in dumped:
         effective_media = dumped.get("media", existing.media if existing else [])

@@ -62,6 +62,21 @@ async def create_edge(
                 status_code=409, detail=f"Edge '{data.id}' already exists in graph '{graph_id}'"
             )
 
+    duplicate = await engine.find_duplicate_hyperedge(
+        graph_id,
+        data.relation,
+        [m.node_id for m in data.members],
+        data.valid_from,
+        data.valid_to,
+        space_id=None,
+    )
+    if duplicate:
+        raise HTTPException(
+            status_code=409,
+            detail=f"An identical hyperedge (same relation, members, and validity window) "
+            f"already exists as '{duplicate.id}' in graph '{graph_id}'",
+        )
+
     edge = await engine.create_hyperedge(graph_id, data, created_by=account.username, space_id=None)
     return HyperedgeResponse(**edge.model_dump())
 
