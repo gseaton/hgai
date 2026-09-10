@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-from hgai.models.common import Status, TimestampedModel
+from hgai.models.common import MutationRecord, Status, TimestampedModel
 from hgai.models.media import MediaRef
 
 
@@ -109,6 +109,10 @@ class HyperedgeInDB(HyperedgeBase):
     hypergraph_id: str = Field(..., description="Parent hypergraph ID")
     hyperkey: Optional[str] = Field(
         default=None, description="SHA-256 hyperkey (auto-generated)"
+    )
+    mutations: List[MutationRecord] = Field(
+        default_factory=list,
+        description="Audit trail of create/update mutations (server-managed, not settable via the API)",
     )
 
     class Config:

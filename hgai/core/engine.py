@@ -71,6 +71,87 @@ def generate_hyperkey(
     return hashlib.sha256(payload.encode()).hexdigest()[:32]
 
 
+# ─── Mutation Tracking ────────────────────────────────────────────────────────
+# Every hypernode/hyperedge carries a `mutations` audit trail: one entry per
+# create/update, each with who (`by`), when (`ts`), what kind (`mutation`),
+# and which fields actually changed (`delta`). A candidate entry that would be
+# empty (nothing actually changed) or identical to the most recently recorded
+# entry (same mutation kind + same delta) is never persisted — see
+# `_append_mutation` below.
+
+HYPERNODE_TRACKED_FIELDS = [
+    "label", "type", "description", "tags", "status", "attributes",
+    "valid_from", "valid_to", "media", "default_media_id",
+]
+
+HYPEREDGE_TRACKED_FIELDS = [
+    "relation", "label", "flavor", "members", "description", "tags", "status",
+    "attributes", "valid_from", "valid_to", "skos_broader", "skos_narrower",
+    "skos_related", "media", "default_media_id",
+]
+
+
+def _is_blank(value: Any) -> bool:
+    """True for the "nothing was really provided" sentinel values.
+
+    Used only to keep a create-mutation's delta focused on fields the caller
+    actually populated, instead of every default (None/[]/{}) tracked field.
+    """
+    return value is None or value == [] or value == {} or value == ""
+
+
+def _create_delta(doc: Dict[str, Any], tracked_fields: List[str]) -> List[Dict[str, Any]]:
+    """Delta for a brand-new document: every non-blank tracked field, old=None."""
+    return [
+        {"field": f, "old": None, "new": doc.get(f)}
+        for f in tracked_fields
+        if not _is_blank(doc.get(f))
+    ]
+
+
+def _update_delta(
+    existing_dump: Dict[str, Any], dumped: Dict[str, Any], tracked_fields: List[str]
+) -> List[Dict[str, Any]]:
+    """Delta for an update: only fields the caller supplied AND that actually
+    changed value versus the existing document — a no-op resubmission of an
+    already-current value produces no delta entry for that field."""
+    delta = []
+    for f in tracked_fields:
+        if f not in dumped:
+            continue
+        old = existing_dump.get(f)
+        new = dumped.get(f)
+        if old != new:
+            delta.append({"field": f, "old": old, "new": new})
+    return delta
+
+
+def _append_mutation(
+    existing_mutations: List[Dict[str, Any]],
+    mutation_type: str,
+    delta: List[Dict[str, Any]],
+    by: str,
+) -> List[Dict[str, Any]]:
+    """Return the mutations list with a new entry appended, unless the
+    candidate is redundant — in which case the original list object is
+    returned unchanged (by identity), so callers can detect "nothing to
+    persist" with `result is existing_mutations` instead of a deep compare.
+
+    Redundant means: no fields actually changed (empty delta), or the
+    candidate (mutation kind + delta) is identical to the most recently
+    recorded entry — i.e. the same net change happening again back-to-back.
+    """
+    if not delta:
+        return existing_mutations
+    if existing_mutations:
+        last = existing_mutations[-1]
+        if last.get("mutation") == mutation_type and last.get("delta") == delta:
+            return existing_mutations
+    return existing_mutations + [
+        {"ts": now_utc(), "by": by, "mutation": mutation_type, "delta": delta}
+    ]
+
+
 # ─── Hypergraph Engine ────────────────────────────────────────────────────────
 
 def _hypergraph_ref(graph_id: str, space_id: Optional[str]) -> str:
@@ -175,12 +256,14 @@ async def create_hypernode(
     now = now_utc()
     doc = data.model_dump()
     doc["default_media_id"] = validate_default_media_id(doc.get("default_media_id"), doc.get("media"))
+    create_delta = _create_delta(doc, HYPERNODE_TRACKED_FIELDS)
     doc.update(
         hypergraph_id=_hypergraph_ref(graph_id, space_id),
         system_created=now,
         system_updated=now,
         created_by=created_by,
         version=1,
+        mutations=_append_mutation([], "create", create_delta, created_by),
     )
     node = await get_storage().hypernodes.create(doc)
     await get_storage().hypergraphs.increment_counts(graph_id, space_id, node_delta=1)
@@ -231,6 +314,12 @@ async def update_hypernode(
     if "default_media_id" in dumped:
         effective_media = dumped.get("media", existing.media if existing else [])
         dumped["default_media_id"] = validate_default_media_id(dumped["default_media_id"], effective_media)
+
+    existing_dump = existing.model_dump() if existing else {}
+    existing_mutations = existing_dump.get("mutations", [])
+    update_delta = _update_delta(existing_dump, dumped, HYPERNODE_TRACKED_FIELDS)
+    new_mutations = _append_mutation(existing_mutations, "mutate", update_delta, updated_by)
+
     patch = HypernodePatch(
         label=dumped.get("label"),
         description=dumped.get("description"),
@@ -242,6 +331,7 @@ async def update_hypernode(
         valid_to=dumped.get("valid_to"),
         media=dumped.get("media"),
         default_media_id=dumped.get("default_media_id"),
+        mutations=new_mutations if new_mutations is not existing_mutations else None,
         updated_by=updated_by,
     )
     result = await get_storage().hypernodes.update(
@@ -289,6 +379,7 @@ async def create_hyperedge(
     if not doc.get("id"):
         doc["id"] = hyperkey
 
+    create_delta = _create_delta(doc, HYPEREDGE_TRACKED_FIELDS)
     doc.update(
         hypergraph_id=ref,
         hyperkey=hyperkey,
@@ -296,6 +387,7 @@ async def create_hyperedge(
         system_updated=now,
         created_by=created_by,
         version=1,
+        mutations=_append_mutation([], "create", create_delta, created_by),
     )
     edge = await get_storage().hyperedges.create(doc)
     await get_storage().hypergraphs.increment_counts(graph_id, space_id, edge_delta=1)
@@ -382,6 +474,11 @@ async def update_hyperedge(
         effective_media = dumped.get("media", existing.media if existing else [])
         dumped["default_media_id"] = validate_default_media_id(dumped["default_media_id"], effective_media)
 
+    existing_dump = existing.model_dump() if existing else {}
+    existing_mutations = existing_dump.get("mutations", [])
+    update_delta = _update_delta(existing_dump, dumped, HYPEREDGE_TRACKED_FIELDS)
+    new_mutations = _append_mutation(existing_mutations, "mutate", update_delta, updated_by)
+
     patch = HyperedgePatch(
         label=dumped.get("label"),
         description=dumped.get("description"),
@@ -398,6 +495,7 @@ async def update_hyperedge(
         skos_related=dumped.get("skos_related"),
         media=dumped.get("media"),
         default_media_id=dumped.get("default_media_id"),
+        mutations=new_mutations if new_mutations is not existing_mutations else None,
         updated_by=updated_by,
     )
     # Pass the regenerated hyperkey as an extra field to the store.
@@ -471,6 +569,7 @@ async def import_hypergraph_data(
             node_data.pop("hypergraph_id", None)
             node_data.pop("system_created", None)
             node_data.pop("system_updated", None)
+            node_data.pop("mutations", None)
             node_create = HypernodeCreate(**node_data)
             await create_hypernode(graph_id, node_create, created_by, space_id=space_id)
             imported["nodes"] += 1
@@ -483,6 +582,7 @@ async def import_hypergraph_data(
             edge_data.pop("system_created", None)
             edge_data.pop("system_updated", None)
             edge_data.pop("hyperkey", None)
+            edge_data.pop("mutations", None)
             edge_create = HyperedgeCreate(**edge_data)
             await create_hyperedge(graph_id, edge_create, created_by, space_id=space_id)
             imported["edges"] += 1

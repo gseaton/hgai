@@ -49,6 +49,7 @@ class HypernodePatch:
     valid_to: Optional[datetime] = None
     media: Optional[List[Any]] = None
     default_media_id: Optional[str] = None
+    mutations: Optional[List[Any]] = None
     updated_by: str = ""
 
 
@@ -81,6 +82,7 @@ class HyperedgePatch:
     skos_related: Optional[List[str]] = None
     media: Optional[List[Any]] = None
     default_media_id: Optional[str] = None
+    mutations: Optional[List[Any]] = None
     updated_by: str = ""
 
 

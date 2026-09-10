@@ -36,6 +36,31 @@ class TimestampedModel(HgaiBaseModel):
     version: int = Field(default=1)
 
 
+class MutationDelta(BaseModel):
+    """One field-level change within a MutationRecord."""
+
+    field: str
+    old: Any = None
+    new: Any = None
+
+
+class MutationRecord(BaseModel):
+    """One entry in a hypernode's/hyperedge's `mutations` audit trail.
+
+    `mutation` is not a strict enum on purpose — "create" and "mutate" are the
+    two kinds produced today, but the shape leaves room to grow (e.g. a future
+    "restore" kind) without a schema migration.
+    """
+
+    ts: datetime
+    by: str
+    mutation: str
+    delta: List[MutationDelta] = Field(default_factory=list)
+
+    class Config:
+        populate_by_name = True
+
+
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 

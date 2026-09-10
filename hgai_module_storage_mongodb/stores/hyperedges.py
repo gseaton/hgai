@@ -87,6 +87,7 @@ class MongoHyperedgeStore(HyperedgeStore):
             "label", "description", "relation", "flavor", "status", "tags",
             "attributes", "members", "valid_from", "valid_to",
             "skos_broader", "skos_narrower", "skos_related", "media", "default_media_id",
+            "mutations",
         ):
             val = getattr(patch, attr, None)
             if val is not None:

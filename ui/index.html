@@ -972,12 +972,21 @@
           </div>
 
           <!-- ── Section: Attributes ── -->
-          <div class="node-form-section node-form-section-last">
+          <div class="node-form-section">
             <div class="node-form-section-header">
               Attributes
               <span class="node-form-section-hint">— arbitrary JSON key-value metadata</span>
             </div>
             <textarea id="node-attributes" class="form-control font-monospace node-attributes-editor" rows="7" placeholder='{"key": "value"}'>{}</textarea>
+          </div>
+
+          <!-- ── Section: History (edit only, read-only) ── -->
+          <div class="node-form-section node-form-section-last d-none" id="node-history-section">
+            <div class="node-form-section-header">
+              History
+              <span class="node-form-section-hint">— read-only audit trail</span>
+            </div>
+            <div id="node-mutation-history"></div>
           </div>
 
         </form>
@@ -1134,12 +1143,21 @@
           </div>
 
           <!-- ── Section: Attributes ── -->
-          <div class="node-form-section node-form-section-last">
+          <div class="node-form-section">
             <div class="node-form-section-header">
               Attributes
               <span class="node-form-section-hint">— arbitrary JSON key-value metadata</span>
             </div>
             <textarea id="edge-attributes" class="form-control font-monospace node-attributes-editor" rows="5" placeholder='{"key": "value"}'>{}</textarea>
+          </div>
+
+          <!-- ── Section: History (edit only, read-only) ── -->
+          <div class="node-form-section node-form-section-last d-none" id="edge-history-section">
+            <div class="node-form-section-header">
+              History
+              <span class="node-form-section-hint">— read-only audit trail</span>
+            </div>
+            <div id="edge-mutation-history"></div>
           </div>
 
         </form>
@@ -1537,6 +1555,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
+        <div id="modal-detail-history" class="d-none mb-3"></div>
         <pre id="modal-detail-content" class="bg-dark text-light p-3 rounded" style="font-size:0.8rem;max-height:70vh;overflow:auto;"></pre>
       </div>
     </div>

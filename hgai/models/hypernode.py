@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
-from hgai.models.common import Status, TimestampedModel
+from hgai.models.common import MutationRecord, Status, TimestampedModel
 from hgai.models.media import MediaRef
 
 
@@ -57,6 +57,10 @@ class HypernodeInDB(HypernodeBase):
     """Hypernode as stored in MongoDB."""
 
     hypergraph_id: str = Field(..., description="Parent hypergraph ID")
+    mutations: List[MutationRecord] = Field(
+        default_factory=list,
+        description="Audit trail of create/update mutations (server-managed, not settable via the API)",
+    )
 
     class Config:
         populate_by_name = True

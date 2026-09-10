@@ -81,9 +81,61 @@ function parseJSON(str, fallback = {}) {
   try { return JSON.parse(str || '{}'); } catch { return fallback; }
 }
 
+// Renders a value inside a mutation delta (the old/new sides of a field
+// change) for display — objects/arrays are shown as compact JSON, missing
+// values as an em dash, so a diff reads at a glance without truncation.
+function fmtMutationValue(v) {
+  if (v === null || v === undefined) return '<span class="text-muted">—</span>';
+  if (typeof v === 'object') return `<code>${escapeHtml(JSON.stringify(v))}</code>`;
+  return escapeHtml(String(v));
+}
+
+// Renders a hypernode/hyperedge's `mutations` audit trail (one entry per
+// create/update, each carrying who/when/what-kind and the field-level delta)
+// as a read-only, human-readable timeline, newest first, into `containerId`.
+// `showHeading` controls whether an own "Mutation History (N)" heading (and
+// the container's own d-none visibility) is rendered — turned off when the
+// caller's surrounding section already provides a heading, e.g. the edit
+// modals' dedicated "History" section.
+function renderMutationHistory(mutations, containerId = 'modal-detail-history', { showHeading = true } = {}) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  if (!mutations || !mutations.length) {
+    if (showHeading) {
+      container.innerHTML = '';
+      container.classList.add('d-none');
+    } else {
+      container.innerHTML = '<div class="small text-muted">No mutations recorded yet.</div>';
+    }
+    return;
+  }
+  if (showHeading) container.classList.remove('d-none');
+  const items = mutations.slice().reverse().map(m => {
+    const badgeClass = m.mutation === 'create' ? 'bg-success' : 'bg-primary';
+    const deltaRows = (m.delta || []).map(d => `
+      <div class="small">
+        <strong>${escapeHtml(d.field)}</strong>:
+        ${fmtMutationValue(d.old)} <i class="bi bi-arrow-right mx-1"></i> ${fmtMutationValue(d.new)}
+      </div>`).join('') || '<div class="small text-muted">No field changes</div>';
+    return `
+      <div class="border rounded p-2 mb-2">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <span class="badge ${badgeClass} text-uppercase">${escapeHtml(m.mutation)}</span>
+          <small class="text-muted">${fmtDate(m.ts)} · ${escapeHtml(m.by || '—')}</small>
+        </div>
+        ${deltaRows}
+      </div>`;
+  }).join('');
+  const heading = showHeading
+    ? `<div class="fw-semibold mb-2"><i class="bi bi-clock-history me-1"></i>Mutation History (${mutations.length})</div>`
+    : '';
+  container.innerHTML = `${heading}<div style="max-height:240px;overflow:auto;">${items}</div>`;
+}
+
 function showDetail(title, obj) {
   document.getElementById('modal-detail-title').textContent = title;
   document.getElementById('modal-detail-content').textContent = JSON.stringify(obj, null, 2);
+  renderMutationHistory(obj && obj.mutations);
   new bootstrap.Modal(document.getElementById('modal-detail')).show();
 }
 
@@ -1307,6 +1359,12 @@ async function openNodeModal(nodeId = null, cloneFromId = null) {
     ? `Edit: ${nodeId}`
     : (isClone ? `Clone of: ${cloneFromId}` : 'New Hypernode');
 
+  // History is a read-only audit trail of an existing record — only shown
+  // once we've actually fetched one to edit, never for create/clone (a clone
+  // is a brand-new record with no history of its own yet).
+  document.getElementById('node-history-section').classList.add('d-none');
+  document.getElementById('node-mutation-history').innerHTML = '';
+
   // Graph field: dropdown on create, read-only display on edit
   const graphSelectRow = document.getElementById('node-graph-select-row');
   const graphDisplayRow = document.getElementById('node-graph-display-row');
@@ -1350,6 +1408,8 @@ async function openNodeModal(nodeId = null, cloneFromId = null) {
       nodeMediaItems = (n.media || []).map(m => ({ ...m }));
       nodeDefaultMediaId = n.default_media_id || '';
       renderMediaList('node-media-list', nodeMediaItems);
+      document.getElementById('node-history-section').classList.remove('d-none');
+      renderMutationHistory(n.mutations, 'node-mutation-history', { showHeading: false });
     } catch {}
   } else if (isClone && State.activeGraphId) {
     // Pre-populate a fresh create form from the source node's content. This
@@ -1562,6 +1622,12 @@ async function openEdgeModal(edgeId = null, cloneFromId = null) {
     : (isClone ? `Clone of: ${cloneFromId}` : 'New Hyperedge');
   document.getElementById('edge-members-list').innerHTML = '';
 
+  // History is a read-only audit trail of an existing record — only shown
+  // once we've actually fetched one to edit, never for create/clone (a clone
+  // is a brand-new record with no history of its own yet).
+  document.getElementById('edge-history-section').classList.add('d-none');
+  document.getElementById('edge-mutation-history').innerHTML = '';
+
   // Graph field: dropdown on create, read-only display on edit
   const graphSelectRow = document.getElementById('edge-graph-select-row');
   const graphDisplayRow = document.getElementById('edge-graph-display-row');
@@ -1606,6 +1672,8 @@ async function openEdgeModal(edgeId = null, cloneFromId = null) {
       edgeMediaItems = (e.media || []).map(m => ({ ...m }));
       edgeDefaultMediaId = e.default_media_id || '';
       renderMediaList('edge-media-list', edgeMediaItems);
+      document.getElementById('edge-history-section').classList.remove('d-none');
+      renderMutationHistory(e.mutations, 'edge-mutation-history', { showHeading: false });
     } catch {}
   } else if (isClone && State.activeGraphId) {
     // Pre-populate a fresh create form from the source hyperedge's content.
