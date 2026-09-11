@@ -316,6 +316,7 @@ async def execute_hql(hql_text: str, use_cache: bool = True) -> HQLResult:
     limit = hql.get("limit", 500)
     skip = hql.get("skip", 0)
     distinct = hql.get("distinct", False)
+    infer = hql.get("infer", False)
 
     # Parse point-in-time
     pit: Optional[datetime] = None
@@ -375,6 +376,72 @@ async def execute_hql(hql_text: str, use_cache: bool = True) -> HQLResult:
                 projected = _project_fields(doc, return_fields)
                 all_items.append(projected)
 
+            # infer: true synthesizes inverse-of/symmetric/superproperty-
+            # projection edges from the hyperedges just matched, via
+            # whatever axiom hyperedges actually exist in these graphs.
+            # Computed live, at read time, and never persisted — see
+            # hgai/core/inference.py. Opt-in only: a plain query with no
+            # `infer` flag never calls into the reasoning engine at all.
+            if infer:
+                from hgai.core.inference import expand_edge_closure
+                inferred = await expand_edge_closure(docs, graph_ids, pit=pit)
+                for doc in inferred:
+                    doc["_entity_type"] = "hyperedge"
+                    projected = _project_fields(doc, return_fields)
+                    all_items.append(projected)
+
+            # infer: true also runs transitive-closure reachability when the
+            # match gives a relation plus nodes: a single node asks "what's
+            # transitively reachable from here" (closure mode, one
+            # synthesized edge per reached node); exactly two nodes asks
+            # "are these two connected, and how" (path mode, one synthesized
+            # edge carrying the hop-by-hop hyperedge path). Self-gated
+            # inside check_transitive/walk_closure on an owl:transitive
+            # axiom — nothing fires for a relation nobody declared
+            # transitive, replacing the old flavor:"transitive" literal
+            # filter (removed along with that EdgeFlavor value), which
+            # never actually did this. A 1-hop result is skipped in both
+            # modes: reachable-in-one-hop is definitionally already a
+            # literal stored edge (that's the only way to reach it), so
+            # presenting it again tagged `_inferred` would just duplicate
+            # something already in the plain match results above.
+            if infer and match.get("relation") and match.get("nodes"):
+                from hgai.core.inference import check_transitive, get_axiom_edges, walk_closure
+                node_ids = match["nodes"] if isinstance(match["nodes"], list) else [match["nodes"]]
+                relation = match["relation"]
+
+                if len(node_ids) == 1:
+                    if await get_axiom_edges(relation, "owl:transitive", graph_ids, pit=pit):
+                        reached = await walk_closure(node_ids[0], relation, graph_ids, direction="forward", pit=pit)
+                        for node_id, (_edge_id, predecessor) in reached.items():
+                            if predecessor == node_ids[0]:
+                                continue  # 1-hop — already a literal edge, not a new derived fact
+                            doc = {
+                                "relation": relation,
+                                "flavor": "hub",
+                                "members": [{"node_id": node_ids[0], "seq": 0}, {"node_id": node_id, "seq": 1}],
+                                "_entity_type": "hyperedge",
+                                "_inferred": True,
+                                "_transitive": True,
+                            }
+                            all_items.append(_project_fields(doc, return_fields))
+
+                elif len(node_ids) == 2:
+                    path = await check_transitive(
+                        relation, graph_ids, node_ids[0], node_ids[1], mode="path", pit=pit
+                    )
+                    if len(path) > 1:  # a 1-hop path is already a literal edge — nothing new to show
+                        doc = {
+                            "relation": relation,
+                            "flavor": "hub",
+                            "members": [{"node_id": node_ids[0], "seq": 0}, {"node_id": node_ids[1], "seq": 1}],
+                            "_entity_type": "hyperedge",
+                            "_inferred": True,
+                            "_transitive": True,
+                            "_transitive_path": path,
+                        }
+                        all_items.append(_project_fields(doc, return_fields))
+
     items = all_items
 
     # DISTINCT — deduplicate by id when available, otherwise by full row content
@@ -407,6 +474,7 @@ async def execute_hql(hql_text: str, use_cache: bool = True) -> HQLResult:
         "match_type": match_type,
         "pit": pit.isoformat() if pit else None,
         "distinct": distinct,
+        "infer": infer,
         "cached": False,
         **agg_results,
     }

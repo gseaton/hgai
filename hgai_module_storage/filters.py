@@ -121,6 +121,7 @@ class TransitiveSearchFilter:
     hypergraph_ids: List[str]
     relation: str
     member_node_ids: List[str]  # find edges containing any of these nodes
+    pit: Optional[datetime] = None  # only edges valid at this instant (None = current/no bound)
 
 
 @dataclass

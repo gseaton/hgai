@@ -158,6 +158,7 @@ function showScreen(name) {
   const titles = {
     dashboard: 'Dashboard', graphs: 'Hypergraphs', nodes: 'Hypernodes',
     edges: 'Hyperedges', media: 'Media', viz: 'Visualize', query: 'HQL Query', shql: 'SHQL Query',
+    'project-inference': 'Project Inference',
     spaces: 'Spaces', accounts: 'Accounts', meshes: 'Meshes', system: 'System',
   };
   document.getElementById('topbar-screen-title').textContent = titles[name] || name;
@@ -173,6 +174,7 @@ function showScreen(name) {
     viz: loadVizScreen,
     query: initQueryEditor,
     shql: initShqlEditor,
+    'project-inference': loadProjectInferenceScreen,
     spaces: loadSpaces,
     accounts: loadAccounts,
     meshes: loadMeshes,
@@ -1809,19 +1811,22 @@ const VIZ_TYPE_PALETTE = ['#4f46e5','#059669','#0891b2','#d97706','#dc2626','#7c
 // link is always "rel:<relation>" in amber. Color encodes structural role, not the specific
 // flavor/relation value — that's carried in the label text instead.
 // The hyperedge->members link is colored by the hyperedge's flavor, so the
-// topology pattern it implies (hub/symmetric/direct/...) reads at a glance.
+// topology pattern it implies (hub/symmetric) reads at a glance.
 const VIZ_FLAVOR_LINK_COLOR = {
   hub: '#f97316',                 // orange
   symmetric: '#22c55e',           // green
-  direct: '#06b6d4',              // cyan
-  transitive: '#8b5cf6',          // violet
-  'inverse-transitive': '#f43f5e', // rose
 };
 const VIZ_LINK_RELATION_COLOR = '#f59e0b';
 const VIZ_LINK_FIRST_MEMBER_COLOR = '#3b82f6';
 const VIZ_DIM_NODE_COLOR = '#2a2a3d';
 const VIZ_DIM_LINK_COLOR = '#20202f';
 const VIZ_STRUCTURAL_COLOR = '#9ca3af';
+// A single distinct color for every node/link belonging to an inferred fact
+// (see hgai/core/inference.py) — deliberately not reusing any flavor/relation
+// color, so "this was computed live, never persisted" reads at a glance
+// regardless of the underlying relation's flavor. Opt-in via "Show inferred
+// edges" — never rendered unless explicitly requested.
+const VIZ_INFERRED_COLOR = '#c084fc';
 const VIZ_FETCH_LIMIT = 500;
 // Must match the .nodeRelSize() call in initViz3D() — kept as one constant so
 // thumbnail sizing (vizSphereRadius) can never drift out of sync with the
@@ -2138,7 +2143,13 @@ function initViz3D() {
     .nodeVal(n => n.val)
     .nodeColor(n => n._dim ? VIZ_DIM_NODE_COLOR : n.color)
     .nodeLabel(n => {
-      if (n.kind === 'members') return `<div>members <span style="opacity:.6">(virtual)</span></div>`;
+      // Computed live via inverse-of/symmetric/superproperty axioms, never
+      // persisted (see hgai/core/inference.py) — called out on every part
+      // of an inferred edge's complex, not just the henode, since the
+      // members-node and relation-links are equally synthetic.
+      const inferredNote = n._inferred
+        ? `<br/><span style="opacity:.6">⚡ inferred — computed live, not persisted</span>` : '';
+      if (n.kind === 'members') return `<div>members <span style="opacity:.6">(virtual)</span>${inferredNote}</div>`;
       // A cross-graph member (see vizParseMemberRef) is rendered as a leaf —
       // its own member structure isn't expanded — so showing "0 members"
       // would misrepresent it; an explicit origin-graph note is clearer.
@@ -2146,7 +2157,7 @@ function initViz3D() {
         ? `<br/><span style="opacity:.6">↳ external reference · graph ${vizEsc(n.graphId)}</span>` : '';
       if (n.kind === 'henode') {
         const arityNote = n.crossGraph ? '' : ` · ${n.arity} member${n.arity === 1 ? '' : 's'}`;
-        return `<div>${vizEsc(n.label)}<br/><span style="opacity:.6">${vizEsc(n.relation)} · flavor:${vizEsc(n.flavor)}${arityNote}</span>${originNote}</div>`;
+        return `<div>${vizEsc(n.label)}<br/><span style="opacity:.6">${vizEsc(n.relation)} · flavor:${vizEsc(n.flavor)}${arityNote}</span>${originNote}${inferredNote}</div>`;
       }
       return `<div>${vizEsc(n.label)}<br/><span style="opacity:.6">${vizEsc(n.type)}</span>${originNote}</div>`;
     })
@@ -2169,6 +2180,9 @@ function initViz3D() {
           hyperedge_id: node.parentRaw?.id || node.parentRaw?.hyperkey,
           relation: node.parentRaw?.relation,
           member_count: (node.parentRaw?.members || []).length,
+          _inferred: node._inferred || undefined,
+          _source_edge: node._inferred ? node.parentRaw?._source_edge : undefined,
+          _axiom: node._inferred ? node.parentRaw?._axiom : undefined,
         });
       } else {
         vizShowDetail(node.raw);
@@ -2180,6 +2194,9 @@ function initViz3D() {
           virtual: true,
           note: 'Structural link connecting the hyperedge node to its virtual members node.',
           hyperedge_id: link.parentRaw?.id || link.parentRaw?.hyperkey,
+          _inferred: link._inferred || undefined,
+          _source_edge: link._inferred ? link.parentRaw?._source_edge : undefined,
+          _axiom: link._inferred ? link.parentRaw?._axiom : undefined,
         });
       } else {
         vizShowDetail(link.raw);
@@ -2223,6 +2240,26 @@ async function fetchGraphElements(graphId) {
     nodes: nodesResp.items || [], nodesTotal: nodesResp.total || 0,
     edges: edgesResp.items || [], edgesTotal: edgesResp.total || 0,
   };
+}
+
+// Inferred edges (inverse-of / symmetric / superproperty expansion, see
+// hgai/core/inference.py) don't exist in the hyperedges collection — they're
+// computed live — so they can't come from fetchGraphElements' plain listEdges
+// call. Runs the same `infer: true` HQL mechanism the Query (HQL) screen
+// exposes, scoped to every hyperedge in the graph (no relation filter), and
+// keeps only the synthesized (`_inferred: true`) results.
+//
+// Deliberately does NOT also request transitive-closure reachability
+// (HQL's `match.nodes` + `infer: true` combination) — that answers "is A
+// connected to B", a targeted question with an explicit start/end pair, not
+// "show me everything," so it doesn't fit a whole-graph visualization toggle
+// the way axiom expansion does. Use Query (HQL)/Query (SHQL) for that.
+async function fetchInferredEdges(graphId) {
+  const hql = `hql:\n  from: ${graphId}\n  match:\n    type: hyperedge\n  infer: true\n  return:\n    - relation\n    - members\n    - flavor\n    - "_inferred"\n    - "_source_edge"\n    - "_axiom"\n`;
+  const result = await HGAI_API.runQuery(hql, false);
+  return (result.items || [])
+    .filter(it => it._inferred)
+    .map((it, i) => ({ ...it, id: `_inferred::${graphId}::${i}`, flavor: it.flavor || 'hub' }));
 }
 
 // Everything one semantic step away from `id` (a raw, unprefixed hypernode or
@@ -2329,6 +2366,14 @@ async function renderViz() {
     for (const gid of graphIds) {
       let { nodes: rawNodes, edges, nodesTotal, edgesTotal } = await fetchGraphElements(gid);
       if (rawNodes.length < nodesTotal || edges.length < edgesTotal) truncated = true;
+
+      if (document.getElementById('viz-show-inferred').checked) {
+        try {
+          edges = edges.concat(await fetchInferredEdges(gid));
+        } catch (err) {
+          toast(`Inferred edges unavailable for '${gid}': ${err.message}`, 'warning');
+        }
+      }
 
       if (focusId) {
         const neighborhood = vizComputeNeighborhood(rawNodes, edges, focusId, focusDegree);
@@ -2468,9 +2513,12 @@ async function renderViz() {
         // to link to, and so a hyperedge — a first-class element — is never
         // silently hidden just because its own members didn't resolve.
         nodesById.set(heid, {
-          id: heid, kind: 'henode', label: e.label || e.id || e.hyperkey || '(hyperedge)',
-          flavor, color: VIZ_STRUCTURAL_COLOR, val: Math.min(6 + validMembers.length, 16),
+          id: heid, kind: 'henode',
+          label: e.label || (e._inferred ? e.relation : null) || e.id || e.hyperkey || '(hyperedge)',
+          flavor, color: e._inferred ? VIZ_INFERRED_COLOR : VIZ_STRUCTURAL_COLOR,
+          val: Math.min(6 + validMembers.length, 16),
           arity: validMembers.length, relation: e.relation, graphId: gid, raw: e,
+          _inferred: !!e._inferred,
         });
       });
     }
@@ -2498,20 +2546,28 @@ async function renderViz() {
         // "members" (virtual node) — colored to match the flavor-typed
         // "hyperedge" link feeding into it, so the hub visually continues
         // that link's color rather than reading as a separate element.
+        // An inferred edge's whole complex (members-node, hyperedge-link,
+        // every relation-link below) gets the one distinct inferred color
+        // instead, regardless of flavor — the point is "this was computed
+        // live, not persisted," not which flavor it happens to have.
         nodesById.set(membersId, {
           id: membersId, kind: 'members', label: 'members',
-          color: VIZ_FLAVOR_LINK_COLOR[flavor] || VIZ_STRUCTURAL_COLOR,
-          val: 1.6, graphId: gid, raw: null, parentRaw: e,
+          color: e._inferred ? VIZ_INFERRED_COLOR : (VIZ_FLAVOR_LINK_COLOR[flavor] || VIZ_STRUCTURAL_COLOR),
+          val: 1.6, graphId: gid, raw: null, parentRaw: e, _inferred: !!e._inferred,
         });
         // "hyperedge" (virtual edge): hyperedge-node -> members-node, typed
         // by the hyperedge's flavor (e.g. "flavor:hub") per the reference diagram.
         links.push({
-          source: heid, target: membersId, kind: 'hyperedge', label: `flavor:${flavor}`,
-          color: VIZ_FLAVOR_LINK_COLOR[flavor] || VIZ_STRUCTURAL_COLOR, raw: null, parentRaw: e,
+          source: heid, target: membersId, kind: 'hyperedge',
+          label: (e._inferred ? 'inferred · ' : '') + `flavor:${flavor}`,
+          color: e._inferred ? VIZ_INFERRED_COLOR : (VIZ_FLAVOR_LINK_COLOR[flavor] || VIZ_STRUCTURAL_COLOR),
+          raw: null, parentRaw: e, _inferred: !!e._inferred,
         });
         // relation-labeled edges: members-node -> each member (a hypernode's
         // hnode, or another hyperedge's henode). The first member (lowest seq)
-        // gets a distinct blue so it stands out from the rest.
+        // gets a distinct blue so it stands out from the rest — except on an
+        // inferred edge, where every relation-link uses the one inferred
+        // color instead, so the whole synthesized fact reads as one unit.
         validMembers.forEach((m, i) => {
           if (!nodesById.has(m.target.vizId) && m.target.crossHit) {
             const hit = m.target.crossHit;
@@ -2541,7 +2597,8 @@ async function renderViz() {
           links.push({
             source: membersId, target: m.target.vizId, kind: 'relation',
             label: e.relation || '', seq: m.seq,
-            color: i === 0 ? VIZ_LINK_FIRST_MEMBER_COLOR : VIZ_LINK_RELATION_COLOR, raw: e,
+            color: e._inferred ? VIZ_INFERRED_COLOR : (i === 0 ? VIZ_LINK_FIRST_MEMBER_COLOR : VIZ_LINK_RELATION_COLOR),
+            raw: e, _inferred: !!e._inferred,
           });
         });
       });
@@ -2568,7 +2625,7 @@ async function renderViz() {
     vizAssignCurvature(links);
     State.viz3d.graphData({ nodes, links });
     vizBuildLabelLayer(nodes, links);
-    buildVizLegend(typeCount, flavorSeen);
+    buildVizLegend(typeCount, flavorSeen, nodes.some(n => n._inferred));
     document.getElementById('viz-stats').textContent =
       `${nodes.filter(n => n.kind === 'hnode').length} hypernodes · ${nodes.filter(n => n.kind === 'henode').length} hyperedges`;
     if (truncated) toast(`Some graphs exceeded the display limit (${VIZ_FETCH_LIMIT}) — showing a partial view`, 'warning');
@@ -2598,7 +2655,7 @@ function vizClear() {
   empty.classList.remove('d-none');
 }
 
-function buildVizLegend(typeCount, flavorSeen) {
+function buildVizLegend(typeCount, flavorSeen, anyInferred) {
   const el = document.getElementById('viz-legend');
   el.innerHTML = '';
   Object.keys(typeCount).sort().forEach(type => {
@@ -2625,6 +2682,13 @@ function buildVizLegend(typeCount, flavorSeen) {
       item.innerHTML = `<span class="viz-legend-swatch bag" style="background:${color}"></span>${label}`;
       el.appendChild(item);
     });
+  }
+  if (anyInferred) {
+    const item = document.createElement('div');
+    item.className = 'viz-legend-item';
+    item.title = 'Computed live via inverse-of/symmetric/superproperty axioms — never persisted';
+    item.innerHTML = `<span class="viz-legend-swatch bag" style="background:${VIZ_INFERRED_COLOR}"></span>⚡ inferred`;
+    el.appendChild(item);
   }
 }
 
@@ -2687,6 +2751,12 @@ document.getElementById('viz-auto-rotate').addEventListener('change', function()
 // display flag like Labels/Media — so, unlike those, this needs a full
 // renderViz() to actually add/remove nodes from 3d-force-graph's dataset.
 document.getElementById('viz-hide-orphans').addEventListener('change', () => {
+  if (State.viz3d) renderViz();
+});
+// Same reasoning as viz-hide-orphans: which edges exist in the scene is
+// data the renderer fetches and holds, not just a display flag, so toggling
+// this needs a full renderViz() to actually add/remove the inferred nodes.
+document.getElementById('viz-show-inferred').addEventListener('change', () => {
   if (State.viz3d) renderViz();
 });
 document.getElementById('btn-viz-focus').addEventListener('click', renderViz);
@@ -2828,6 +2898,14 @@ const HQL_EXAMPLES = [
   {
     title: 'Space — mesh dot-notation (space-scoped remote graph)',
     hql: `hql:\n  from: bauhaus-strix.bauhaus.alpha.alpha-hg\n  match:\n    type: hypernode\n  return:\n    - id\n    - label\n    - "_mesh_server_id"`
+  },
+  {
+    title: 'Inferencing — expand via inverse-of/symmetric/superproperty axioms',
+    hql: `hql:\n  from: hello-world\n  match:\n    type: hyperedge\n    relation: has-member\n  infer: true\n  return:\n    - id\n    - relation\n    - members\n    - "_inferred"\n    - "_source_edge"\n    - "_axiom"`
+  },
+  {
+    title: 'Inferencing — transitive closure (relation needs an owl:transitive axiom hyperedge)',
+    hql: `hql:\n  from: hello-world\n  match:\n    type: hyperedge\n    relation: "rel:contains"\n    nodes:\n      - warehouse-1\n  infer: true\n  return:\n    - relation\n    - members\n    - "_inferred"\n    - "_transitive"`
   },
 ];
 
@@ -2994,6 +3072,14 @@ const SHQL_EXAMPLES = [
     title: 'Space — mesh dot-notation (space-scoped remote graph)',
     shql: `shql:\n  from: bauhaus-strix.bauhaus.alpha.alpha-hg\n  where:\n    - node: ?n\n      node_type: Person\n  select:\n    - ?n.id\n    - ?n.label\n    - ?n._mesh_server_id`
   },
+  {
+    title: 'Inferencing — expand an edge via inverse-of/symmetric/superproperty axioms',
+    shql: `shql:\n  from: hello-world\n  infer: true\n  where:\n    - edge: ?e\n      relation: has-member\n  select:\n    - ?e.relation\n    - ?e.members\n    - ?e._inferred\n    - ?e._source_edge\n    - ?e._axiom`
+  },
+  {
+    title: 'Inferencing — transitive reachability between two bound nodes',
+    shql: `shql:\n  from: hello-world\n  infer: true\n  where:\n    - edge: ?e\n      relation: "rel:contains"\n      members:\n        - bind: ?a\n          id: warehouse-1\n        - bind: ?b\n          id: pallet-42\n  select:\n    - ?e.relation\n    - ?e.members\n    - ?e._inferred\n    - ?e._transitive_path`
+  },
 ];
 
 let _shqlEditorCM = null;
@@ -3067,6 +3153,169 @@ document.getElementById('btn-shql-examples').addEventListener('click', () => {
 document.getElementById('btn-shql-copy').addEventListener('click', () => {
   const content = document.getElementById('shql-result-area').innerText;
   navigator.clipboard.writeText(content).then(() => toast('Copied to clipboard'));
+});
+
+// ── Project Inference ────────────────────────────────────────────────────────
+// Materializes inference results (expand_edge_closure / check_transitive,
+// see hgai/core/inference.py) into a target hypergraph as ordinary,
+// persisted facts. Everywhere else in this app inference is computed live
+// and never saved — this screen is the one deliberate exception, and it
+// always previews before writing anything, matching the same discipline
+// this app already applies to cloning a node/edge.
+let _piLastPreviewParams = null;
+
+async function loadProjectInferenceScreen() {
+  const items = await _fetchAndCacheGraphs().catch(() => []);
+
+  const sourceSel = document.getElementById('pi-source-graphs');
+  const pickedSources = new Set(Array.from(sourceSel.selectedOptions).map(o => o.value));
+  sourceSel.innerHTML = '';
+  items.forEach(g => {
+    const opt = document.createElement('option');
+    opt.value = g.id;
+    opt.textContent = g.space_id ? `${g.label} (${g.space_id}/${g.id})` : `${g.label} (${g.id})`;
+    if (pickedSources.has(g.id)) opt.selected = true;
+    sourceSel.appendChild(opt);
+  });
+
+  const targetSel = document.getElementById('pi-target-existing-select');
+  const pickedTarget = targetSel.value;
+  targetSel.innerHTML = '<option value="">— Select Hypergraph —</option>';
+  items.forEach(g => {
+    const opt = document.createElement('option');
+    opt.value = g.id;
+    opt.textContent = g.space_id ? `${g.label} (${g.space_id}/${g.id})` : `${g.label} (${g.id})`;
+    if (g.id === pickedTarget) opt.selected = true;
+    targetSel.appendChild(opt);
+  });
+
+  document.getElementById('pi-results-section').classList.add('d-none');
+  document.getElementById('btn-pi-commit').disabled = true;
+  _piLastPreviewParams = null;
+}
+
+document.getElementById('pi-target-existing').addEventListener('change', updatePiTargetFieldVisibility);
+document.getElementById('pi-target-new').addEventListener('change', updatePiTargetFieldVisibility);
+function updatePiTargetFieldVisibility() {
+  const isNew = document.getElementById('pi-target-new').checked;
+  document.getElementById('pi-target-existing-select').classList.toggle('d-none', isNew);
+  document.getElementById('pi-target-new-fields').classList.toggle('d-none', !isNew);
+}
+
+// Any change to the request invalidates a previously-run preview — the
+// commit button only re-enables after a fresh Preview matching the current
+// form state, so a user can never project something they haven't seen.
+['pi-source-graphs', 'pi-mode-expand', 'pi-mode-transitive', 'pi-relation', 'pi-pit',
+ 'pi-target-existing', 'pi-target-new', 'pi-target-existing-select', 'pi-target-id', 'pi-target-label',
+].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => {
+    document.getElementById('btn-pi-commit').disabled = true;
+    _piLastPreviewParams = null;
+  });
+});
+
+function piBuildRequest() {
+  const sourceGraphIds = Array.from(document.getElementById('pi-source-graphs').selectedOptions).map(o => o.value);
+  const expand = document.getElementById('pi-mode-expand').checked;
+  const transitive = document.getElementById('pi-mode-transitive').checked;
+  const relation = document.getElementById('pi-relation').value.trim();
+  const pitVal = document.getElementById('pi-pit').value;
+  const isNewTarget = document.getElementById('pi-target-new').checked;
+
+  if (!sourceGraphIds.length) { toast('Select at least one source hypergraph', 'warning'); return null; }
+  if (!expand && !transitive) { toast('Select at least one of Expand axioms / Transitive closure', 'warning'); return null; }
+  if (transitive && !relation) { toast('Relation is required for transitive closure', 'warning'); return null; }
+
+  let targetGraphId, createTarget = false, targetLabel = null;
+  if (isNewTarget) {
+    targetGraphId = document.getElementById('pi-target-id').value.trim();
+    targetLabel = document.getElementById('pi-target-label').value.trim() || targetGraphId;
+    if (!targetGraphId) { toast('Enter an ID for the new target hypergraph', 'warning'); return null; }
+    createTarget = true;
+  } else {
+    targetGraphId = document.getElementById('pi-target-existing-select').value;
+    if (!targetGraphId) { toast('Select a target hypergraph', 'warning'); return null; }
+  }
+
+  const mode = expand && transitive ? 'both' : (transitive ? 'transitive' : 'expand');
+
+  return {
+    targetGraphId,
+    body: {
+      source_graph_ids: sourceGraphIds,
+      mode,
+      relation: relation || null,
+      pit: pitVal ? new Date(pitVal).toISOString() : null,
+      create_target: createTarget,
+      target_label: targetLabel,
+    },
+  };
+}
+
+function piStatusBadge(status) {
+  const map = { new: 'bg-success', skip: 'bg-secondary', error: 'bg-danger' };
+  return `<span class="badge ${map[status] || 'bg-secondary'} text-uppercase">${status}</span>`;
+}
+
+function piRenderPreview(result) {
+  const section = document.getElementById('pi-results-section');
+  section.classList.remove('d-none');
+  document.getElementById('pi-results-title').textContent = result.dry_run ? 'Preview' : 'Result';
+
+  const summary = document.getElementById('pi-summary');
+  const label = result.dry_run ? 'would create' : 'created';
+  summary.innerHTML = `
+    <span class="badge bg-success me-1">${result.created} ${label}</span>
+    <span class="badge bg-secondary me-1">${result.skipped} already exist</span>
+    ${result.errors ? `<span class="badge bg-danger">${result.errors} errors</span>` : ''}`;
+
+  const list = document.getElementById('pi-preview-list');
+  if (!result.preview.length) {
+    list.innerHTML = '<div class="text-muted small">Nothing to project — no new facts found.</div>';
+    return;
+  }
+  list.innerHTML = result.preview.map(entry => {
+    const members = (entry.members || []).map(m => escapeHtml(m.node_id)).join(' · ');
+    const detail = entry.status === 'skip'
+      ? `<small class="text-muted">already exists as ${escapeHtml(entry.existing_edge_id || '')}</small>`
+      : entry.status === 'error'
+        ? `<small class="text-danger">${escapeHtml(entry.error || '')}</small>`
+        : (entry.created_edge_id ? `<small class="text-muted">created as ${escapeHtml(entry.created_edge_id)}</small>` : '');
+    return `
+      <div class="border rounded p-2 mb-2">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          ${piStatusBadge(entry.status)}
+          <small class="text-muted">${detail}</small>
+        </div>
+        <div class="small"><strong>${escapeHtml(entry.relation)}</strong>: ${members}</div>
+      </div>`;
+  }).join('');
+}
+
+document.getElementById('btn-pi-preview').addEventListener('click', async () => {
+  const req = piBuildRequest();
+  if (!req) return;
+  try {
+    const result = await HGAI_API.projectInference(req.targetGraphId, { ...req.body, dry_run: true });
+    piRenderPreview(result);
+    _piLastPreviewParams = JSON.stringify(req);
+    document.getElementById('btn-pi-commit').disabled = false;
+  } catch (err) { toast(err.message, 'danger'); }
+});
+
+document.getElementById('btn-pi-commit').addEventListener('click', async () => {
+  const req = piBuildRequest();
+  if (!req || JSON.stringify(req) !== _piLastPreviewParams) {
+    toast('Run Preview again — the request changed since your last preview', 'warning');
+    return;
+  }
+  try {
+    const result = await HGAI_API.projectInference(req.targetGraphId, { ...req.body, dry_run: false });
+    piRenderPreview(result);
+    document.getElementById('btn-pi-commit').disabled = true;
+    _piLastPreviewParams = null;
+    toast(`Projected ${result.created} new fact${result.created === 1 ? '' : 's'} into '${req.targetGraphId}'`);
+  } catch (err) { toast(err.message, 'danger'); }
 });
 
 // ── Accounts ───────────────────────────────────────────────────────────────

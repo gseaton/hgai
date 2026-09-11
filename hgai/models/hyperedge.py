@@ -11,13 +11,22 @@ from hgai.models.media import MediaRef
 
 
 class EdgeFlavor(str, Enum):
-    """Hyperedge relationship pattern flavors."""
+    """Hyperedge relationship pattern flavors.
+
+    Only two flavors are kept, deliberately: each describes a genuine N-ary
+    fact that can't be decomposed into independent binary facts without
+    losing what it asserts (a group's membership; a set of mutually
+    equivalent things). A directed chain (A->B->C) is NOT such a fact — it's
+    several independent binary facts (each with its own potential validity
+    window, provenance, etc.) that happen to be adjacent; model it as
+    separate two-member `hub` edges instead. Cross-edge transitive
+    reachability across those edges is a relation-level property (e.g. an
+    `owl:transitive` axiom), not a per-edge flavor — planned in
+    hgai/core/inference.py, not yet implemented.
+    """
 
     hub = "hub"                          # One-to-many (hub node connects to member nodes)
     symmetric = "symmetric"              # All members are equivalent (e.g., siblings)
-    direct = "direct"                    # Directed from first to last member
-    transitive = "transitive"            # Transitive chain (A→B, B→C implies A→C)
-    inverse_transitive = "inverse-transitive"  # Inverse transitive chain
 
 
 class EdgeMember(BaseModel):

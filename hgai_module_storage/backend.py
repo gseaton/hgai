@@ -230,7 +230,14 @@ class HyperedgeStore(ABC):
     async def find_for_transitive(
         self, filters: TransitiveSearchFilter
     ) -> List[Dict[str, Any]]:
-        """Return raw edge dicts (with 'members' field) for transitive closure traversal."""
+        """Return raw edge dicts for transitive/axiom closure traversal.
+
+        Full documents (not just 'members') so callers can read 'id',
+        'relation', 'flavor', etc. — e.g. to decompose via atomic_pairs() or
+        tag provenance. Respects filters.pit when set, same semantics as
+        every other PIT-aware query in this codebase (an edge with no
+        valid_from/valid_to bound is always in scope; a bounded edge must
+        have the instant fall within [valid_from, valid_to])."""
 
     @abstractmethod
     async def find_relation_node(

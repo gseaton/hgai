@@ -8,6 +8,7 @@ MCP tool groups:
   - hgai_hyperedge_*  : Hyperedge CRUD operations
   - hgai_hypergraph_* : Hypergraph management
   - hgai_query_*      : HQL query execution
+  - hgai_infer_*      : Semantic inferencing (transitive closure, inverse-of/symmetric/superproperty expansion)
   - hgai_mesh_*       : Mesh federation operations
   - hgai_media_*      : Media (binary file attachment) upload/download/delete
   - hgai_space_*      : Space (tenant namespace) management
@@ -326,7 +327,7 @@ async def hgai_hyperedge_create(
         members_json: JSON array of members: [{"node_id": "id", "seq": 0}, ...]
         edge_id: Optional human-readable edge ID (hyperkey auto-generated if omitted)
         label: Optional display label
-        flavor: Relationship pattern: 'hub', 'symmetric', 'direct', 'transitive', 'inverse-transitive'
+        flavor: Relationship pattern: 'hub' (one member connects to the rest), 'symmetric' (all members equivalent)
         attributes_json: JSON document of edge attributes
         tags: Comma-separated tags
         media_json: Optional JSON array of media refs to attach, each with a
@@ -494,6 +495,79 @@ async def hgai_query_validate(query_yaml: str) -> str:
             return json.dumps({"language": "shql", "valid": False, "errors": [str(e)]})
 
     return json.dumps({"valid": False, "errors": ["Query must have a top-level 'hql' or 'shql' key"]})
+
+
+# ─── Inference Tools ────────────────────────────────────────────────────────────
+# Relation semantics (which relations are transitive, symmetric, each other's
+# inverse, or broader/narrower) are never hardcoded — they're declared as
+# ordinary hyperedges asserting control-vocabulary relations (owl:transitive,
+# owl:symmetric, owl:inverse-of, skos:narrowerTransitive/broaderTransitive)
+# between relation-hypernodes. See hgai/core/inference.py.
+
+@mcp.tool()
+async def hgai_infer_expand_edge(graph_id: str, edge_id: str) -> str:
+    """Expand one hyperedge via inverse-of/symmetric/superproperty axioms.
+
+    Synthesizes every fact implied by the given edge's relation's declared
+    axioms (owl:inverse-of, owl:symmetric, skos:narrowerTransitive/
+    broaderTransitive), applied as a fixed-point closure — a fact projected
+    onto a broader relation is itself re-checked against further axioms, so
+    a multi-hop relation hierarchy or a round-trip through an inverse
+    relation is fully resolved, not just one axiom deep.
+
+    Computed live, at read time — nothing here is persisted. Each result
+    carries `_source_edge` (the original edge, or the intermediate
+    synthesized edge that produced it) and `_axiom` (the specific axiom
+    hyperedge that licensed that hop), so the derivation is traceable.
+
+    Args:
+        graph_id: The hypergraph identifier
+        edge_id: The hyperedge to expand (id or hyperkey)
+    """
+    from hgai.core.inference import expand_edge_closure
+    edge = await engine.get_hyperedge(graph_id, edge_id)
+    if not edge:
+        return json.dumps({"error": f"Edge '{edge_id}' not found in graph '{graph_id}'"})
+    inferred = await expand_edge_closure([edge.model_dump()], [graph_id])
+    return json.dumps({"source_edge": edge_id, "inferred": inferred}, indent=2, default=str)
+
+
+@mcp.tool()
+async def hgai_infer_check_transitive(
+    graph_id: str,
+    relation: str,
+    start_id: str,
+    end_id: str = "",
+    mode: str = "bool",
+) -> str:
+    """Transitive-closure reachability over hyperedges of one relation.
+
+    Self-verifies `relation` actually carries an `owl:transitive` axiom
+    hyperedge before walking anything — calling this on a relation nobody
+    declared transitive always safely reports "not reachable" rather than
+    treating an incidental relation-name match as if it chains.
+
+    Args:
+        graph_id: The hypergraph identifier
+        relation: The relation to walk (must have an owl:transitive axiom
+            hyperedge asserted for it, e.g. relation="owl:transitive",
+            members=[<relation-node>])
+        start_id: The node (or relation, for axiom-graph walks) to start from
+        end_id: Required for mode="bool"/"path"; ignored for mode="closure"
+        mode: "bool" (is end_id reachable?), "closure" (every node
+            transitively reachable from start_id), or "path" (the ordered
+            chain of hyperedge ids connecting start_id to end_id, so each
+            hop can be hydrated the same way as any other edge)
+    """
+    from hgai.core.inference import check_transitive
+    try:
+        result = await check_transitive(
+            relation, [graph_id], start_id, end_id=end_id or None, mode=mode,
+        )
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+    return json.dumps({"relation": relation, "start_id": start_id, "end_id": end_id or None,
+                        "mode": mode, "result": result}, indent=2, default=str)
 
 
 # ─── Mesh Tools ───────────────────────────────────────────────────────────────

@@ -1,0 +1,13 @@
+# Mutation Log
+
+## Modified
+- **hgai/models/hyperedge.py** — `EdgeFlavor` enum reduced from five values (`hub`, `symmetric`, `direct`, `transitive`, `inverse_transitive`) to two (`hub`, `symmetric`). Added a docstring explaining the design rationale (only flavors describing a genuine N-ary fact are kept; a directed chain is several independent binary facts and should be modeled as separate two-member `hub` edges, with cross-edge transitive reachability left to a future relation-level `owl:transitive` axiom rather than a per-edge flavor).
+- **hgai_module_mcp/server.py** — `hgai_hyperedge_create` tool docstring's `flavor` parameter description updated to list only `hub`/`symmetric` (was listing all five, including three no longer valid).
+- **ui/index.html** — Removed `direct`/`transitive`/`inverse-transitive` `<option>`s from both the Hyperedges list's flavor filter dropdown (`edge-flavor-filter`) and the create/edit modal's flavor select (`edge-flavor`); both now offer only `hub`/`symmetric`.
+- **ui/js/app.js** — `VIZ_FLAVOR_LINK_COLOR` (used by the 3D Visualize screen to color a hyperedge's flavor-typed link) reduced from five entries to two (`hub`, `symmetric`); adjusted the accompanying comment. The legend-building code (`buildVizLegend`) needed no change — it already builds its flavor legend dynamically from whatever flavors are actually present in the data, with a safe fallback color for anything not in the map.
+- **docs/concepts.md** — "Hyperedge Flavors" table reduced to `hub`/`symmetric`; added a paragraph explaining why a directed chain isn't a third flavor (modeled as separate `hub` edges instead, with transitive reachability handled by a relation-level `owl:transitive` axiom).
+- **docs/hello-world.md** — Tutorial's closing "What You've Learned" list updated from "hub, symmetric, direct, transitive" to "hub, symmetric" (the tutorial's own worked example already only used `symmetric`, so no example content needed to change).
+- **docs/dev_notes/skhg-inferencing-notes.md** — "Hyperedge Flavors" section reduced to `hub`/`symmetric`, with a note explaining `transitive`/`inverse-transitive` were considered and dropped, and why.
+
+## Removed (as an ask-session capture, superseded)
+- `.project/prompts/asks/ask_202609101200_inference_skos_plan/` — this entire conversation began as a pure planning/assessment session (explicitly "do NOT make any code changes" in Turn 1) and was captured as an ask after Turn 1. It later crossed into actual implementation (Turn 15). Per project capture rules, a session that starts as an ask but ends in mutation is captured once, as a single mutating prompt — the prior ask capture was deleted and this mutation capture (covering the full 15-turn session) created in its place.

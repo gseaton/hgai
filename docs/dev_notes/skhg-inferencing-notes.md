@@ -11,8 +11,12 @@
 ## Hyperedge Flavors
 - `hub` : first member direct relationship with subsequent members
 - `symmetric` : all members related same
-- `transitive` : first member -> second member, second member -> third member, n-1 member -> n member
-- `inverse-transitve` : n member -> n - 1 member; ... ; third member -> second member; second member -> first member
+
+(`transitive`/`inverse-transitive` flavors were considered and dropped: a
+directed chain is several independent binary facts, not one N-ary fact, so
+it's modeled as separate two-member `hub` edges. Cross-edge transitive
+reachability is handled by the `owl:transitive` inference relation above,
+applied across those edges — not by a per-edge flavor.)
 
 ## How to Declare Semantic Relations?
 

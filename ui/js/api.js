@@ -120,6 +120,9 @@ const HGAI_API = (() => {
   async function updateSpaceEdge(spaceId, graphId, edgeId, data) { return request('PUT', `/spaces/${spaceId}/graphs/${graphId}/edges/${edgeId}`, data); }
   async function deleteSpaceEdge(spaceId, graphId, edgeId) { return request('DELETE', `/spaces/${spaceId}/graphs/${graphId}/edges/${edgeId}`); }
 
+  // ── Inference ─────────────────────────────────────────────────────────────
+  async function projectInference(targetGraphId, data) { return request('POST', `/graphs/${targetGraphId}/infer/project`, data); }
+
   // ── Media ─────────────────────────────────────────────────────────────────
   async function uploadMedia(file) {
     const url = new URL(BASE + '/media', window.location.origin);
@@ -233,6 +236,8 @@ const HGAI_API = (() => {
     // edges
     listEdges, getEdge, createEdge, updateEdge, deleteEdge,
     listSpaceEdges, getSpaceEdge, createSpaceEdge, updateSpaceEdge, deleteSpaceEdge,
+    // inference
+    projectInference,
     // media
     uploadMedia, downloadMedia, deleteMedia, listMedia, updateMedia,
     // query (HQL)

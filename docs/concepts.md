@@ -101,9 +101,14 @@ Key fields:
 |--------|-------------|---------|
 | `hub` | One hub node connects to multiple member nodes | Group membership |
 | `symmetric` | All members are equivalent | Siblings, colleagues |
-| `direct` | Directed from first to last member | Reports-to chain |
-| `transitive` | A→B and B→C implies A→C | Ancestry, containment |
-| `inverse-transitive` | Inverse of transitive | Descendant-of |
+
+A directed chain (A reports to B, B reports to C, ...) is not a single N-ary
+fact — each link is its own independent fact, with its own potential
+validity window and provenance — so it's modeled as separate two-member
+`hub` edges rather than a dedicated flavor. Reasoning across such a chain
+(e.g. "is A transitively contained in C?") is a relation-level property
+(declared via an `owl:transitive` axiom, see Semantic Inferencing below),
+not a per-edge flavor.
 
 ### Hypergraph
 

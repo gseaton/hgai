@@ -163,18 +163,19 @@ class MongoHyperedgeStore(HyperedgeStore):
     async def find_for_transitive(
         self, filters: TransitiveSearchFilter
     ) -> List[Dict[str, Any]]:
-        """Return raw edge dicts for transitive closure traversal (members field only)."""
-        cursor = _col().find(
-            {
-                "hypergraph_id": {"$in": filters.hypergraph_ids},
-                "relation": filters.relation,
-                "members.node_id": {"$in": filters.member_node_ids},
-                "status": "active",
-            },
-            {"members": 1},
-        )
+        """Return full raw edge dicts for transitive/axiom closure traversal."""
+        query: Dict[str, Any] = {
+            "hypergraph_id": {"$in": filters.hypergraph_ids},
+            "relation": filters.relation,
+            "members.node_id": {"$in": filters.member_node_ids},
+            "status": "active",
+        }
+        if filters.pit:
+            query["$and"] = _pit_clause(filters.pit)
+        cursor = _col().find(query)
         docs = []
         async for doc in cursor:
+            doc.pop("_id", None)
             docs.append(doc)
         return docs
 

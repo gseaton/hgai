@@ -307,7 +307,7 @@ admin@http://localhost:8000 [hello-world] hgai> query
 1. **Hypernodes** are flexible entity documents with attributes, tags, and temporal qualifiers
 2. **Hyperedges** connect _n_ nodes simultaneously as first-class entities with their own attributes
 3. **Temporal queries** let you ask "who/what was true at this specific moment in time?"
-4. **Semantic flavors** (hub, symmetric, direct, transitive) capture the nature of relationships
+4. **Semantic flavors** (hub, symmetric) capture the nature of relationships
 5. **HQL** provides a declarative YAML query language for flexible hypergraph traversal
 
 ---

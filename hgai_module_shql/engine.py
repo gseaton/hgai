@@ -338,6 +338,7 @@ async def _eval_edge_pattern(
     graph_ids: List[str],
     pit: Optional[datetime],
     bindings: List[BindingSet],
+    infer: bool = False,
 ) -> List[BindingSet]:
     bind_var       = pattern.get("bind")
     edge_id        = pattern.get("id")
@@ -412,6 +413,39 @@ async def _eval_edge_pattern(
             extra_filters={"id": resolved_id} if resolved_id is not None else None,
         )
         docs = await get_storage().hyperedges.search(filters, skip=0, limit=2000)
+
+        # infer: true extends the literal candidate set with synthesized
+        # edges before member-pattern matching runs, so an inferred edge is
+        # first-class in exactly the same way a literal one is — it can
+        # bind ?vars, anchor a later hop, chain into a further pattern.
+        # Computed live per pattern evaluation, never persisted. Opt-in
+        # only: no `infer` flag means this whole block never runs.
+        if infer and resolved_rel:
+            from hgai.core.inference import check_transitive, expand_edge_closure
+            docs = docs + await expand_edge_closure(docs, graph_ids, pit=pit)
+
+            # A fully-resolved 2-member pattern (both endpoints already
+            # concrete — literal ids or already-bound variables) also gets
+            # a transitive-reachability check, self-gated on an
+            # owl:transitive axiom the same way HQL's does. A 1-hop path
+            # is skipped — it's definitionally already a literal edge,
+            # already present in `docs` above.
+            if len(member_patterns) == 2 and len(bound_node_ids) == 2:
+                path = await check_transitive(
+                    resolved_rel, graph_ids, bound_node_ids[0], bound_node_ids[1], mode="path", pit=pit
+                )
+                if len(path) > 1:
+                    docs = docs + [{
+                        "relation": resolved_rel,
+                        "flavor": "hub",
+                        "members": [
+                            {"node_id": bound_node_ids[0], "seq": 0},
+                            {"node_id": bound_node_ids[1], "seq": 1},
+                        ],
+                        "_inferred": True,
+                        "_transitive": True,
+                        "_transitive_path": path,
+                    }]
 
         for doc in docs:
             for _f in _SKOS_FIELDS:
@@ -812,6 +846,7 @@ async def _evaluate_patterns(
     graph_ids: List[str],
     pit: Optional[datetime],
     bindings: List[BindingSet],
+    infer: bool = False,
 ) -> List[BindingSet]:
     for pattern in patterns:
         if not isinstance(pattern, dict):
@@ -823,7 +858,7 @@ async def _evaluate_patterns(
 
         elif "edge" in pattern:
             edge_pat = _normalize_edge_pattern(pattern)
-            bindings = await _eval_edge_pattern(edge_pat, graph_ids, pit, bindings)
+            bindings = await _eval_edge_pattern(edge_pat, graph_ids, pit, bindings, infer=infer)
 
         elif "filter" in pattern:
             fval = pattern["filter"]
@@ -835,7 +870,7 @@ async def _evaluate_patterns(
             optional_pats = pattern["optional"]
             new_bindings: List[BindingSet] = []
             for b in bindings:
-                extended = await _evaluate_patterns(optional_pats, graph_ids, pit, [b])
+                extended = await _evaluate_patterns(optional_pats, graph_ids, pit, [b], infer=infer)
                 if extended:
                     new_bindings.extend(extended)
                 else:
@@ -848,7 +883,7 @@ async def _evaluate_patterns(
             for branch in pattern["union"]:
                 # branches are lists of patterns (not dicts with "patterns" key)
                 branch_pats = branch if isinstance(branch, list) else branch.get("patterns", [])
-                for b in await _evaluate_patterns(branch_pats, graph_ids, pit, deepcopy(bindings)):
+                for b in await _evaluate_patterns(branch_pats, graph_ids, pit, deepcopy(bindings), infer=infer):
                     key = json.dumps({k: str(v) for k, v in sorted(b.items())}, sort_keys=True)
                     if key not in seen:
                         seen.add(key)
@@ -906,6 +941,7 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
     offset          = shql.get("offset", 0)
     distinct        = shql.get("distinct", False)
     order_by        = shql.get("order_by")
+    infer           = shql.get("infer", False)
 
     if isinstance(select_fields, str):
         select_fields = [select_fields]
@@ -973,7 +1009,7 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
 
     # Execute local patterns (skipped when no local graphs)
     if graph_ids:
-        bindings = await _evaluate_patterns(where_patterns, graph_ids, pit, [{}])
+        bindings = await _evaluate_patterns(where_patterns, graph_ids, pit, [{}], infer=infer)
         bindings = await _resolve_node_bindings(bindings, graph_ids)
         items = _project_select(bindings, select_fields)
     else:
@@ -1019,6 +1055,7 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
         "dot_refs":      dot_refs if dot_refs else None,
         "pit":           pit.isoformat() if pit else None,
         "pattern_count": len(where_patterns),
+        "infer":         infer,
         "cached":        False,
     }
 
