@@ -451,8 +451,11 @@ async def project_inference(
     is populated identically whether `dry_run` is set or not, so the same
     rendering code can show a preview or a completed result.
     """
-    from hgai.core.engine import create_hyperedge, find_duplicate_hyperedge
+    from hgai.core.engine import (
+        create_hyperedge, find_duplicate_hyperedge, get_hyperedge, get_hypernode, create_hypernode,
+    )
     from hgai.models.hyperedge import HyperedgeCreate
+    from hgai.models.hypernode import HypernodeCreate
     from hgai_module_storage.filters import HyperedgeSearchFilters
     from hgai.models.common import now_utc
 
@@ -493,6 +496,47 @@ async def project_inference(
     created_edge_ids: List[str] = []
     error_details: List[str] = []
     preview: List[Dict[str, Any]] = []
+    ensured_member_ids: Set[str] = set()
+
+    async def _ensure_member_exists(node_id: str) -> None:
+        """Materializing into a target graph other than the source(s) would
+        otherwise leave every projected edge's members dangling — no
+        hypernode (or hyperedge) with that id actually exists in the target
+        graph, since only the edge itself gets written. That silently
+        breaks anything that resolves members by id in the target graph
+        (Visualize renders the henode but can draw no relation-links to
+        non-existent members; HQL member-lookups likewise come up empty).
+        A materialized fact is documented to be "indistinguishable at the
+        storage/query level from anything hand-asserted" — so its members
+        need to actually exist, not just be referenced. Cached per id since
+        many candidates typically share members.
+        """
+        if node_id in ensured_member_ids:
+            return
+        ensured_member_ids.add(node_id)
+        if await get_hypernode(target_graph_id, node_id, space_id=target_space_id):
+            return
+        if await get_hyperedge(target_graph_id, node_id, space_id=target_space_id):
+            return
+        for src_gid in source_graph_ids:
+            src_node = await get_hypernode(src_gid, node_id)
+            if src_node:
+                await create_hypernode(
+                    target_graph_id,
+                    HypernodeCreate(
+                        id=src_node.id, label=src_node.label, type=src_node.type,
+                        description=src_node.description,
+                        valid_from=src_node.valid_from, valid_to=src_node.valid_to,
+                    ),
+                    created_by=projected_by,
+                    space_id=target_space_id,
+                )
+                return
+        # Not a hypernode in any source graph either — it's most likely
+        # itself a hyperedge referenced as a member (a henode-as-member
+        # case), which this function does not recursively materialize.
+        # Left as a dangling reference, same as a hand-asserted edge would
+        # produce if authored with a typo'd member id.
 
     for candidate in candidates:
         member_ids = _member_ids(candidate)
@@ -529,6 +573,8 @@ async def project_inference(
             "projected_at": now_utc().isoformat(),
         }
         try:
+            for member_id in member_ids:
+                await _ensure_member_exists(member_id)
             data = HyperedgeCreate(
                 relation=candidate["relation"],
                 flavor=candidate.get("flavor", "hub"),
