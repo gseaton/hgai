@@ -209,6 +209,63 @@ def _atomic_facts(edge: Dict[str, Any]) -> Set[Tuple[str, str, str]]:
     return {(relation, s, o) for s, o in atomic_pairs(edge.get("members", []), flavor)}
 
 
+async def _broader_chain(
+    relation: str,
+    graph_ids: List[str],
+    pit: Optional[datetime] = None,
+) -> Dict[str, Tuple[str, str]]:
+    """Every broader relation reachable from `relation`, via any of the
+    three ways a narrower/broader axiom can be spelled.
+
+    `skos:narrowerTransitive [broader, narrower]` and its mirror-image
+    spelling `skos:broaderTransitive [narrower, broader]` are BOTH
+    recognized natively — they assert the exact same fact with the hub/spoke
+    roles swapped to match each relation's own reading direction, so each
+    is walked in the direction that matches its own member order (backward
+    for narrowerTransitive, forward for broaderTransitive).
+
+    A user isn't limited to that literal pair, though: any relation
+    explicitly declared — via an ordinary `owl:inverse-of` hyperedge, the
+    same pattern already used to relate domain relations like
+    rel:parent/rel:child — to be `skos:narrowerTransitive`'s inverse is
+    walked the same way `skos:broaderTransitive` is (forward; an
+    `owl:inverse-of[A, B]` declaration means B's atomic pairs are A's
+    reversed, so B reads narrower-to-broader exactly like broaderTransitive
+    does). This makes `skos:broaderTransitive` the expected default
+    spelling for the mirror image, without hardcoding it as the *only* one
+    a graph is allowed to assert.
+
+    Results from all three sources are merged, keyed by the broader
+    relation reached (first hop found wins, matching `walk_closure`'s own
+    single-path-per-node semantics) — so declaring the mirror relation via
+    more than one of these routes at once is harmless, not double-counted.
+    """
+    chain: Dict[str, Tuple[str, str]] = {}
+
+    for reached, hop in (await walk_closure(
+        relation, "skos:narrowerTransitive", graph_ids, direction="backward", pit=pit
+    )).items():
+        chain.setdefault(reached, hop)
+
+    for reached, hop in (await walk_closure(
+        relation, "skos:broaderTransitive", graph_ids, direction="forward", pit=pit
+    )).items():
+        chain.setdefault(reached, hop)
+
+    mirror_relations: Set[str] = set()
+    for axiom_edge in await get_axiom_edges("skos:narrowerTransitive", "owl:inverse-of", graph_ids, pit=pit):
+        mirror = _other_member(axiom_edge, "skos:narrowerTransitive")
+        if mirror and mirror != "skos:broaderTransitive":
+            mirror_relations.add(mirror)
+    for mirror_relation in mirror_relations:
+        for reached, hop in (await walk_closure(
+            relation, mirror_relation, graph_ids, direction="forward", pit=pit
+        )).items():
+            chain.setdefault(reached, hop)
+
+    return chain
+
+
 async def expand_edge(
     edge: Dict[str, Any],
     graph_ids: List[str],
@@ -226,9 +283,11 @@ async def expand_edge(
       synthesize (o, s) on the same relation.
     - `skos:narrowerTransitive`/`broaderTransitive` (superproperty
       projection): if this edge's relation is narrower than one or more
-      broader relations (found via `walk_closure` over the axiom graph, so
-      a multi-hop relation hierarchy projects through every level), copy
-      this edge's members/flavor unchanged onto each broader relation.
+      broader relations (found via `_broader_chain`, which recognizes both
+      spellings plus anything declared `owl:inverse-of` narrowerTransitive
+      — see its docstring — walked over the axiom graph, so a multi-hop
+      relation hierarchy projects through every level), copy this edge's
+      members/flavor unchanged onto each broader relation.
 
     Returns synthesized edges only (not deduped against anything outside
     this single call — see `expand_edge_closure` for the fixed-point
@@ -265,9 +324,7 @@ async def expand_edge(
                 axiom=axiom_edge.get("id"),
             ))
 
-    broader_chain = await walk_closure(
-        relation, "skos:narrowerTransitive", graph_ids, direction="backward", pit=pit
-    )
+    broader_chain = await _broader_chain(relation, graph_ids, pit=pit)
     for broader_relation, (axiom_edge_id, _predecessor) in broader_chain.items():
         synthesized.append(_make_inferred_edge(
             relation=broader_relation,

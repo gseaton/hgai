@@ -1,0 +1,4 @@
+# Mutation Log
+
+## Modified
+- **hgai/core/inference.py** — Added a new `_broader_chain(relation, graph_ids, pit)` helper that merges superproperty-projection results from three sources: (1) literal `skos:narrowerTransitive` axiom edges walked backward (previous, sole behavior), (2) literal `skos:broaderTransitive` axiom edges walked forward (new, native), and (3) any relation explicitly declared — via an ordinary `owl:inverse-of` hyperedge naming `skos:narrowerTransitive` — to be its inverse, also walked forward (new, generic). Results are merged by reached broader-relation id (first hop wins), so redundant declarations across sources don't produce duplicate inferred edges. `expand_edge`'s superproperty-projection step now calls `_broader_chain` instead of a single hardcoded `walk_closure(relation, "skos:narrowerTransitive", ...)` call. Docstrings for `_broader_chain` and `expand_edge` updated accordingly.
