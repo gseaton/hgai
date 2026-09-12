@@ -534,3 +534,196 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 }
 #modal-edge .modal-body { padding: 0; }
 #modal-edge .form-label { font-weight: 600; color: #111827; }
+
+/* ── Note Editor: resizable modal window ─────────────────────────────────────
+   Native CSS resize (not a custom drag handle) — a browser-rendered grip
+   in the bottom-right corner, the same affordance already used elsewhere
+   in this app (e.g. the JSON attributes textareas' resize:vertical).
+   .modal-dialog's own max-width is loosened well past .modal-xl's default
+   so .modal-content actually has room to grow when dragged; .modal-body
+   gets its own scroll so shrinking the window scrolls the content instead
+   of clipping it, while the header/mode-bar/footer chrome stays fixed. */
+#modal-note .modal-dialog {
+  max-width: min(95vw, 1600px);
+}
+#modal-note .modal-content {
+  resize: both;
+  overflow: hidden;
+  min-width: 480px;
+  min-height: 320px;
+  max-width: 95vw;
+  max-height: 90vh;
+}
+#modal-note .modal-body {
+  overflow-y: auto;
+  max-height: calc(90vh - 220px);
+}
+
+/* ── Note Editor: Browse/Edit/Preview mode bar ──────────────────────────────── */
+.note-mode-bar {
+  padding: 10px 24px;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+#note-browse-view { padding-top: 20px; }
+#note-browse-label { font-weight: 700; }
+
+/* ── Note Editor: Markdown preview pane & broken-link/embed styling ────────── */
+.note-preview-pane {
+  min-height: 280px;
+  max-height: 480px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 16px 18px;
+}
+.note-preview-pane img { max-width: 100%; border-radius: 6px; }
+.note-preview-pane img.note-embed-loading { min-height: 40px; min-width: 60px; background: #f3f4f6; }
+.note-preview-pane pre { background: #1a1b2e; color: #f8f8f2; padding: 10px 12px; border-radius: 6px; overflow-x: auto; }
+.note-preview-pane :last-child { margin-bottom: 0; }
+/* GFM task list items (`- [ ] foo`): marked's default output is a bare
+   `<li><input type="checkbox" disabled> foo</li>` with no distinguishing
+   class (unlike GitHub's own renderer, which adds task-list-item) — so
+   without this, the browser's normal <li> bullet marker renders alongside
+   the checkbox. :has() lets this target exactly (and only) a list item
+   whose own direct child is a checkbox, with no class to hook otherwise.
+   marked wraps every item's content in a <p> instead whenever ANY item in
+   the list has a blank line next to it ("loose" list, per the GFM spec —
+   affects the WHOLE list, not just that one item), producing
+   `<li><p><input type="checkbox" ...> foo</p></li>` — the checkbox is then
+   a grandchild, not a direct child, so the `> input` form alone misses it;
+   the `> p > input` form covers that case. Both use a `>`-only chain so a
+   plain (non-task) item that merely CONTAINS a nested task sub-list is
+   never matched — only a checkbox belonging to the item itself, not one
+   several levels down in a child <ul>/<ol>, drops the bullet. */
+.note-preview-pane li:has(> input[type="checkbox"]),
+.note-preview-pane li:has(> p > input[type="checkbox"]) {
+  list-style-type: none;
+}
+.note-preview-pane li > input[type="checkbox"],
+.note-preview-pane li > p > input[type="checkbox"] {
+  margin: 0 0.4em 0 -1.4em;
+  vertical-align: middle;
+}
+.note-link-broken {
+  color: #b91c1c;
+  text-decoration: underline dotted;
+  cursor: help;
+}
+.note-embed-broken {
+  display: inline-block;
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px dashed #fca5a5;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 0.85em;
+}
+
+/* ── Note Share Modal ───────────────────────────────────────────────────────── */
+.note-share-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+.note-share-row .note-share-username { font-weight: 600; flex-grow: 1; }
+
+/* ── Notes screen: two-pane layout (tag-based folder sidebar + main list) ──
+   Mirrors the reference note-taking app's folder sidebar: a virtual,
+   tag-driven tree (no separate "folder" concept or field) rendered as
+   native <details>/<summary> nodes, next to the ordinary search/table view. */
+:root { --notes-sidebar-width: 260px; }
+.notes-layout {
+  display: flex;
+  align-items: flex-start;
+}
+.notes-folder-sidebar {
+  flex: 0 0 var(--notes-sidebar-width);
+  width: var(--notes-sidebar-width);
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px 0 0 8px;
+  padding: 12px;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: sticky;
+  top: 0;
+}
+.notes-folder-sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+/* Draggable strip between the folder sidebar and the main list — resizes
+   .notes-folder-sidebar horizontally via --notes-sidebar-width (see
+   notesInitSidebarResize in app.js). Mirrors this feature's reference
+   note-taking app's own sidebar-resize-handle almost exactly. */
+.notes-sidebar-resize-handle {
+  flex-shrink: 0;
+  width: 6px;
+  align-self: stretch;
+  background: #e5e7eb;
+  cursor: col-resize;
+  position: sticky;
+  top: 0;
+}
+.notes-sidebar-resize-handle:hover,
+.notes-sidebar-resize-handle.is-dragging {
+  background: var(--hgai-primary, #4f46e5);
+  opacity: 0.5;
+}
+body.notes-sidebar-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+.notes-main { flex: 1 1 auto; min-width: 0; }
+
+.notes-folder-tree, .notes-folder-contents {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.notes-folder-contents { padding-left: 16px; }
+.notes-folder-node { margin: 0; }
+
+.notes-folder-node > details > summary.notes-folder-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  list-style: none;
+}
+.notes-folder-node > details > summary.notes-folder-label::-webkit-details-marker { display: none; }
+.notes-folder-node > details > summary.notes-folder-label:hover { background: #f3f4f6; }
+
+/* Icon swap is pure CSS, keyed off <details>'s native [open] attribute —
+   no JS listener needed just to flip which icon shows. */
+.notes-folder-icon-closed { color: #d97706; }
+.notes-folder-icon-open { color: var(--hgai-primary, #4f46e5); display: none; }
+details[open] > summary.notes-folder-label > .notes-folder-icon-closed { display: none; }
+details[open] > summary.notes-folder-label > .notes-folder-icon-open { display: inline-block; }
+
+.notes-folder-name { font-weight: 600; word-break: break-word; }
+
+.notes-folder-note-item {
+  padding: 3px 6px 3px 22px;
+  white-space: nowrap;
+}
+.notes-folder-note-item a {
+  color: #374151;
+  font-size: 0.82rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+.notes-folder-note-item a:hover { color: var(--hgai-primary, #4f46e5); text-decoration: underline; }
+.notes-folder-note-meta { color: #9ca3af; font-size: 0.72rem; }
+
+.notes-folder-empty { color: #9ca3af; font-size: 0.85rem; padding: 4px 2px; }

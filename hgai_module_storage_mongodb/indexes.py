@@ -129,4 +129,12 @@ async def ensure_indexes() -> None:
         IndexModel([("timestamp", DESCENDING)], name="timestamp_desc"),
     ])
 
+    # ── notes ─────────────────────────────────────────────────────────────────
+    await db["notes"].create_indexes([
+        IndexModel([("id", ASCENDING)], unique=True, name="id_unique"),
+        IndexModel([("owner_username", ASCENDING)], name="owner_username"),
+        IndexModel([("acl.username", ASCENDING)], name="acl_username"),
+        IndexModel([("tags", ASCENDING)], name="tags"),
+    ])
+
     logger.info("MongoDB indexes ensured")

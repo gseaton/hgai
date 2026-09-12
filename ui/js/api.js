@@ -123,6 +123,16 @@ const HGAI_API = (() => {
   // ── Inference ─────────────────────────────────────────────────────────────
   async function projectInference(targetGraphId, data) { return request('POST', `/graphs/${targetGraphId}/infer/project`, data); }
 
+  // ── Notes ─────────────────────────────────────────────────────────────────
+  async function listNotes(params = {}) { return request('GET', '/notes', null, params); }
+  async function getNote(id) { return request('GET', `/notes/${id}`); }
+  async function createNote(data) { return request('POST', '/notes', data); }
+  async function updateNote(id, data) { return request('PUT', `/notes/${id}`, data); }
+  async function deleteNote(id) { return request('DELETE', `/notes/${id}`); }
+  async function listNoteShares(id) { return request('GET', `/notes/${id}/share`); }
+  async function shareNote(id, data) { return request('POST', `/notes/${id}/share`, data); }
+  async function unshareNote(id, username) { return request('DELETE', `/notes/${id}/share/${username}`); }
+
   // ── Media ─────────────────────────────────────────────────────────────────
   async function uploadMedia(file) {
     const url = new URL(BASE + '/media', window.location.origin);
@@ -238,6 +248,8 @@ const HGAI_API = (() => {
     listSpaceEdges, getSpaceEdge, createSpaceEdge, updateSpaceEdge, deleteSpaceEdge,
     // inference
     projectInference,
+    // notes
+    listNotes, getNote, createNote, updateNote, deleteNote, listNoteShares, shareNote, unshareNote,
     // media
     uploadMedia, downloadMedia, deleteMedia, listMedia, updateMedia,
     // query (HQL)

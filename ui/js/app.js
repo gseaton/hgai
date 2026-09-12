@@ -10,10 +10,12 @@ const State = {
   edgesPage: 0,
   mediaPage: 0,
   mediaPickerPage: 0,
+  notesPage: 0,
   nodePageSize: 50,
   edgePageSize: 50,
   mediaPageSize: 50,
   mediaPickerPageSize: 10,
+  notesPageSize: 50,
   confirmCallback: null,
   editorCM: null,
   graphsCache: {},       // id -> graph object (includes space_id)
@@ -22,6 +24,7 @@ const State = {
   nodesSort: [{ field: 'label', dir: 'asc' }],  // [{field, dir: 'asc'|'desc'}, ...] — priority order, first = primary sort key
   edgesSort: [{ field: 'label', dir: 'asc' }],  // default until the user clicks a column header, then their choice persists for the session
   mediaSort: [],
+  notesSort: [],
   viz3d: null,
 };
 
@@ -157,7 +160,7 @@ function showScreen(name) {
 
   const titles = {
     dashboard: 'Dashboard', graphs: 'Hypergraphs', nodes: 'Hypernodes',
-    edges: 'Hyperedges', media: 'Media', viz: 'Visualize', query: 'HQL Query', shql: 'SHQL Query',
+    edges: 'Hyperedges', media: 'Media', notes: 'Notes', viz: 'Visualize', query: 'HQL Query', shql: 'SHQL Query',
     'project-inference': 'Project Inference',
     spaces: 'Spaces', accounts: 'Accounts', meshes: 'Meshes', system: 'System',
   };
@@ -171,6 +174,7 @@ function showScreen(name) {
     nodes: () => { State.nodesPage = 0; populateNodesGraphSelect(); loadNodes(); },
     edges: () => { State.edgesPage = 0; populateEdgesGraphSelect(); loadEdges(); },
     media: () => { State.mediaPage = 0; loadMedia(); },
+    notes: () => { State.notesPage = 0; loadNotes(); loadNotesFolderTree(); },
     viz: loadVizScreen,
     query: initQueryEditor,
     shql: initShqlEditor,
@@ -683,7 +687,7 @@ async function loadNodes() {
   }
 }
 
-const PAGINATION_LOADERS = { nodes: () => loadNodes(), edges: () => loadEdges(), media: () => loadMedia(), mediaPicker: () => loadMediaPicker() };
+const PAGINATION_LOADERS = { nodes: () => loadNodes(), edges: () => loadEdges(), media: () => loadMedia(), mediaPicker: () => loadMediaPicker(), notes: () => loadNotes() };
 
 // ── Default-media thumbnails (Nodes/Edges list tables) ────────────────────────
 let _nodeThumbUrls = [];
@@ -753,16 +757,22 @@ function renderPagination(type, total, page, pageSize) {
   pgEl.appendChild(next);
 }
 
-// ── Media attachment widget (shared by node & edge modals) ──────────────────
+// ── Media attachment widget (shared by node, edge & note modals) ────────────
 let nodeMediaItems = [];
 let edgeMediaItems = [];
+let noteMediaItems = [];
 let nodeDefaultMediaId = '';
 let edgeDefaultMediaId = '';
 
-// containerId is always 'node-media-list' or 'edge-media-list' — this lets
-// renderMediaList() stay a single shared function without every call site
-// needing to know which entity's default-media state it's rendering into.
+// containerId is always 'node-media-list', 'edge-media-list', or
+// 'note-media-list' — this lets renderMediaList() stay a single shared
+// function without every call site needing to know which entity's
+// default-media state it's rendering into. Notes have no default_media_id
+// field at all (no "default visual representation" concept), hence null —
+// renderMediaList() reads that as "omit the star toggle entirely" rather
+// than wiring it to a value that would never actually persist anywhere.
 function defaultMediaState(containerId) {
+  if (containerId === 'note-media-list') return null;
   return containerId === 'edge-media-list'
     ? { get: () => edgeDefaultMediaId, set: v => { edgeDefaultMediaId = v; } }
     : { get: () => nodeDefaultMediaId, set: v => { nodeDefaultMediaId = v; } };
@@ -778,9 +788,10 @@ function renderMediaList(containerId, items) {
     return;
   }
   const defaultState = defaultMediaState(containerId);
+  const showDefaultToggle = !!defaultState;
   items.forEach((ref, i) => {
     const div = document.createElement('div');
-    const isDefault = !!ref.media_id && ref.media_id === defaultState.get();
+    const isDefault = showDefaultToggle && !!ref.media_id && ref.media_id === defaultState.get();
     div.className = 'media-item' + (isDefault ? ' media-item-default' : '');
     const primaryText = ref.label || ref.filename || ref.media_id;
     const secondaryName = ref.name && ref.name !== primaryText ? ref.name : null;
@@ -795,13 +806,15 @@ function renderMediaList(containerId, items) {
       ${sizeDuration !== '—' ? `<span class="badge bg-light text-dark">${escapeHtml(sizeDuration)}</span>` : ''}
       ${ref.role ? `<span class="badge bg-light text-dark">${escapeHtml(ref.role)}</span>` : ''}
       ${ref.attributes && Object.keys(ref.attributes).length ? '<span class="badge bg-light text-dark" title="Has custom attributes"><i class="bi bi-braces"></i></span>' : ''}
-      <button type="button" class="btn btn-xs ${isDefault ? 'btn-warning' : 'btn-outline-secondary'}" title="${isDefault ? 'Default representation — click to unset' : 'Set as default representation'}"><i class="bi ${isDefault ? 'bi-star-fill' : 'bi-star'}"></i></button>
+      ${showDefaultToggle ? `<button type="button" class="btn btn-xs ${isDefault ? 'btn-warning' : 'btn-outline-secondary'}" title="${isDefault ? 'Default representation — click to unset' : 'Set as default representation'}"><i class="bi ${isDefault ? 'bi-star-fill' : 'bi-star'}"></i></button>` : ''}
       <button type="button" class="btn btn-xs btn-outline-secondary" title="Preview"><i class="bi bi-eye"></i></button>
       <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit role &amp; attributes"><i class="bi bi-pencil"></i></button>
       <button type="button" class="btn btn-xs btn-outline-secondary" title="Download"><i class="bi bi-download"></i></button>
       <button type="button" class="btn btn-xs btn-outline-danger" title="Remove"><i class="bi bi-x"></i></button>`;
-    const [defaultBtn, previewBtn, editBtn, downloadBtn, removeBtn] = div.querySelectorAll('button');
-    defaultBtn.addEventListener('click', () => {
+    const buttons = [...div.querySelectorAll('button')];
+    const defaultBtn = showDefaultToggle ? buttons.shift() : null;
+    const [previewBtn, editBtn, downloadBtn, removeBtn] = buttons;
+    if (defaultBtn) defaultBtn.addEventListener('click', () => {
       defaultState.set(isDefault ? '' : ref.media_id);
       renderMediaList(containerId, items);
     });
@@ -1525,6 +1538,634 @@ document.getElementById('btn-save-node').addEventListener('click', async () => {
     }
     bootstrap.Modal.getInstance(document.getElementById('modal-node'))?.hide();
     loadNodes();
+  } catch (err) { toast(err.message, 'danger'); }
+});
+
+// ── Notes ──────────────────────────────────────────────────────────────────
+
+function currentUsername() { return HGAI_API.getUsername(); }
+
+function noteCanEdit(note) {
+  if (HGAI_API.isAdmin()) return true;
+  const me = currentUsername();
+  if (note.owner_username === me) return true;
+  return (note.acl || []).some(g => g.username === me && g.role === 'editor');
+}
+
+function noteIsOwner(note) {
+  return HGAI_API.isAdmin() || note.owner_username === currentUsername();
+}
+
+async function loadNotes() {
+  const tbody = document.getElementById('tbody-notes');
+  tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+
+  const tagFilter = document.getElementById('notes-tags-filter').value.trim();
+  const params = {
+    skip: State.notesPage * State.notesPageSize,
+    limit: State.notesPageSize,
+    search: document.getElementById('notes-search').value.trim() || undefined,
+    tags: tagFilter ? [tagFilter] : undefined,
+    sort: sortParam(State.notesSort),
+  };
+  updateSortIndicators('notes');
+
+  try {
+    const resp = await HGAI_API.listNotes(params);
+    tbody.innerHTML = '';
+    if (!resp.items || !resp.items.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No notes found</td></tr>';
+    } else {
+      const me = currentUsername();
+      resp.items.forEach(n => {
+        const tr = document.createElement('tr');
+        const sharedWith = (n.acl || []).map(g => `<span class="badge bg-light text-dark me-1" title="${escapeHtml(g.role)}">${escapeHtml(g.username)}</span>`).join('') || '<span class="text-muted small">—</span>';
+        const isOwner = n.owner_username === me || HGAI_API.isAdmin();
+        tr.innerHTML = `
+          <td class="table-id-link" onclick="openNoteModal('${n.id}')">
+            <i class="bi bi-journal-richtext text-secondary me-1"></i>
+            ${n.name ? escapeHtml(truncate(n.name, 40)) : '<span class="text-muted">—</span>'}
+          </td>
+          <td class="small" title="${escapeHtml(n.label)}">${escapeHtml(truncate(n.label, 40))}</td>
+          <td>${tagBadges(n.tags)}</td>
+          <td class="small">${escapeHtml(n.owner_username)}</td>
+          <td>${sharedWith}</td>
+          <td class="small text-muted">${fmtDate(n.system_updated)}</td>
+          <td>${statusBadge(n.status)}</td>
+          <td class="text-end">
+            <button class="btn btn-xs btn-outline-secondary me-1" onclick="openNoteModal('${n.id}')" title="Open"><i class="bi bi-pencil"></i></button>
+            ${isOwner ? `<button class="btn btn-xs btn-outline-secondary me-1" onclick="openNoteShareModal('${n.id}')" title="Share"><i class="bi bi-people"></i></button>` : ''}
+            ${isOwner ? `<button class="btn btn-xs btn-outline-danger" onclick="deleteNoteRow('${n.id}', '${escapeHtml(n.label).replace(/'/g, "\\'")}')" title="Delete"><i class="bi bi-trash"></i></button>` : ''}
+          </td>`;
+        tbody.appendChild(tr);
+      });
+    }
+    renderPagination('notes', resp.total, State.notesPage, State.notesPageSize);
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" class="text-danger text-center">${err.message}</td></tr>`;
+  }
+}
+
+// ── Notes folder sidebar (virtual, tag-based — mirrors the reference
+// note-taking app's folder tree exactly: no separate folder concept or
+// field, just tags shaped like a filesystem path and prefixed with "//").
+//
+// A tag `//projects/quill` places a note 2 levels deep under
+// projects > quill; intermediate folders are created automatically even
+// if nothing is tagged with just `//projects` on its own. A note with
+// zero `//`-prefixed tags doesn't appear in the tree at all (it's still
+// visible in the ordinary table). Segments are matched case-insensitively
+// when merging, keeping whichever note's casing was seen first.
+//
+// The tree always reflects ALL of the account's visible notes, independent
+// of the main table's search/tag-filter/pagination state — same as the
+// reference app, where the folder sidebar and the notes listing page are
+// two independent, simultaneously-visible ways to browse the same notes.
+const NOTES_FOLDER_TAG_PREFIX = '//';
+const NOTES_FOLDER_STATE_KEY = 'hgai_notes_folder_state';
+const NOTES_FOLDER_TREE_LIMIT = 200; // matches GET /notes' own server-side max `limit` — a v1 cap for large accounts
+
+function notesGetFolderState() {
+  try { return JSON.parse(sessionStorage.getItem(NOTES_FOLDER_STATE_KEY)) || {}; } catch { return {}; }
+}
+function notesSetFolderState(state) {
+  try { sessionStorage.setItem(NOTES_FOLDER_STATE_KEY, JSON.stringify(state)); } catch { /* unavailable — state just won't persist */ }
+}
+
+function parseNoteFolderSegments(tag) {
+  if (!tag.startsWith(NOTES_FOLDER_TAG_PREFIX)) return null;
+  const segments = tag.slice(NOTES_FOLDER_TAG_PREFIX.length).split('/').map(s => s.trim()).filter(Boolean);
+  return segments.length ? segments : null;
+}
+
+function buildNoteFolderTree(notes) {
+  const root = new Map(); // lower(name) -> node
+
+  function walkToLeaf(childrenMap, segments) {
+    let children = childrenMap, node = null;
+    for (const seg of segments) {
+      const key = seg.toLowerCase();
+      node = children.get(key);
+      if (!node) {
+        node = { name: seg, children: new Map(), notes: [], _noteIds: new Set() };
+        children.set(key, node);
+      }
+      children = node.children;
+    }
+    return node;
+  }
+
+  notes.forEach(n => {
+    (n.tags || []).forEach(tag => {
+      const segments = parseNoteFolderSegments(tag);
+      if (!segments) return;
+      const leaf = walkToLeaf(root, segments);
+      if (leaf._noteIds.has(n.id)) return; // same note, multiple tags resolving to this folder
+      leaf._noteIds.add(n.id);
+      leaf.notes.push({
+        id: n.id, label: n.label || 'Untitled', name: n.name || '',
+        idSuffix: (n.id || '').slice(-4),
+      });
+    });
+  });
+
+  // Sorted (and displayed — see renderNoteFolderNode) by Name, falling back
+  // to Label for notes with no Name set, per this feature's explicit spec.
+  function sortKey(n) { return (n.name || n.label).toLowerCase(); }
+
+  function toSorted(nodeMap) {
+    return [...nodeMap.values()]
+      .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+      .map(node => ({
+        name: node.name,
+        notes: node.notes.slice().sort((a, b) => sortKey(a).localeCompare(sortKey(b)) || a.id.localeCompare(b.id)),
+        children: toSorted(node.children),
+      }));
+  }
+  return toSorted(root);
+}
+
+function renderNoteFolderNode(folder, depth, pathPrefix) {
+  const currentPath = pathPrefix ? `${pathPrefix}/${folder.name}` : folder.name;
+  const savedState = notesGetFolderState();
+  const isOpen = currentPath in savedState ? savedState[currentPath] : depth === 0; // top-level expanded, nested collapsed by default
+
+  const li = document.createElement('li');
+  li.className = 'notes-folder-node';
+  const details = document.createElement('details');
+  details.dataset.folderPath = currentPath;
+  if (isOpen) details.open = true;
+
+  const summary = document.createElement('summary');
+  summary.className = 'notes-folder-label';
+  summary.innerHTML = `
+    <i class="bi bi-folder2 notes-folder-icon-closed"></i>
+    <i class="bi bi-folder2-open notes-folder-icon-open"></i>
+    <span class="notes-folder-name">${escapeHtml(folder.name)}</span>`;
+  details.appendChild(summary);
+
+  const ul = document.createElement('ul');
+  ul.className = 'notes-folder-contents';
+  folder.children.forEach(child => ul.appendChild(renderNoteFolderNode(child, depth + 1, currentPath)));
+  folder.notes.forEach(n => {
+    const item = document.createElement('li');
+    item.className = 'notes-folder-note-item';
+    const primary = n.name || n.label;
+    // When Name is set, Label still shows in the meta suffix as disambiguating
+    // context (e.g. two notes both named "Draft" but with different labels) —
+    // mirrors this feature's reference app showing "name or label" as the
+    // primary text with the label always available alongside it.
+    const meta = n.name ? `${escapeHtml(n.label)} · #${escapeHtml(n.idSuffix)}` : `#${escapeHtml(n.idSuffix)}`;
+    item.innerHTML = `<a title="${escapeHtml(primary)} (#${escapeHtml(n.idSuffix)})">${escapeHtml(truncate(primary, 28))} <span class="notes-folder-note-meta">${meta}</span></a>`;
+    item.querySelector('a').addEventListener('click', e => { e.preventDefault(); openNoteModal(n.id); });
+    ul.appendChild(item);
+  });
+  details.appendChild(ul);
+
+  // Persist to sessionStorage on every toggle — direct click on the
+  // <summary>, or a programmatic change via Expand All/Collapse All below
+  // (both fire the native `toggle` event) — so rebuilding the tree after
+  // any note create/update/delete doesn't visually re-collapse folders
+  // the user had deliberately opened.
+  details.addEventListener('toggle', () => {
+    const state = notesGetFolderState();
+    state[currentPath] = details.open;
+    notesSetFolderState(state);
+  });
+
+  li.appendChild(details);
+  return li;
+}
+
+function renderNoteFolderTree(notes) {
+  const container = document.getElementById('notes-folder-tree');
+  const tree = buildNoteFolderTree(notes);
+  container.innerHTML = '';
+  document.getElementById('notes-folder-actions').classList.toggle('d-none', tree.length === 0);
+  if (!tree.length) {
+    container.innerHTML = '<div class="notes-folder-empty">No folders yet — tag a note with <code>//folder-name</code> to organize it here.</div>';
+    return;
+  }
+  const ul = document.createElement('ul');
+  ul.className = 'notes-folder-tree';
+  tree.forEach(folder => ul.appendChild(renderNoteFolderNode(folder, 0, '')));
+  container.appendChild(ul);
+}
+
+async function loadNotesFolderTree() {
+  const container = document.getElementById('notes-folder-tree');
+  try {
+    const resp = await HGAI_API.listNotes({ limit: NOTES_FOLDER_TREE_LIMIT });
+    renderNoteFolderTree(resp.items || []);
+  } catch (err) {
+    container.innerHTML = `<div class="notes-folder-empty text-danger">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+document.getElementById('btn-notes-folders-expand').addEventListener('click', () => {
+  document.querySelectorAll('#notes-folder-tree details').forEach(d => { d.open = true; });
+});
+document.getElementById('btn-notes-folders-collapse').addEventListener('click', () => {
+  document.querySelectorAll('#notes-folder-tree details').forEach(d => { d.open = false; });
+});
+
+// Folder sidebar is horizontally resizable by dragging the handle between
+// it and the main list — width persists to localStorage (not
+// sessionStorage, unlike folder open/closed state: a deliberately-chosen
+// panel width is a lasting preference, not per-tab transient state) and
+// is applied via the --notes-sidebar-width CSS variable.
+const NOTES_SIDEBAR_WIDTH_KEY = 'hgai_notes_sidebar_width';
+const NOTES_SIDEBAR_MIN_WIDTH = 180;
+const NOTES_SIDEBAR_MAX_WIDTH = 600;
+
+function notesApplySidebarWidth(width) {
+  document.documentElement.style.setProperty('--notes-sidebar-width', `${width}px`);
+}
+
+function notesRestoreSidebarWidth() {
+  try {
+    const saved = parseInt(localStorage.getItem(NOTES_SIDEBAR_WIDTH_KEY), 10);
+    if (!isNaN(saved)) {
+      notesApplySidebarWidth(Math.min(NOTES_SIDEBAR_MAX_WIDTH, Math.max(NOTES_SIDEBAR_MIN_WIDTH, saved)));
+    }
+  } catch { /* localStorage unavailable — default width from CSS applies */ }
+}
+notesRestoreSidebarWidth();
+
+function notesInitSidebarResize() {
+  const handle = document.getElementById('notes-sidebar-resize-handle');
+  const sidebar = document.querySelector('.notes-folder-sidebar');
+  if (!handle || !sidebar) return;
+
+  let startX = 0;
+  let startWidth = 0;
+
+  function onPointerMove(e) {
+    const delta = e.clientX - startX;
+    const width = Math.min(NOTES_SIDEBAR_MAX_WIDTH, Math.max(NOTES_SIDEBAR_MIN_WIDTH, startWidth + delta));
+    notesApplySidebarWidth(width);
+  }
+  function onPointerUp(e) {
+    handle.releasePointerCapture(e.pointerId);
+    handle.removeEventListener('pointermove', onPointerMove);
+    handle.removeEventListener('pointerup', onPointerUp);
+    handle.classList.remove('is-dragging');
+    document.body.classList.remove('notes-sidebar-resizing');
+    try {
+      const finalWidth = sidebar.getBoundingClientRect().width;
+      localStorage.setItem(NOTES_SIDEBAR_WIDTH_KEY, String(Math.round(finalWidth)));
+    } catch { /* unavailable — resized width just won't persist */ }
+  }
+  handle.addEventListener('pointerdown', e => {
+    startX = e.clientX;
+    startWidth = sidebar.getBoundingClientRect().width;
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add('is-dragging');
+    document.body.classList.add('notes-sidebar-resizing');
+    handle.addEventListener('pointermove', onPointerMove);
+    handle.addEventListener('pointerup', onPointerUp);
+  });
+  handle.addEventListener('keydown', e => {
+    const step = 20;
+    let delta = 0;
+    if (e.key === 'ArrowLeft') delta = -step;
+    else if (e.key === 'ArrowRight') delta = step;
+    else return;
+    e.preventDefault();
+    const width = Math.min(NOTES_SIDEBAR_MAX_WIDTH, Math.max(NOTES_SIDEBAR_MIN_WIDTH, sidebar.getBoundingClientRect().width + delta));
+    notesApplySidebarWidth(width);
+    try { localStorage.setItem(NOTES_SIDEBAR_WIDTH_KEY, String(Math.round(width))); } catch { /* unavailable */ }
+  });
+}
+notesInitSidebarResize();
+
+document.getElementById('btn-refresh-notes').addEventListener('click', () => { loadNotes(); loadNotesFolderTree(); });
+['notes-search', 'notes-tags-filter'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') { State.notesPage = 0; loadNotes(); }
+  });
+});
+
+function deleteNoteRow(id, label) {
+  confirmDelete(`Delete note "${label}"? This cannot be undone.`, async () => {
+    try {
+      await HGAI_API.deleteNote(id);
+      toast('Note deleted');
+      loadNotes();
+      loadNotesFolderTree();
+    } catch (err) { toast(err.message, 'danger'); }
+  });
+}
+
+// ── Note Markdown rendering: [text](note:<id>) links, ![alt](media:<id>) embeds ──
+// Resolved via plain-text placeholder substitution rather than a marked.js
+// custom Renderer — marked's renderer method signatures have changed across
+// major versions, while a regex swap-out/swap-back around marked.parse() +
+// DOMPurify.sanitize() works identically regardless of version. The final
+// placeholder→HTML substitution happens AFTER sanitization, so its own HTML
+// is hand-built with escapeHtml() on every user-controlled part, the same
+// discipline every other innerHTML template in this file already follows.
+let notePreviewObjectUrls = [];
+
+async function renderNoteMarkdown(text, containerId) {
+  const mediaEmbeds = [];
+  const noteLinks = [];
+  let working = text || '';
+
+  working = working.replace(/!\[([^\]]*)\]\(media:([^)\s]+)\)/g, (_, alt, id) => {
+    const token = `zzMEDIAEMBEDzz${mediaEmbeds.length}zz`;
+    mediaEmbeds.push({ alt, id });
+    return token;
+  });
+  working = working.replace(/(?<!!)\[([^\]]*)\]\(note:([^)\s]+)\)/g, (_, label, id) => {
+    const token = `zzNOTELINKzz${noteLinks.length}zz`;
+    noteLinks.push({ label, id });
+    return token;
+  });
+
+  let html = DOMPurify.sanitize(marked.parse(working));
+
+  let noteIndex = new Map();
+  if (noteLinks.length) {
+    try {
+      const resp = await HGAI_API.listNotes({ limit: 200 });
+      noteIndex = new Map((resp.items || []).map(n => [n.id, n.label]));
+    } catch { /* link resolution degrades to "broken" if the index can't load */ }
+  }
+
+  mediaEmbeds.forEach((e, i) => {
+    const built = `<img data-note-embed-media-id="${escapeHtml(e.id)}" alt="${escapeHtml(e.alt)}" class="note-embed-loading"/>`;
+    html = html.split(`zzMEDIAEMBEDzz${i}zz`).join(built);
+  });
+  noteLinks.forEach((l, i) => {
+    const targetLabel = noteIndex.get(l.id);
+    const built = targetLabel !== undefined
+      ? `<a href="#" class="note-internal-link" data-note-id="${escapeHtml(l.id)}">${escapeHtml(l.label || targetLabel)}</a>`
+      : `<span class="note-link-broken" title="No note matches '${escapeHtml(l.id)}' (or it isn't shared with you)">${escapeHtml(l.label || l.id)}</span>`;
+    html = html.split(`zzNOTELINKzz${i}zz`).join(built);
+  });
+
+  const el = document.getElementById(containerId);
+  el.innerHTML = html || '<span class="text-muted">Nothing to preview</span>';
+  await resolveNoteMediaEmbeds(el);
+}
+
+async function resolveNoteMediaEmbeds(containerEl) {
+  notePreviewObjectUrls.forEach(u => URL.revokeObjectURL(u));
+  notePreviewObjectUrls = [];
+  const imgs = containerEl.querySelectorAll('img[data-note-embed-media-id]');
+  await Promise.all([...imgs].map(async img => {
+    const mediaId = img.dataset.noteEmbedMediaId;
+    try {
+      const blob = await HGAI_API.downloadMedia(mediaId);
+      const url = URL.createObjectURL(blob);
+      notePreviewObjectUrls.push(url);
+      img.src = url;
+      img.classList.remove('note-embed-loading');
+    } catch {
+      const span = document.createElement('span');
+      span.className = 'note-embed-broken';
+      span.title = `Media '${mediaId}' not found or not accessible`;
+      span.textContent = img.alt || mediaId;
+      img.replaceWith(span);
+    }
+  }));
+}
+
+function noteInternalLinkClickHandler(e) {
+  const a = e.target.closest('.note-internal-link');
+  if (!a) return;
+  e.preventDefault();
+  bootstrap.Modal.getInstance(document.getElementById('modal-note'))?.hide();
+  setTimeout(() => openNoteModal(a.dataset.noteId), 200); // after the current modal's hide transition
+}
+document.getElementById('note-preview').addEventListener('click', noteInternalLinkClickHandler);
+document.getElementById('note-browse-content').addEventListener('click', noteInternalLinkClickHandler);
+
+// Tracks whether the currently-open note can be edited by this account —
+// read by setNoteMode() to decide Save's visibility independent of which
+// mode is active (a viewer-only note hides Save in every mode, not just Browse).
+let noteModalEditable = true;
+
+// Three modes: Browse (default — read-only Label/Name/rendered content
+// only), Edit (the full form, raw Markdown textarea), Preview (the full
+// form, but Content shows rendered output instead of raw Markdown — lets
+// Tags/Status/Media/History stay visible and editable while previewing,
+// unlike Browse which hides all of that deliberately).
+function setNoteMode(mode) {
+  ['browse', 'edit', 'preview'].forEach(m => {
+    document.getElementById(`btn-note-mode-${m}`).classList.toggle('active', m === mode);
+  });
+  document.getElementById('note-browse-view').classList.toggle('d-none', mode !== 'browse');
+  document.getElementById('form-note').classList.toggle('d-none', mode === 'browse');
+  document.getElementById('note-text').classList.toggle('d-none', mode !== 'edit');
+  document.getElementById('note-preview').classList.toggle('d-none', mode !== 'preview');
+  document.getElementById('btn-save-note').classList.toggle('d-none', mode === 'browse' || !noteModalEditable);
+
+  if (mode === 'browse') {
+    document.getElementById('note-browse-label').textContent = document.getElementById('note-label').value || '(untitled)';
+    const nameVal = document.getElementById('note-name').value.trim();
+    const nameEl = document.getElementById('note-browse-name');
+    nameEl.textContent = nameVal;
+    nameEl.classList.toggle('d-none', !nameVal);
+    renderNoteMarkdown(document.getElementById('note-text').value, 'note-browse-content');
+  } else if (mode === 'preview') {
+    renderNoteMarkdown(document.getElementById('note-text').value, 'note-preview');
+  }
+}
+
+document.getElementById('btn-note-mode-browse').addEventListener('click', () => setNoteMode('browse'));
+document.getElementById('btn-note-mode-edit').addEventListener('click', () => setNoteMode('edit'));
+document.getElementById('btn-note-mode-preview').addEventListener('click', () => setNoteMode('preview'));
+
+// ── Note editor modal ────────────────────────────────────────────────────────
+// The Note modal window is resizable by dragging its native bottom-right
+// corner grip (CSS `resize: both` on .modal-content — see hgai.css), the
+// same affordance already used by this app's JSON-attributes textareas.
+// The chosen size is persisted to localStorage (a deliberate, lasting
+// preference, like the folder sidebar's width) via a ResizeObserver, since
+// native CSS resize fires no JS event of its own to hook a "drag finished"
+// moment — a debounced observer callback is the standard way to notice a
+// size settle without needing to reimplement the drag interaction itself.
+const NOTE_MODAL_SIZE_KEY = 'hgai_note_modal_size';
+let noteModalSizeSaveTimer = null;
+
+function restoreNoteModalSize() {
+  const content = document.querySelector('#modal-note .modal-content');
+  try {
+    const saved = JSON.parse(localStorage.getItem(NOTE_MODAL_SIZE_KEY) || 'null');
+    if (saved && saved.w && saved.h) {
+      content.style.width = `${saved.w}px`;
+      content.style.height = `${saved.h}px`;
+    }
+  } catch { /* unavailable or corrupt — default (unsized) modal applies */ }
+}
+
+function initNoteModalResizePersistence() {
+  const modalEl = document.getElementById('modal-note');
+  const content = modalEl.querySelector('.modal-content');
+  new ResizeObserver(() => {
+    clearTimeout(noteModalSizeSaveTimer);
+    noteModalSizeSaveTimer = setTimeout(() => {
+      if (!modalEl.classList.contains('show')) return; // ignore the modal's own open/close size changes
+      const rect = content.getBoundingClientRect();
+      try {
+        localStorage.setItem(NOTE_MODAL_SIZE_KEY, JSON.stringify({ w: Math.round(rect.width), h: Math.round(rect.height) }));
+      } catch { /* unavailable — resized size just won't persist */ }
+    }, 300);
+  }).observe(content);
+}
+initNoteModalResizePersistence();
+
+async function openNoteModal(noteId) {
+  const modal = new bootstrap.Modal(document.getElementById('modal-note'));
+  restoreNoteModalSize();
+  document.getElementById('form-note').reset();
+  document.getElementById('note-form-id').value = noteId || '';
+  document.getElementById('note-history-section').classList.add('d-none');
+  document.getElementById('btn-note-share-open').classList.add('d-none');
+  noteModalEditable = true;
+  document.getElementById('btn-note-mode-edit').classList.remove('d-none');
+  setNoteFieldsDisabled(false);
+
+  if (noteId) {
+    document.getElementById('modal-note-title').textContent = 'Note';
+    try {
+      const n = await HGAI_API.getNote(noteId);
+      document.getElementById('note-label').value = n.label || '';
+      document.getElementById('note-name').value = n.name || '';
+      document.getElementById('note-text').value = n.text || '';
+      document.getElementById('note-tags').value = (n.tags || []).join(', ');
+      document.getElementById('note-status').value = n.status || 'active';
+      noteMediaItems = (n.media || []).map(m => ({ ...m }));
+      renderMediaList('note-media-list', noteMediaItems);
+      document.getElementById('note-history-section').classList.remove('d-none');
+      renderMutationHistory(n.mutations, 'note-mutation-history', { showHeading: false });
+
+      if (noteIsOwner(n)) document.getElementById('btn-note-share-open').classList.remove('d-none');
+      const editable = noteCanEdit(n);
+      noteModalEditable = editable;
+      setNoteFieldsDisabled(!editable);
+      document.getElementById('btn-note-mode-edit').classList.toggle('d-none', !editable);
+      if (!editable) {
+        document.getElementById('modal-note-title').textContent = `${n.label} (view only)`;
+      }
+      setNoteMode('browse'); // default entry mode for an existing note — nothing to browse yet for a brand-new one (see below)
+    } catch (err) {
+      toast(err.message, 'danger');
+      return;
+    }
+  } else {
+    document.getElementById('modal-note-title').textContent = 'New Note';
+    document.getElementById('note-status').value = 'active';
+    noteMediaItems = [];
+    renderMediaList('note-media-list', noteMediaItems);
+    setNoteMode('edit');
+  }
+  modal.show();
+}
+
+function setNoteFieldsDisabled(disabled) {
+  ['note-label', 'note-name', 'note-text', 'note-tags', 'note-status', 'note-media-file', 'note-media-role',
+   'btn-note-media-upload', 'btn-note-media-browse'].forEach(id => {
+    document.getElementById(id).disabled = disabled;
+  });
+}
+
+document.getElementById('btn-new-note').addEventListener('click', () => openNoteModal(null));
+
+document.getElementById('btn-note-media-upload').addEventListener('click', () =>
+  handleMediaUpload('note-media-file', 'note-media-role', 'note-media-upload-spinner', noteMediaItems, 'note-media-list'));
+document.getElementById('btn-note-media-browse').addEventListener('click', () =>
+  openMediaPicker(noteMediaItems, 'note-media-list'));
+
+document.getElementById('btn-save-note').addEventListener('click', async () => {
+  const id = document.getElementById('note-form-id').value;
+  const label = document.getElementById('note-label').value.trim();
+  if (!label) { toast('Label is required', 'warning'); return; }
+
+  const data = {
+    label,
+    name: document.getElementById('note-name').value.trim(),
+    text: document.getElementById('note-text').value,
+    tags: parseTags(document.getElementById('note-tags').value),
+    status: document.getElementById('note-status').value,
+    media: noteMediaItems,
+  };
+
+  try {
+    if (id) {
+      await HGAI_API.updateNote(id, data);
+      toast('Note updated');
+    } else {
+      await HGAI_API.createNote(data);
+      toast('Note created');
+    }
+    bootstrap.Modal.getInstance(document.getElementById('modal-note'))?.hide();
+    loadNotes();
+    loadNotesFolderTree();
+  } catch (err) { toast(err.message, 'danger'); }
+});
+
+// ── Note sharing modal ───────────────────────────────────────────────────────
+async function openNoteShareModal(noteId) {
+  document.getElementById('note-share-note-id').value = noteId;
+  document.getElementById('note-share-username').value = '';
+  document.getElementById('note-share-role').value = 'viewer';
+  new bootstrap.Modal(document.getElementById('modal-note-share')).show();
+  await loadNoteShares(noteId);
+}
+
+async function loadNoteShares(noteId) {
+  const listEl = document.getElementById('note-share-list');
+  listEl.innerHTML = '<div class="text-center py-2"><div class="spinner-border spinner-border-sm"></div></div>';
+  try {
+    const info = await HGAI_API.listNoteShares(noteId);
+    document.getElementById('note-share-label').textContent = noteId;
+    document.getElementById('note-share-owner').textContent = info.owner_username;
+    listEl.innerHTML = '';
+    if (!info.acl || !info.acl.length) {
+      listEl.innerHTML = '<div class="text-muted small">Not shared with anyone else yet</div>';
+    } else {
+      info.acl.forEach(g => {
+        const row = document.createElement('div');
+        row.className = 'note-share-row';
+        row.innerHTML = `
+          <span class="note-share-username">${escapeHtml(g.username)}</span>
+          <span class="badge bg-light text-dark">${escapeHtml(g.role)}</span>
+          <button type="button" class="btn btn-xs btn-outline-danger ms-auto" title="Revoke access"><i class="bi bi-x"></i></button>`;
+        row.querySelector('button').addEventListener('click', async () => {
+          try {
+            await HGAI_API.unshareNote(noteId, g.username);
+            toast(`Revoked ${g.username}'s access`);
+            await loadNoteShares(noteId);
+            loadNotes();
+          } catch (err) { toast(err.message, 'danger'); }
+        });
+        listEl.appendChild(row);
+      });
+    }
+  } catch (err) {
+    listEl.innerHTML = `<div class="text-danger small">${err.message}</div>`;
+  }
+}
+
+document.getElementById('btn-note-share-open').addEventListener('click', () => {
+  const noteId = document.getElementById('note-form-id').value;
+  if (noteId) openNoteShareModal(noteId);
+});
+
+document.getElementById('btn-note-share-add').addEventListener('click', async () => {
+  const noteId = document.getElementById('note-share-note-id').value;
+  const username = document.getElementById('note-share-username').value.trim();
+  const role = document.getElementById('note-share-role').value;
+  if (!username) { toast('Enter a username', 'warning'); return; }
+  try {
+    await HGAI_API.shareNote(noteId, { username, role });
+    toast(`Shared with ${username} as ${role}`);
+    document.getElementById('note-share-username').value = '';
+    await loadNoteShares(noteId);
+    loadNotes();
   } catch (err) { toast(err.message, 'danger'); }
 });
 

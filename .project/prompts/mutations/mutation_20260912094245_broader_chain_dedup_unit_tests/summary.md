@@ -1,0 +1,23 @@
+# Mutation Summary
+
+## Intent
+Add real unit-test coverage for the merge/dedup behavior of `_broader_chain` (added in the immediately preceding turn to support native `skos:broaderTransitive` recognition and generic `owl:inverse-of`-declared mirror relations), rather than relying solely on the live-server verification already performed.
+
+## Context
+`_broader_chain` itself is storage-backed — it calls `walk_closure` and `get_axiom_edges`, both of which hit `get_storage()` — so it doesn't fit this project's usual "pure function gets a real pytest unit test" bucket the way `atomic_pairs`/`_atomic_facts`/`_other_member` do (see the rest of `tests/test_inference.py`). But the *dedup logic itself* — three merge sources feeding one `{relation: hop}` dict via `setdefault`, so the first source to reach a given relation wins and later sources don't clobber it — is pure logic wrapped around those two storage calls. `tests/test_mesh.py` already established the pattern for this exact situation elsewhere in the codebase: mock the storage-backed calls with `unittest.mock.patch`/`AsyncMock` and unit-test the logic around them in isolation, leaving the storage-query behavior itself (`TransitiveSearchFilter`, Mongo lookups) to live verification. This turn follows that established pattern rather than inventing a new one.
+
+## What Changed and Why
+Added a `_walk_closure_router(routes)` helper that returns an async function routing by the axiom-relation argument (the only thing that varies across `_broader_chain`'s several `walk_closure` calls within one invocation) — lets each test declare, as a plain dict, exactly what each of the three lookup sources (`skos:narrowerTransitive`, `skos:broaderTransitive`, and whatever `get_axiom_edges` returns for `owl:inverse-of`-declared mirrors) would return, without needing a real database.
+
+Four tests cover the specific dedup guarantees this logic is supposed to provide:
+1. **`narrower_wins_over_broader_for_same_relation`** — when both native sources reach the same broader relation, the first-checked source's hop (`skos:narrowerTransitive`) is kept, not overwritten by the second (`skos:broaderTransitive`).
+2. **`unions_distinct_relations_from_all_three_sources`** — relations reached by only one of the three sources all survive the merge; dedup must not accidentally drop genuinely distinct results.
+3. **`custom_mirror_does_not_overwrite_native_result`** — a custom relation declared `owl:inverse-of` narrowerTransitive that happens to reach a relation already found natively doesn't clobber the native result — same guarantee as test 1, but exercising the third (generic) source against the first.
+4. **`skips_redundant_inverse_of_naming_broadertransitive`** — an explicit (redundant) `owl:inverse-of[skos:narrowerTransitive, skos:broaderTransitive]` declaration doesn't trigger a second `walk_closure` call for `"skos:broaderTransitive"` — it's already covered by the native path, so the generic-mirror loop must skip it (asserted directly against the mock's call history, not just the final result).
+
+## Key Decisions
+- **Mocked `walk_closure`/`get_axiom_edges` rather than a real or in-memory storage backend** — matches the existing precedent in `tests/test_mesh.py` (`ping_server`, `federated_hql` are tested the same way) rather than introducing a new testing approach for this one module. Keeps the tests fast, deterministic, and focused purely on `_broader_chain`'s own merge logic.
+- **Verified the tests actually catch a regression, not just pass trivially** — before finalizing, temporarily changed `_broader_chain`'s `chain.setdefault(reached, hop)` calls to unconditional `chain[reached] = hop` (removing the dedup-priority guarantee) and confirmed `test_broader_chain_narrower_wins_over_broader_for_same_relation` failed as expected, then restored the original file and reconfirmed all tests pass again. This is the same kind of quick verification any of this session's other bugfixes went through live; here it was a cheap in-process check instead of a full server spin-up, since no storage/HTTP layer is involved.
+
+## Live Verification Performed
+Not applicable in the "isolated server" sense used elsewhere this session — this turn's change is test-only, and `_broader_chain`'s actual query behavior against real storage was already verified live in the immediately preceding turn (mutation `mutation_20260911181022_broadertransitive_native_recognition`). What was verified here: `pytest tests/test_inference.py -q` → 19 passed (15 pre-existing + 4 new); full suite `pytest tests/ -q` → 76 passed, same 3 pre-existing unrelated `test_mesh.py` failures; and the mutation-testing check described above confirming the new tests are load-bearing, not tautological.

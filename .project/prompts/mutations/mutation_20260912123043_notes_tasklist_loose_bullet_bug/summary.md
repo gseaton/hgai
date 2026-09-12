@@ -1,0 +1,30 @@
+# Mutation Summary
+
+## Intent
+The user reported that GFM task-list items (`- [ ] foo`) in rendered Notes markdown still showed both the standard bullet marker and the task checkbox, when only the checkbox should show. A prior turn (`mutation_20260912122443_notes_tasklist_bullet_bug`) had already attempted this exact fix, so the actual bug was in a case that earlier fix's verification hadn't covered, not an untouched feature.
+
+## Context
+The earlier fix used `.note-preview-pane li:has(> input[type="checkbox"])` to strip the bullet from any `<li>` whose *direct child* is a checkbox `<input>` — correct for marked@12.0.2's output of a "tight" task list (`<li><input type="checkbox" ...> foo</li>`), and that turn's own verification note confirmed exactly that shape (one unchecked item, one checked item, one plain bullet, all with no blank lines between them).
+
+Before touching anything, `marked@12.0.2`'s actual output was inspected directly (fetching the same CDN bundle the app loads and running it under Node) for cases the prior verification hadn't exercised — confirming the root cause: per the CommonMark/GFM list-tightness rule, a blank line next to *any* item in a list makes marked treat the *entire* list as "loose," and a loose list's item content is wrapped in `<p>` instead of sitting directly in the `<li>` — e.g. `<li><p><input type="checkbox" ...> foo</p></li>`. The checkbox is then a grandchild of `<li>`, not a direct child, so the original `:has(> input[...])` selector doesn't match it and the bullet reappears. This is a very ordinary way to write a task list (many editors, and GitHub's own UI, insert blank lines between list items by default), so it's a realistic gap, not a contrived edge case.
+
+## What Changed and Why
+- **Added a second selector arm, `li:has(> p > input[type="checkbox"])`**, alongside the original `li:has(> input[type="checkbox"])`, covering both the tight-list and loose-list shapes marked can produce for the identical source markdown. The matching checkbox-margin rule (`li > input[type="checkbox"]`) got the same second arm (`li > p > input[type="checkbox"]`) so the loose-list checkbox also gets pulled into the bullet's vacated space rather than sitting mis-aligned once its bullet disappears.
+- **Deliberately kept both arms `>`-only (direct-child) chains**, rather than switching to an unqualified `li:has(input[type="checkbox"])` — verified this distinction matters with a third test case: a *plain* (non-task) list item that itself contains a nested task sub-list, e.g. `- plain item\n  - [ ] nested task`. An unqualified `:has()` would match the outer "plain item" `<li>` too (since a checkbox exists somewhere among its descendants), incorrectly stripping its bullet even though the item itself isn't a task. The two-arm direct-child-chain approach only ever matches an `<li>` whose *own* checkbox (not one several levels down in a child list) is present, in either the tight or loose shape.
+- **Still CSS-only** — no change to `renderNoteMarkdown()`, `marked.parse()` usage, or `DOMPurify.sanitize()`; the underlying HTML marked produces is standard, unmodified GFM output in both the tight and loose case, so the fix stayed purely presentational, consistent with the prior turn's same conclusion.
+
+## Key Decisions
+- Confirmed the loose-list HTML shape directly against the exact `marked@12.0.2` bundle the app loads (via CDN fetch + Node), rather than assuming CommonMark's general tight/loose behavior applies unchanged in this specific version — the prior turn had done the same kind of direct inspection for the tight case, so this follows the same standard of verifying against the actual dependency rather than spec-reading alone.
+- Explicitly tested the "plain item containing a nested task list" shape before finalizing the selector, specifically because the more obvious fix (drop the `>` combinator entirely to "just match any checkbox anywhere inside") would have silently introduced a regression on exactly this shape. The regression risk was found `by construction` while designing the fix, not by accident.
+
+## Verification
+Live end-to-end verification via a hand-rolled CDP script against the running dev server (already up; no restart needed for a CSS-only change) and a freshly-created headless Chrome profile (established practice). Created a real note via the API with a single body covering four shapes in one document: a tight task list (2 tasks + 1 plain bullet), a loose task list (blank line between every item; same 2 tasks + 1 plain bullet), and a plain item with its own nested task sub-list (2 nested tasks). Opened it in the app and inspected every rendered `<li>`'s computed `list-style-type` and checkbox presence in **both** Browse mode (`#note-browse-content`) and Preview mode (`#note-preview`) — the two independent surfaces `renderNoteMarkdown()` renders into:
+
+- Tight task items: `list-style-type: none` (bullet correctly suppressed) — unchanged from the prior fix, confirming no regression.
+- Tight plain bullet: `disc` (unaffected).
+- **Loose task items (the case this turn fixes): `list-style-type: none`** — previously would have shown `disc` alongside the checkbox; now correctly suppressed in both Browse and Preview mode.
+- Loose plain bullet: `disc` (unaffected — confirms the fix doesn't over-match plain items even once the whole list is in loose mode).
+- The outer "plain item with nested tasks" `<li>`: `disc` (its own bullet correctly preserved — confirms the direct-child-chain selector doesn't get fooled by a nested task sub-list, the regression risk identified while designing the fix).
+- The two nested task items themselves: `none` (correctly matched, tight-list shape since they had no blank lines of their own).
+
+Test note deleted afterward. Full `pytest` suite: 84 passed, same 3 pre-existing unrelated `test_mesh.py` failures as before this change (unaffected — CSS-only). Chrome test instance killed; dev server left running. `git status --short` shows only `ui/css/hgai.css` as this turn's change.

@@ -193,6 +193,28 @@ class MediaPatch:
 
 
 @dataclass
+class NoteFilters:
+    username: Optional[str] = None  # visibility: owner_username == username OR acl contains username
+    tags: Optional[List[str]] = None
+    search: Optional[str] = None  # substring match against label or text
+    status: Optional[str] = None
+    sort: Optional[List[Tuple[str, int]]] = None  # [(field, 1|-1), ...], priority order
+
+
+@dataclass
+class NotePatch:
+    label: Optional[str] = None
+    name: Optional[str] = None
+    text: Optional[str] = None
+    media: Optional[List[Any]] = None
+    tags: Optional[List[str]] = None
+    attributes: Optional[Dict[str, Any]] = None
+    status: Optional[str] = None
+    acl: Optional[List[Any]] = None  # only set by share/unshare, never by the general update path
+    mutations: Optional[List[Dict[str, Any]]] = None
+
+
+@dataclass
 class CacheStats:
     total_entries: int
     expired_entries: int

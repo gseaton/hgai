@@ -20,6 +20,8 @@ from .filters import (
     MediaPatch,
     MeshFilters,
     MeshPatch,
+    NoteFilters,
+    NotePatch,
     TransitiveSearchFilter,
 )
 
@@ -475,6 +477,47 @@ class MediaStore(ABC):
         deliberately rather than adding duration to MediaPatch."""
 
 
+# ─── Note Store ───────────────────────────────────────────────────────────────
+
+class NoteStore(ABC):
+    """CRUD operations for notes. Sharing (the `acl` field) goes through the
+    same generic `update()` as any other field — see `hgai.core.notes`.
+
+    Unlike hypernode/hyperedge stores, there's no `hypergraph_id`/`graph_id`
+    scoping parameter here — a note's id is globally unique on its own,
+    matching Accounts/Spaces/Media rather than the graph-nested resources.
+    """
+
+    @abstractmethod
+    async def create(self, doc: Dict[str, Any]) -> Any:
+        """Insert a note document and return NoteInDB."""
+
+    @abstractmethod
+    async def get(self, note_id: str) -> Optional[Any]:
+        """Return NoteInDB or None."""
+
+    @abstractmethod
+    async def list(
+        self,
+        filters: NoteFilters,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> Tuple[int, List[Any]]:
+        """Return (total_count, [NoteInDB, ...]) matching filters.
+
+        `filters.username`, when set, restricts results to notes that
+        username can see (owns, or appears in `acl`) — the store, not the
+        caller, applies this so listing and its count stay consistent."""
+
+    @abstractmethod
+    async def update(self, note_id: str, patch: NotePatch) -> Optional[Any]:
+        """Apply patch and bump version. Returns updated NoteInDB or None."""
+
+    @abstractmethod
+    async def delete(self, note_id: str) -> bool:
+        """Delete a note. Returns True if deleted."""
+
+
 # ─── Cache Store ──────────────────────────────────────────────────────────────
 
 class CacheStore(ABC):
@@ -565,3 +608,8 @@ class StorageBackend(ABC):
     @abstractmethod
     def media(self) -> MediaStore:
         """Media store."""
+
+    @property
+    @abstractmethod
+    def notes(self) -> NoteStore:
+        """Note store."""

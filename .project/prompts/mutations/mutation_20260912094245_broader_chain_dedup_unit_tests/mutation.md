@@ -1,0 +1,4 @@
+# Mutation Log
+
+## Modified
+- **tests/test_inference.py** — Added `_broader_chain` to the imports from `hgai.core.inference`, plus `from unittest.mock import AsyncMock, patch`. Added a `_walk_closure_router(routes)` helper that builds a `walk_closure` mock side_effect keyed by the axiom-relation argument. Added 4 new async tests (`_broader_chain` dedup section, mirroring `test_mesh.py`'s existing mocked-async-function style): `test_broader_chain_narrower_wins_over_broader_for_same_relation`, `test_broader_chain_unions_distinct_relations_from_all_three_sources`, `test_broader_chain_custom_mirror_does_not_overwrite_native_result`, `test_broader_chain_skips_redundant_inverse_of_naming_broadertransitive`. `walk_closure` and `get_axiom_edges` (the two storage-backed calls `_broader_chain` makes) are mocked so the tests exercise only the merge/dedup logic, not real storage.

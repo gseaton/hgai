@@ -12,6 +12,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from hgai.db.storage import get_storage
 from hgai.core.cache import invalidate_cache
 from hgai.core.media import adjust_media_refs, apply_media_diff, validate_default_media_id
+from hgai.core.mutations import append_mutation as _append_mutation
+from hgai.core.mutations import create_delta as _create_delta
+from hgai.core.mutations import update_delta as _update_delta
 from hgai.models.common import Status, now_utc
 from hgai.models.hyperedge import HyperedgeCreate, HyperedgeInDB, HyperedgeUpdate
 from hgai.models.hypergraph import HypergraphCreate, HypergraphInDB, HypergraphUpdate
@@ -76,8 +79,11 @@ def generate_hyperkey(
 # create/update, each with who (`by`), when (`ts`), what kind (`mutation`),
 # and which fields actually changed (`delta`). A candidate entry that would be
 # empty (nothing actually changed) or identical to the most recently recorded
-# entry (same mutation kind + same delta) is never persisted — see
-# `_append_mutation` below.
+# entry (same mutation kind + same delta) is never persisted. The tracking
+# helpers themselves live in hgai.core.mutations (shared with hgai.core.notes,
+# imported above under their original `_`-prefixed names since this module's
+# own tests/call sites already expect those names) — this module still owns
+# each resource's own tracked-fields list.
 
 HYPERNODE_TRACKED_FIELDS = [
     "label", "type", "description", "tags", "status", "attributes",
@@ -89,67 +95,6 @@ HYPEREDGE_TRACKED_FIELDS = [
     "attributes", "valid_from", "valid_to", "skos_broader", "skos_narrower",
     "skos_related", "media", "default_media_id",
 ]
-
-
-def _is_blank(value: Any) -> bool:
-    """True for the "nothing was really provided" sentinel values.
-
-    Used only to keep a create-mutation's delta focused on fields the caller
-    actually populated, instead of every default (None/[]/{}) tracked field.
-    """
-    return value is None or value == [] or value == {} or value == ""
-
-
-def _create_delta(doc: Dict[str, Any], tracked_fields: List[str]) -> List[Dict[str, Any]]:
-    """Delta for a brand-new document: every non-blank tracked field, old=None."""
-    return [
-        {"field": f, "old": None, "new": doc.get(f)}
-        for f in tracked_fields
-        if not _is_blank(doc.get(f))
-    ]
-
-
-def _update_delta(
-    existing_dump: Dict[str, Any], dumped: Dict[str, Any], tracked_fields: List[str]
-) -> List[Dict[str, Any]]:
-    """Delta for an update: only fields the caller supplied AND that actually
-    changed value versus the existing document — a no-op resubmission of an
-    already-current value produces no delta entry for that field."""
-    delta = []
-    for f in tracked_fields:
-        if f not in dumped:
-            continue
-        old = existing_dump.get(f)
-        new = dumped.get(f)
-        if old != new:
-            delta.append({"field": f, "old": old, "new": new})
-    return delta
-
-
-def _append_mutation(
-    existing_mutations: List[Dict[str, Any]],
-    mutation_type: str,
-    delta: List[Dict[str, Any]],
-    by: str,
-) -> List[Dict[str, Any]]:
-    """Return the mutations list with a new entry appended, unless the
-    candidate is redundant — in which case the original list object is
-    returned unchanged (by identity), so callers can detect "nothing to
-    persist" with `result is existing_mutations` instead of a deep compare.
-
-    Redundant means: no fields actually changed (empty delta), or the
-    candidate (mutation kind + delta) is identical to the most recently
-    recorded entry — i.e. the same net change happening again back-to-back.
-    """
-    if not delta:
-        return existing_mutations
-    if existing_mutations:
-        last = existing_mutations[-1]
-        if last.get("mutation") == mutation_type and last.get("delta") == delta:
-            return existing_mutations
-    return existing_mutations + [
-        {"ts": now_utc(), "by": by, "mutation": mutation_type, "delta": delta}
-    ]
 
 
 # ─── Hypergraph Engine ────────────────────────────────────────────────────────

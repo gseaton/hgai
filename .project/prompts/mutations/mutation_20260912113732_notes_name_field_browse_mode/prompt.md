@@ -1,0 +1,3 @@
+# Prompt
+
+Please add a human-readable Name field to notes while keeping the Label field as unique note identifier field.  Please add a default 'Browse' view mode in the Note modal that displays the rendered content of the note (similar to the Preview) but with only the Label, Name, rendered Content, and mode buttons (Browse, Edit, Preview).  If a user wants to edit the Note, the user clicks on the Edit button to go into edit mode.  Please also use and sort alphabetically the Name field of the node to display in the note logical Folders pane.  Please also include the note Name in the listings of notes.

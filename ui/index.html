@@ -59,6 +59,7 @@
     <a class="sidebar-link" data-screen="nodes" href="#"><i class="bi bi-circle-fill"></i> Hypernodes</a>
     <a class="sidebar-link" data-screen="edges" href="#"><i class="bi bi-share-fill"></i> Hyperedges</a>
     <a class="sidebar-link" data-screen="media" href="#"><i class="bi bi-file-earmark-fill"></i> Media</a>
+    <a class="sidebar-link" data-screen="notes" href="#"><i class="bi bi-journal-richtext"></i> Notes</a>
     <a class="sidebar-link" data-screen="viz" href="#"><i class="bi bi-bezier2"></i> Visualize</a>
     <a class="sidebar-link" data-screen="query" href="#"><i class="bi bi-terminal-fill"></i> Query (HQL)</a>
     <a class="sidebar-link" data-screen="shql" href="#"><i class="bi bi-braces"></i> Query (SHQL)</a>
@@ -373,6 +374,71 @@
           <div class="card-footer d-flex justify-content-between align-items-center">
             <span id="media-pagination-info" class="text-muted small"></span>
             <div class="btn-group btn-group-sm" id="media-pagination"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── NOTES ───────────────────────────────────────────────────── -->
+      <div id="screen-notes" class="screen d-none">
+        <div class="screen-header">
+          <h4><i class="bi bi-journal-richtext text-primary me-2"></i>Notes</h4>
+          <button class="btn btn-primary btn-sm" id="btn-new-note">
+            <i class="bi bi-plus-lg me-1"></i>New Note
+          </button>
+        </div>
+        <div class="notes-layout">
+          <aside class="notes-folder-sidebar" aria-label="Tag-based note folders">
+            <div class="notes-folder-sidebar-header">
+              <h6 class="mb-0"><i class="bi bi-folder-fill me-1"></i>Folders</h6>
+              <div class="btn-group btn-group-sm d-none" id="notes-folder-actions">
+                <button type="button" class="btn btn-outline-secondary" id="btn-notes-folders-expand">Expand All</button>
+                <button type="button" class="btn btn-outline-secondary" id="btn-notes-folders-collapse">Collapse All</button>
+              </div>
+            </div>
+            <div id="notes-folder-tree" class="notes-folder-tree"></div>
+          </aside>
+          <div class="notes-sidebar-resize-handle" id="notes-sidebar-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize folders panel" tabindex="0"></div>
+          <div class="notes-main">
+            <div class="card mb-3">
+              <div class="card-body py-2">
+                <div class="row g-2 align-items-center">
+                  <div class="col-auto">
+                    <input type="text" id="notes-search" class="form-control form-control-sm" placeholder="Search label, name, or text..." style="width:220px"/>
+                  </div>
+                  <div class="col-auto">
+                    <input type="text" id="notes-tags-filter" class="form-control form-control-sm" placeholder="Filter by tag..." style="width:180px"/>
+                  </div>
+                  <div class="col-auto">
+                    <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-notes">
+                      <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                  <thead>
+                    <tr>
+                      <th class="sortable-th" data-table="notes" data-sort-field="name">Name<span class="sort-indicator"></span></th>
+                      <th class="sortable-th" data-table="notes" data-sort-field="label">Label<span class="sort-indicator"></span></th>
+                      <th>Tags</th>
+                      <th class="sortable-th" data-table="notes" data-sort-field="owner_username">Owner<span class="sort-indicator"></span></th>
+                      <th>Shared With</th>
+                      <th class="sortable-th" data-table="notes" data-sort-field="system_updated">Updated<span class="sort-indicator"></span></th>
+                      <th class="sortable-th" data-table="notes" data-sort-field="status">Status<span class="sort-indicator"></span></th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbody-notes"></tbody>
+                </table>
+              </div>
+              <div class="card-footer d-flex justify-content-between align-items-center">
+                <span id="notes-pagination-info" class="text-muted small"></span>
+                <div class="btn-group btn-group-sm" id="notes-pagination"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1080,6 +1146,168 @@
         </button>
       </div>
 
+    </div>
+  </div>
+</div>
+
+<!-- Note Modal -->
+<div class="modal fade" id="modal-note" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+
+      <!-- Header -->
+      <div class="modal-header node-modal-header">
+        <div class="d-flex align-items-center gap-3 flex-grow-1" style="min-width:0">
+          <div class="modal-entity-badge modal-entity-badge-node">
+            <i class="bi bi-journal-richtext"></i>
+          </div>
+          <div style="min-width:0">
+            <h5 class="modal-title mb-0" id="modal-note-title">New Note</h5>
+            <div class="modal-entity-subtitle">Rich per-account document</div>
+          </div>
+        </div>
+        <button type="button" class="btn btn-outline-secondary btn-sm d-none me-2" id="btn-note-share-open">
+          <i class="bi bi-people me-1"></i>Share
+        </button>
+        <button type="button" class="btn-close ms-3 flex-shrink-0" data-bs-dismiss="modal"></button>
+      </div>
+
+      <!-- Mode bar: Browse (default, read-only render) / Edit (full form) / Preview (full form + rendered content) -->
+      <div class="note-mode-bar">
+        <div class="btn-group btn-group-sm" role="group">
+          <button type="button" class="btn btn-outline-secondary active" id="btn-note-mode-browse">Browse</button>
+          <button type="button" class="btn btn-outline-secondary" id="btn-note-mode-edit">Edit</button>
+          <button type="button" class="btn btn-outline-secondary" id="btn-note-mode-preview">Preview</button>
+        </div>
+      </div>
+
+      <!-- Body -->
+      <div class="modal-body p-0">
+        <input type="hidden" id="note-form-id" value=""/>
+
+        <!-- ── Browse view: read-only, just Label/Name/rendered content ── -->
+        <div id="note-browse-view" class="node-form-section node-form-section-last">
+          <h4 id="note-browse-label" class="mb-1"></h4>
+          <div id="note-browse-name" class="text-muted mb-3"></div>
+          <div id="note-browse-content" class="note-preview-pane"></div>
+        </div>
+
+        <form id="form-note" class="d-none">
+
+          <!-- ── Section: Identity ── -->
+          <div class="node-form-section">
+            <div class="node-form-section-header">Identity</div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Label <span class="text-danger">*</span></label>
+                <input type="text" id="note-label" class="form-control" placeholder="Note title" required/>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Name</label>
+                <input type="text" id="note-name" class="form-control" placeholder="Optional human-readable name/subtitle"/>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Section: Content ── -->
+          <div class="node-form-section">
+            <div class="node-form-section-header">
+              Content <span class="node-form-section-hint">— Markdown; <code>[text](note:&lt;id&gt;)</code> links to another note, <code>![alt](media:&lt;id&gt;)</code> embeds attached media</span>
+            </div>
+            <textarea id="note-text" class="form-control font-monospace" rows="14" placeholder="Write in Markdown..."></textarea>
+            <div id="note-preview" class="note-preview-pane d-none"></div>
+          </div>
+
+          <!-- ── Section: Classification ── -->
+          <div class="node-form-section">
+            <div class="node-form-section-header">Classification</div>
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label">Status</label>
+                <select id="note-status" class="form-select">
+                  <option value="active">active</option>
+                  <option value="draft">draft</option>
+                  <option value="archived">archived</option>
+                </select>
+              </div>
+              <div class="col-md-8">
+                <label class="form-label">Tags</label>
+                <input type="text" id="note-tags" class="form-control" placeholder="tag1, tag2, //folder/path"/>
+                <div class="form-text">Comma-separated list. A tag starting with <code>//</code> (e.g. <code>//projects/quill</code>) places this note in that folder in the sidebar.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Section: Media ── -->
+          <div class="node-form-section">
+            <div class="node-form-section-header">
+              Media
+              <span class="node-form-section-hint">— attach, then embed with <code>![alt](media:&lt;id&gt;)</code></span>
+            </div>
+            <div id="note-media-list" class="mb-2"></div>
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+              <input type="file" id="note-media-file" class="form-control form-control-sm" style="max-width:220px"/>
+              <input type="text" id="note-media-role" class="form-control form-control-sm" placeholder="role (optional)" style="max-width:160px"/>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-note-media-upload">
+                <span id="note-media-upload-spinner" class="spinner-border spinner-border-sm d-none me-1"></span>
+                <i class="bi bi-upload me-1"></i>Upload &amp; Attach
+              </button>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-note-media-browse">
+                <i class="bi bi-search me-1"></i>Browse Existing
+              </button>
+            </div>
+          </div>
+
+          <!-- ── Section: History (edit only, read-only) ── -->
+          <div class="node-form-section node-form-section-last d-none" id="note-history-section">
+            <div class="node-form-section-header">
+              History
+              <span class="node-form-section-hint">— read-only audit trail</span>
+            </div>
+            <div id="note-mutation-history"></div>
+          </div>
+
+        </form>
+      </div>
+
+      <!-- Footer -->
+      <div class="modal-footer node-modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-success px-4" id="btn-save-note">
+          <i class="bi bi-floppy me-1"></i>Save Note
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Note Share Modal -->
+<div class="modal fade" id="modal-note-share" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-people me-2"></i>Share "<span id="note-share-label"></span>"</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="note-share-note-id" value=""/>
+        <p class="text-muted small">Owner: <strong id="note-share-owner"></strong> (always full access)</p>
+        <div id="note-share-list" class="mb-3"></div>
+        <div class="d-flex gap-2">
+          <input type="text" id="note-share-username" class="form-control form-control-sm" placeholder="username"/>
+          <select id="note-share-role" class="form-select form-select-sm" style="max-width:120px">
+            <option value="viewer">viewer</option>
+            <option value="editor">editor</option>
+          </select>
+          <button type="button" class="btn btn-primary btn-sm text-nowrap" id="btn-note-share-add">
+            <i class="bi bi-plus-lg me-1"></i>Grant
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1875,6 +2103,8 @@
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/yaml/yaml.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/3d-force-graph@1.80.0/dist/3d-force-graph.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.5/dist/purify.min.js"></script>
 <script src="/ui/js/api.js"></script>
 <script src="/ui/js/app.js"></script>
 </body>

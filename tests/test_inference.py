@@ -1,10 +1,12 @@
 """Tests for the HypergraphAI inferencing primitives."""
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from hgai.core.inference import (
     _atomic_facts,
+    _broader_chain,
     _make_inferred_edge,
     _member_ids,
     _other_member,
@@ -143,3 +145,101 @@ def test_atomic_facts_recognizes_bundling_shape_does_not_matter():
     for e in unbundled:
         unbundled_facts |= _atomic_facts(e)
     assert _atomic_facts(bundled) == unbundled_facts
+
+
+# ─── _broader_chain dedup ───────────────────────────────────────────────────
+#
+# _broader_chain merges three walks (native skos:narrowerTransitive backward,
+# native skos:broaderTransitive forward, and any relation declared
+# owl:inverse-of narrowerTransitive, also forward) into one {relation: hop}
+# dict. walk_closure/get_axiom_edges are storage-backed, so they're mocked
+# here to exercise the merge/dedup logic itself in isolation — the storage
+# query behavior they wrap is verified live (see mutation history), matching
+# this project's convention of unit-testing pure logic and live-verifying
+# DB-dependent code.
+
+def _walk_closure_router(routes):
+    """Build a walk_closure AsyncMock side_effect keyed by the axiom-relation
+    argument (2nd positional arg) — the only thing that varies across
+    _broader_chain's calls within one invocation."""
+    async def _route(start_id, relation, graph_ids, direction="forward", pit=None):
+        return routes.get(relation, {})
+    return _route
+
+
+@pytest.mark.asyncio
+async def test_broader_chain_narrower_wins_over_broader_for_same_relation():
+    """narrowerTransitive is checked first; if broaderTransitive's native
+    walk reaches the SAME broader relation, its hop must not overwrite the
+    one narrowerTransitive already found (setdefault, not blind merge)."""
+    routes = {
+        "skos:narrowerTransitive": {"rel:broad": ("axiom-nt", "rel:narrow")},
+        "skos:broaderTransitive": {"rel:broad": ("axiom-bt", "rel:narrow")},
+    }
+    with patch("hgai.core.inference.walk_closure", side_effect=_walk_closure_router(routes)), \
+         patch("hgai.core.inference.get_axiom_edges", new_callable=AsyncMock, return_value=[]):
+        chain = await _broader_chain("rel:narrow", ["g1"])
+    assert chain == {"rel:broad": ("axiom-nt", "rel:narrow")}
+
+
+@pytest.mark.asyncio
+async def test_broader_chain_unions_distinct_relations_from_all_three_sources():
+    """Relations reached only by one source (native narrower, native
+    broader, or a custom owl:inverse-of-declared mirror) all survive the
+    merge — dedup must not collapse genuinely different results."""
+    routes = {
+        "skos:narrowerTransitive": {"rel:A": ("ax-a", "start")},
+        "skos:broaderTransitive": {"rel:B": ("ax-b", "start")},
+        "custom:mirror": {"rel:C": ("ax-c", "start")},
+    }
+    axiom_edges = [
+        {"id": "inv1", "members": [_m("skos:narrowerTransitive", 0), _m("custom:mirror", 1)]},
+    ]
+    with patch("hgai.core.inference.walk_closure", side_effect=_walk_closure_router(routes)), \
+         patch("hgai.core.inference.get_axiom_edges", new_callable=AsyncMock, return_value=axiom_edges):
+        chain = await _broader_chain("start", ["g1"])
+    assert chain == {
+        "rel:A": ("ax-a", "start"),
+        "rel:B": ("ax-b", "start"),
+        "rel:C": ("ax-c", "start"),
+    }
+
+
+@pytest.mark.asyncio
+async def test_broader_chain_custom_mirror_does_not_overwrite_native_result():
+    """A custom owl:inverse-of-declared mirror relation reaching a broader
+    relation already found by a native source must not overwrite it."""
+    routes = {
+        "skos:narrowerTransitive": {"rel:A": ("ax-native", "start")},
+        "skos:broaderTransitive": {},
+        "custom:mirror": {"rel:A": ("ax-custom", "start")},
+    }
+    axiom_edges = [
+        {"id": "inv1", "members": [_m("skos:narrowerTransitive", 0), _m("custom:mirror", 1)]},
+    ]
+    with patch("hgai.core.inference.walk_closure", side_effect=_walk_closure_router(routes)), \
+         patch("hgai.core.inference.get_axiom_edges", new_callable=AsyncMock, return_value=axiom_edges):
+        chain = await _broader_chain("start", ["g1"])
+    assert chain == {"rel:A": ("ax-native", "start")}
+
+
+@pytest.mark.asyncio
+async def test_broader_chain_skips_redundant_inverse_of_naming_broadertransitive():
+    """An explicit owl:inverse-of[skos:narrowerTransitive, skos:broaderTransitive]
+    declaration — redundant with the native broaderTransitive support — must
+    not trigger a second walk_closure call for "skos:broaderTransitive"; it's
+    already covered natively."""
+    routes = {
+        "skos:narrowerTransitive": {},
+        "skos:broaderTransitive": {"rel:broad": ("ax-bt", "start")},
+    }
+    axiom_edges = [
+        {"id": "inv1", "members": [_m("skos:narrowerTransitive", 0), _m("skos:broaderTransitive", 1)]},
+    ]
+    walk_mock = AsyncMock(side_effect=_walk_closure_router(routes))
+    with patch("hgai.core.inference.walk_closure", walk_mock), \
+         patch("hgai.core.inference.get_axiom_edges", new_callable=AsyncMock, return_value=axiom_edges):
+        chain = await _broader_chain("start", ["g1"])
+    assert chain == {"rel:broad": ("ax-bt", "start")}
+    called_relations = [call.args[1] for call in walk_mock.call_args_list]
+    assert called_relations.count("skos:broaderTransitive") == 1
