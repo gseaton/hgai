@@ -11,11 +11,13 @@ const State = {
   mediaPage: 0,
   mediaPickerPage: 0,
   notesPage: 0,
+  graphsPage: 0,
   nodePageSize: 50,
   edgePageSize: 50,
   mediaPageSize: 50,
   mediaPickerPageSize: 10,
   notesPageSize: 50,
+  graphsPageSize: 50,
   confirmCallback: null,
   editorCM: null,
   graphsCache: {},       // id -> graph object (includes space_id)
@@ -25,6 +27,7 @@ const State = {
   edgesSort: [{ field: 'label', dir: 'asc' }],  // default until the user clicks a column header, then their choice persists for the session
   mediaSort: [],
   notesSort: [],
+  graphsSort: [],
   viz3d: null,
 };
 
@@ -421,43 +424,64 @@ async function loadDashboard() {
 async function loadGraphs() {
   const tbody = document.getElementById('tbody-graphs');
   tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  const tagFilter = document.getElementById('graphs-tags-filter').value.trim();
+  const params = {
+    status: '',
+    skip: State.graphsPage * State.graphsPageSize,
+    limit: State.graphsPageSize,
+    search: document.getElementById('graphs-search').value.trim() || undefined,
+    tags: tagFilter ? [tagFilter] : undefined,
+    sort: sortParam(State.graphsSort),
+  };
+  updateSortIndicators('graphs');
   try {
-    const resp = await HGAI_API.listGraphs({ status: '', limit: 200 });
+    const resp = await HGAI_API.listGraphs(params);
     tbody.innerHTML = '';
-    State.graphsCache = {};
+    // Merged into the existing cache rather than replacing it — this page's
+    // fetch only ever covers the current search/tag/page slice, and other
+    // screens (e.g. the 3D visualization's cross-graph reference lookups,
+    // graphSpaceId()) depend on State.graphsCache holding every graph the
+    // app has seen, not just whatever's currently visible in this table.
     if (!resp.items || !resp.items.length) {
       tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">No hypergraphs found</td></tr>';
-      return;
+    } else {
+      resp.items.forEach(g => {
+        State.graphsCache[g.id] = g;
+        const spaceLabel = g.space_id
+          ? `<span class="badge bg-info text-dark">${g.space_id}</span>`
+          : '<span class="text-muted small">—</span>';
+        const sid = g.space_id ? `'${g.space_id}'` : 'null';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="table-id-link" onclick="editGraph('${g.id}', ${sid})"><code>${g.id}</code></td>
+          <td>${g.label}</td>
+          <td><span class="badge bg-light text-dark">${g.type}</span></td>
+          <td>${spaceLabel}</td>
+          <td>${g.node_count||0}</td>
+          <td>${g.edge_count||0}</td>
+          <td>${statusBadge(g.status)}</td>
+          <td>${tagBadges(g.tags)}</td>
+          <td class="text-end">
+            <button class="btn btn-xs btn-outline-secondary me-1" onclick="viewGraph('${g.id}', ${sid})"><i class="bi bi-eye"></i></button>
+            <button class="btn btn-xs btn-outline-primary me-1" onclick="editGraph('${g.id}', ${sid})"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-xs btn-outline-danger" onclick="deleteGraph('${g.id}', ${sid})"><i class="bi bi-trash"></i></button>
+          </td>`;
+        tbody.appendChild(tr);
+      });
     }
-    resp.items.forEach(g => {
-      State.graphsCache[g.id] = g;
-      const spaceLabel = g.space_id
-        ? `<span class="badge bg-info text-dark">${g.space_id}</span>`
-        : '<span class="text-muted small">—</span>';
-      const sid = g.space_id ? `'${g.space_id}'` : 'null';
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="table-id-link" onclick="editGraph('${g.id}', ${sid})"><code>${g.id}</code></td>
-        <td>${g.label}</td>
-        <td><span class="badge bg-light text-dark">${g.type}</span></td>
-        <td>${spaceLabel}</td>
-        <td>${g.node_count||0}</td>
-        <td>${g.edge_count||0}</td>
-        <td>${statusBadge(g.status)}</td>
-        <td>${tagBadges(g.tags)}</td>
-        <td class="text-end">
-          <button class="btn btn-xs btn-outline-secondary me-1" onclick="viewGraph('${g.id}', ${sid})"><i class="bi bi-eye"></i></button>
-          <button class="btn btn-xs btn-outline-primary me-1" onclick="editGraph('${g.id}', ${sid})"><i class="bi bi-pencil"></i></button>
-          <button class="btn btn-xs btn-outline-danger" onclick="deleteGraph('${g.id}', ${sid})"><i class="bi bi-trash"></i></button>
-        </td>`;
-      tbody.appendChild(tr);
-    });
+    renderPagination('graphs', resp.total, State.graphsPage, State.graphsPageSize);
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="9" class="text-danger text-center">${err.message}</td></tr>`;
   }
 }
 
 document.getElementById('btn-create-graph').addEventListener('click', () => openGraphModal());
+document.getElementById('btn-refresh-graphs').addEventListener('click', () => loadGraphs());
+['graphs-search', 'graphs-tags-filter'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') { State.graphsPage = 0; loadGraphs(); }
+  });
+});
 
 async function _populateSpaceSelect(selectedSpaceId = null, locked = false) {
   const sel = document.getElementById('graph-space-id');
@@ -687,7 +711,7 @@ async function loadNodes() {
   }
 }
 
-const PAGINATION_LOADERS = { nodes: () => loadNodes(), edges: () => loadEdges(), media: () => loadMedia(), mediaPicker: () => loadMediaPicker(), notes: () => loadNotes() };
+const PAGINATION_LOADERS = { nodes: () => loadNodes(), edges: () => loadEdges(), media: () => loadMedia(), mediaPicker: () => loadMediaPicker(), notes: () => loadNotes(), graphs: () => loadGraphs() };
 
 // ── Default-media thumbnails (Nodes/Edges list tables) ────────────────────────
 let _nodeThumbUrls = [];

@@ -12,6 +12,8 @@ class HypergraphFilters:
     status: Optional[str] = None
     tags: Optional[List[str]] = None
     space_id: Optional[str] = None  # None means unowned-only when explicitly passed as UNOWNED sentinel
+    search: Optional[str] = None  # text search on label
+    sort: Optional[List[Tuple[str, int]]] = None  # [(field, 1|-1), ...] priority order; None = default
 
 
 @dataclass

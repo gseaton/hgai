@@ -52,9 +52,12 @@ class MongoHypergraphStore(HypergraphStore):
             query["tags"] = {"$all": filters.tags}
         if filters.space_id is not None:
             query["space_id"] = filters.space_id
+        if filters.search:
+            query["label"] = {"$regex": filters.search, "$options": "i"}
 
         total = await _col().count_documents(query)
-        cursor = _col().find(query).skip(skip).limit(limit).sort("system_created", -1)
+        sort_spec = filters.sort or [("system_created", -1)]
+        cursor = _col().find(query).skip(skip).limit(limit).sort(sort_spec)
         docs = await cursor.to_list(length=limit)
         graphs = []
         for doc in docs:

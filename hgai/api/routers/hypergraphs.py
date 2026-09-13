@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from hgai.api.deps import get_current_active_account, require_graph_access
+from hgai.api.deps import get_current_active_account, parse_sort_param, require_graph_access
 from hgai.core import engine
 from hgai.core.auth import require_admin
 from hgai.models.account import AccountInDB
@@ -17,18 +17,23 @@ from hgai.models.hypergraph import (
 
 router = APIRouter(prefix="/graphs", tags=["hypergraphs"])
 
+GRAPH_SORT_FIELDS = {"id", "label", "type", "space_id", "node_count", "edge_count", "status", "system_created", "system_updated"}
+
 
 @router.get("", response_model=PaginatedResponse)
 async def list_graphs(
     status: Optional[str] = Query(default="active"),
     tags: Optional[List[str]] = Query(default=None),
     space_id: Optional[str] = Query(default=None),
+    search: Optional[str] = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=500),
+    sort: Optional[str] = Query(default=None, description=f"Comma-separated fields, '-' prefix = descending. Allowed: {sorted(GRAPH_SORT_FIELDS)}"),
     account: AccountInDB = Depends(get_current_active_account),
 ):
     total, graphs = await engine.list_hypergraphs(
-        status=status, tags=tags, space_id=space_id, skip=skip, limit=limit
+        status=status, tags=tags, space_id=space_id, search=search, skip=skip, limit=limit,
+        sort=parse_sort_param(sort, GRAPH_SORT_FIELDS),
     )
     # Filter by account permissions (direct + space membership)
     if "admin" not in account.roles and "*" not in account.permissions.graphs:

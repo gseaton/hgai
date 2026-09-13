@@ -151,10 +151,12 @@ async def list_hypergraphs(
     status: Optional[str] = "active",
     tags: Optional[List[str]] = None,
     space_id: Optional[str] = None,
+    search: Optional[str] = None,
     skip: int = 0,
     limit: int = 50,
+    sort: Optional[List[Tuple[str, int]]] = None,
 ) -> Tuple[int, List[HypergraphInDB]]:
-    filters = HypergraphFilters(status=status, tags=tags, space_id=space_id)
+    filters = HypergraphFilters(status=status, tags=tags, space_id=space_id, search=search, sort=sort)
     return await get_storage().hypergraphs.list(filters, skip=skip, limit=limit)
 
 

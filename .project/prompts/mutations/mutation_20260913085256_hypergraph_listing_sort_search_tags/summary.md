@@ -1,0 +1,38 @@
+# Mutation Summary
+
+## Intent
+The Hypergraph listing page (`GET /graphs`, rendered by `loadGraphs()`) had no sorting or filtering at all — it fetched up to 200 items in whatever order MongoDB happened to return them (implicitly newest-first, via a hardcoded `.sort("system_created", -1)`) and rendered them as-is. The user wanted column-header click-to-sort (both directions) and text search + tag filtering, matching capabilities the Hypernodes, Hyperedges, Media, and Notes listing pages already had.
+
+## Context
+This codebase already has a complete, reusable client-side multi-column sort mechanism — `sortParam()`, `updateSortIndicators()`, `handleSortableThClick()`, a `State.<table>Sort` array per screen, a `PAGINATION_LOADERS` registry, and a `.sortable-th`/`data-table`/`data-sort-field` HTML convention — used identically by the Nodes, Edges, Media, and Notes tables. The backend side has a parallel, equally reusable pattern: a `sort`/`search` pair of query params on each listing router, validated through the shared `parse_sort_param()` helper (`hgai/api/deps.py`) against a per-router allow-list constant (e.g. `NODE_SORT_FIELDS`), threaded through a `Filters` dataclass into the Mongo store's `.list()`. Hypergraphs were the one first-class resource that had never been wired into either half of this pattern — `HypergraphFilters` only had `status`/`tags`/`space_id`, and `MongoHypergraphStore.list()`'s sort was hardcoded.
+
+Tag filtering already existed at the API level (`GET /graphs?tags=...`) before this turn — `list_hypergraphs()`/`HypergraphFilters` already accepted `tags`, matched via `$all`. What was actually missing there was just the UI: no `<input>` to drive it and no wiring in `loadGraphs()`.
+
+## What Changed and Why
+- **Backend sort/search support was added by directly mirroring the existing Hypernodes implementation** (`HypernodeFilters.search`/`.sort`, `MongoHypernodeStore.list()`'s regex-search-and-dynamic-sort logic, `hgai/api/routers/hypernodes.py`'s `NODE_SORT_FIELDS` + `parse_sort_param` pattern) field-for-field, rather than inventing a new approach — this is an established, repeated pattern in this codebase (four other resources already use it identically), so consistency with the existing convention was more valuable than any alternative design.
+- **`GRAPH_SORT_FIELDS` includes `node_count`/`edge_count`, not just the identity/status fields.** These are real, directly-stored integer fields on the hypergraph document (not computed at query time), so sorting by them is exactly as cheap as sorting by `label` — a natural columns-that-exist-in-the-table-should-be-sortable extension, and the two "Nodes"/"Edges" columns are visually prominent in the table already.
+- **Tags/Actions columns were deliberately left non-sortable.** `tags` is an array field (no well-defined single sort order for "compare these two lists of strings" in a way a user would find meaningful), and Actions isn't a data column at all — every other sortable-table screen in this app follows the same exclusion for its own array/action columns (e.g. Notes' Tags column, Media's action buttons).
+- **The filter-row card (search + tag input + refresh button) was placed above the table exactly matching the Notes/Nodes screens' existing layout** (`row g-2 align-items-center`, `.col-auto` cells, `form-control-sm`/`form-select-sm` sizing) — same visual language across every listing screen in the app, not a new layout pattern introduced just for this one page.
+- **Search/tag filters trigger a reload on Enter key**, not on every keystroke — matching the Notes and Nodes screens' identical behavior (no debounce, no live-as-you-type filtering) rather than introducing a different interaction model for this one page.
+- **No pagination was added.** The user asked specifically for sorting and filtering, not pagination; `loadGraphs()`'s existing flat `limit: 200` fetch (with no `skip`/page controls) was left exactly as it already was — sort and search apply within that same single fetch, same as before this change for the base listing behavior.
+
+## Key Decisions
+- Considered whether `space_id` should be sortable, since it's a badge-rendered column with many `null` values (unowned graphs) rather than a clean string everywhere. Kept it sortable anyway — it's a real, directly-stored field like any other, Mongo handles `null`-vs-string sort ordering without erroring, and excluding it would be an inconsistent, unexplained gap compared to every other plain string column being sortable.
+- Considered whether search should also match `id`, `description`, or `tags` (not just `label`), since Notes' search hint says "Search label, name, or text." Scoped this to `label` only, matching Hypernodes' search behavior exactly (`HypernodeFilters.search` is documented as "text search on label" and only touches that one field) — Hypergraphs and Hypernodes are the more directly comparable pair here (both are simple identity+label resources), and multi-field search wasn't asked for.
+
+## Verification
+Backend verified directly against the running dev server via `curl` (restarted first, since this turn touched Python files across four layers — filters dataclass, Mongo store, engine, router):
+- `sort=label` / `sort=-label`: correct ascending/descending alphabetical order across all 8 real hypergraphs in this instance.
+- `sort=id`: correct ascending id order.
+- `search=hello`: correctly matched only the two labels containing "hello" (case-insensitive), out of 8.
+- `sort=bogus_field`: correctly rejected with `400`, confirming `parse_sort_param`'s allow-list validation is wired in for this router now (previously graphs had no sort param to validate at all).
+- `tags=demo-tag`: after tagging `alpha` with a temporary tag via `PUT`, correctly returned only `alpha`; a nonexistent tag correctly returned an empty list. Tag removed afterward, restoring `alpha` to its original state.
+
+Full UI verified via a hand-rolled CDP script against a freshly-created headless Chrome profile, driving the actual rendered Hypergraphs screen (not just the API):
+- Clicking the **Label** header once sorted ascending (with the up-caret indicator shown in that header); a second click sorted descending (down-caret); a third click cleared the sort back to the original default order — exercising the full three-state toggle cycle of the existing shared sort mechanism.
+- Clicking the **ID** header produced the correct ascending id order.
+- Typing `hello` into the search box and pressing Enter correctly filtered to the same two matching labels seen via the API test, while the active ID sort was preserved through the filter change (confirming sort and search compose correctly, not just individually).
+- Clearing the search box and pressing Enter again correctly restored the full list, still sorted by id.
+- Typing a temporary tag (added to `bravo` via the API just for this test, removed afterward) into the tag filter box and pressing Enter correctly filtered to just that one graph; a nonexistent tag correctly produced the table's existing "No hypergraphs found" empty state.
+
+Full `pytest` suite: 84 passed, same 3 pre-existing unrelated `test_mesh.py` failures as before this change (unaffected). `node --check ui/js/app.js` passes. Chrome test instance killed; dev server left running (restarted once at the start of this turn for the backend changes, not touched again afterward since the CSS/JS/HTML pieces don't need a restart). `git status --short` shows `hgai/api/routers/hypergraphs.py`, `hgai/core/engine.py`, `hgai_module_storage/filters.py`, `hgai_module_storage_mongodb/stores/hypergraphs.py`, `ui/index.html`, and `ui/js/app.js` as touched — all consistent with the described changes.

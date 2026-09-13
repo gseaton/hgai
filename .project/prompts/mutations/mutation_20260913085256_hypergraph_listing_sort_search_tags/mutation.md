@@ -1,0 +1,9 @@
+# Mutation Log
+
+## Modified
+- **hgai_module_storage/filters.py** — Added `search: Optional[str]` and `sort: Optional[List[Tuple[str, int]]]` fields to `HypergraphFilters`, matching the shape already used by `HypernodeFilters`.
+- **hgai_module_storage_mongodb/stores/hypergraphs.py** — `MongoHypergraphStore.list()` now applies a case-insensitive regex search on `label` when `filters.search` is set, and sorts by `filters.sort` when provided (falling back to the previous hardcoded `system_created` descending order when not).
+- **hgai/core/engine.py** — `list_hypergraphs()` gained `search` and `sort` parameters, passed straight through to `HypergraphFilters`.
+- **hgai/api/routers/hypergraphs.py** — `GET /graphs` gained `search` (free-text) and `sort` (comma-separated, `-` prefix for descending) query parameters, plus a `GRAPH_SORT_FIELDS` allow-list (`id`, `label`, `type`, `space_id`, `node_count`, `edge_count`, `status`, `system_created`, `system_updated`) validated via the existing `parse_sort_param` helper (previously only used by the Hypernodes/Hyperedges/Media/Notes routers).
+- **ui/index.html** — Added a filter-row card above the Hypergraphs table (search input, tag filter input, refresh button), and converted the ID/Label/Type/Space/Nodes/Edges/Status column headers to `sortable-th` elements wired to the existing generic multi-column sort UI (Tags and the actions column remain non-sortable).
+- **ui/js/app.js** — Added `graphsSort: []` to `State`; `loadGraphs()` now builds `search`/`tags`/`sort` params from the new filter inputs and calls the existing `updateSortIndicators('graphs')`; registered `graphs: () => loadGraphs()` in `PAGINATION_LOADERS` so clicking a sortable header reloads the table; wired the refresh button and Enter-key-triggers-reload behavior for the two new filter inputs.

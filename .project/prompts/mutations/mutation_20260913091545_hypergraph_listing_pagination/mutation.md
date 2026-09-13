@@ -1,0 +1,5 @@
+# Mutation Log
+
+## Modified
+- **ui/index.html** — Added a `card-footer` pagination bar (`#graphs-pagination-info` + `#graphs-pagination` button group) to the Hypergraphs table, matching the existing footer structure already used by the Hypernodes/Hyperedges/Media/Notes tables.
+- **ui/js/app.js** — Added `graphsPage: 0` / `graphsPageSize: 50` to `State`. `loadGraphs()` now sends `skip`/`limit` derived from that page state (instead of a flat `limit: 200`) and calls the existing `renderPagination('graphs', ...)` at the end of every load, including the empty-results case (previously an early `return` on empty results would have skipped it). Stopped resetting `State.graphsCache` to `{}` on every load — entries are now merged in instead, since a paginated/filtered fetch only ever covers the currently-visible slice, not every graph the app has cached elsewhere (e.g. for the 3D visualization's cross-graph reference lookups). The two filter-input Enter-key handlers now reset `State.graphsPage = 0` before reloading, matching the Notes/Hypernodes screens' existing behavior for a new search/filter.
