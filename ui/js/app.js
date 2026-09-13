@@ -1857,7 +1857,7 @@ function deleteNoteRow(id, label) {
   });
 }
 
-// ── Note Markdown rendering: [text](note:<id>) links, ![alt](media:<id>) embeds ──
+// ── Note Markdown rendering: [text](note:<id>) / [text](note/<id>) links, ![alt](media:<id>) embeds ──
 // Resolved via plain-text placeholder substitution rather than a marked.js
 // custom Renderer — marked's renderer method signatures have changed across
 // major versions, while a regex swap-out/swap-back around marked.parse() +
@@ -1877,31 +1877,62 @@ async function renderNoteMarkdown(text, containerId) {
     mediaEmbeds.push({ alt, id });
     return token;
   });
-  working = working.replace(/(?<!!)\[([^\]]*)\]\(note:([^)\s]+)\)/g, (_, label, id) => {
+  // Accepts both `note:<ref>` and `note/<ref>` — the latter matches the
+  // convention used by the Quill notes project this feature was modeled
+  // after (see mutation_20260912103825_rich_notes_sharing); both forms
+  // resolve identically, so content authored either way keeps working.
+  // `<ref>` itself may be either a note's id or its label (see
+  // resolveNoteRef below) — renamed from the old `id` capture name since
+  // it's no longer necessarily an id.
+  working = working.replace(/(?<!!)\[([^\]]*)\]\(note[:/]([^)\s]+)\)/g, (_, label, ref) => {
     const token = `zzNOTELINKzz${noteLinks.length}zz`;
-    noteLinks.push({ label, id });
+    noteLinks.push({ label, ref });
     return token;
   });
 
   let html = DOMPurify.sanitize(marked.parse(working));
 
-  let noteIndex = new Map();
+  // A note reference resolves against id first (the permanent, always-
+  // unique identifier), falling back to label — but label is explicitly
+  // NOT enforced unique at the storage layer (see hgai/models/note.py's
+  // own docstring on NoteBase), so a label shared by more than one note is
+  // deliberately treated as unresolvable rather than guessing which one
+  // was meant; the broken-link message says so, so the author knows to
+  // switch to the id instead of wondering why it's not just picking one.
+  let noteById = new Map();
+  let idsByLabel = new Map();
   if (noteLinks.length) {
     try {
       const resp = await HGAI_API.listNotes({ limit: 200 });
-      noteIndex = new Map((resp.items || []).map(n => [n.id, n.label]));
+      (resp.items || []).forEach(n => {
+        noteById.set(n.id, n.label);
+        if (!idsByLabel.has(n.label)) idsByLabel.set(n.label, []);
+        idsByLabel.get(n.label).push(n.id);
+      });
     } catch { /* link resolution degrades to "broken" if the index can't load */ }
   }
+  const resolveNoteRef = ref => {
+    if (noteById.has(ref)) return { id: ref, label: noteById.get(ref) };
+    const ids = idsByLabel.get(ref);
+    if (ids && ids.length === 1) return { id: ids[0], label: ref };
+    if (ids && ids.length > 1) return { ambiguous: true };
+    return null;
+  };
 
   mediaEmbeds.forEach((e, i) => {
     const built = `<img data-note-embed-media-id="${escapeHtml(e.id)}" alt="${escapeHtml(e.alt)}" class="note-embed-loading"/>`;
     html = html.split(`zzMEDIAEMBEDzz${i}zz`).join(built);
   });
   noteLinks.forEach((l, i) => {
-    const targetLabel = noteIndex.get(l.id);
-    const built = targetLabel !== undefined
-      ? `<a href="#" class="note-internal-link" data-note-id="${escapeHtml(l.id)}">${escapeHtml(l.label || targetLabel)}</a>`
-      : `<span class="note-link-broken" title="No note matches '${escapeHtml(l.id)}' (or it isn't shared with you)">${escapeHtml(l.label || l.id)}</span>`;
+    const resolved = resolveNoteRef(l.ref);
+    let built;
+    if (resolved && !resolved.ambiguous) {
+      built = `<a href="#" class="note-internal-link" data-note-id="${escapeHtml(resolved.id)}">${escapeHtml(l.label || resolved.label)}</a>`;
+    } else if (resolved && resolved.ambiguous) {
+      built = `<span class="note-link-broken" title="Multiple notes are labeled '${escapeHtml(l.ref)}' — reference one by its id instead to disambiguate">${escapeHtml(l.label || l.ref)}</span>`;
+    } else {
+      built = `<span class="note-link-broken" title="No note matches '${escapeHtml(l.ref)}' (or it isn't shared with you)">${escapeHtml(l.label || l.ref)}</span>`;
+    }
     html = html.split(`zzNOTELINKzz${i}zz`).join(built);
   });
 
@@ -2024,6 +2055,11 @@ async function openNoteModal(noteId) {
   document.getElementById('note-form-id').value = noteId || '';
   document.getElementById('note-history-section').classList.add('d-none');
   document.getElementById('btn-note-share-open').classList.add('d-none');
+  // Copy Link only makes sense once a note has a stable id — a new,
+  // unsaved note has none yet, so the button stays hidden until reopened
+  // after saving (mirrors how the Edit/Mode bar and Share button are also
+  // meaningless before a first save).
+  document.getElementById('btn-note-copy-link').classList.toggle('d-none', !noteId);
   noteModalEditable = true;
   document.getElementById('btn-note-mode-edit').classList.remove('d-none');
   setNoteFieldsDisabled(false);
@@ -2153,6 +2189,20 @@ async function loadNoteShares(noteId) {
 document.getElementById('btn-note-share-open').addEventListener('click', () => {
   const noteId = document.getElementById('note-form-id').value;
   if (noteId) openNoteShareModal(noteId);
+});
+
+// Copies a ready-to-paste `[label](note:id)` link for the note currently
+// open in the modal, for pasting into another note's content. Uses
+// whatever's currently in the Label field (not the last-saved label) so a
+// label just typed but not yet saved is picked up immediately — the id is
+// what actually resolves the link (see renderNoteMarkdown's note-link
+// regex), the label is only there for a human-readable link text.
+document.getElementById('btn-note-copy-link').addEventListener('click', () => {
+  const noteId = document.getElementById('note-form-id').value;
+  if (!noteId) return;
+  const label = document.getElementById('note-label').value.trim() || noteId;
+  navigator.clipboard.writeText(`[${label}](note:${noteId})`)
+    .then(() => toast('Copied note link to clipboard'));
 });
 
 document.getElementById('btn-note-share-add').addEventListener('click', async () => {

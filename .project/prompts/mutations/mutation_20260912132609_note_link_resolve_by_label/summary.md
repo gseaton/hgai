@@ -1,0 +1,32 @@
+# Mutation Summary
+
+## Intent
+Two turns prior, a question about note-link syntax surfaced that hgai's `[text](note:<ref>)` links resolve strictly by note `id`, not by the more memorable `label` — unlike Quill, the project this Notes feature was modeled on, whose own comment describes its equivalent syntax as accepting a "note-label-or-id." The user asked for the same dual behavior here: a reference should resolve against either a note's generated id or its label.
+
+## Context
+This builds directly on the two immediately preceding turns: `mutation_20260912124208_note_link_slash_syntax` (added `note/<ref>` as an accepted separator alongside `note:<ref>`) and `mutation_20260912131554_note_copy_link_button` (added a "Copy Link" button that generates an id-based reference, since id was — until this turn — the only thing that actually resolved). The critical constraint shaping this turn's design is one already surfaced and documented in this same investigation thread: `hgai/models/note.py`'s own `NoteBase` docstring states label is explicitly **not** enforced unique at the storage layer, only `id` is — so unlike a typical "slug-or-id" lookup where the slug is assumed unique, label-based resolution here has to account for two notes legitimately sharing the same label.
+
+## What Changed and Why
+- **id is tried first, label second.** ids are permanent, storage-level-unique, and exactly what the pre-existing (and Copy Link-generated) references already use — trying id first preserves every existing reference's behavior unchanged, with label purely as an added fallback rather than a competing primary lookup that could ever second-guess a valid id.
+- **An ambiguous label (matched by more than one note) is treated as unresolved, not resolved to an arbitrary pick.** Silently resolving to "whichever note happened to come first in the list" would be non-deterministic (depends on `listNotes()`'s return order, which isn't guaranteed stable) and could silently point a link at the wrong note with no indication anything was wrong. Surfacing it as a broken link — with a message that explicitly says "multiple notes share this label, use the id instead" rather than the generic "not found" message — tells the author exactly what to do about it, rather than leaving them to guess why a reference that looks correct doesn't resolve.
+- **Two separate indexes (`noteById`, `idsByLabel`) instead of one, built from the same single `listNotes()` fetch** — no extra network round-trip, just two small in-memory `Map`s derived from the one response already being fetched for link resolution. `idsByLabel` maps to an *array* of ids specifically so ambiguity can be detected (an array with more than one entry) rather than only being able to represent "found" or "not found."
+- **The `id` field on captured note-link records was renamed to `ref`** throughout `renderNoteMarkdown()`, since after this change the captured string is no longer necessarily an id — keeping the old name would have made the new dual-resolution logic read as if it only ever handled ids.
+- **The Copy Link button (from the immediately preceding turn) was deliberately left generating an id-based reference, not switched to label.** ids are permanent; a label can be renamed later (the Label field isn't even required to stay unique, let alone stable), which would silently break a label-based link with no warning — id remains the more robust default for anything generated automatically, while label-based references stay available as a convenience for hand-typed links where the author accepts that trade-off.
+
+## Key Decisions
+- Considered resolving an ambiguous label to the first match (simplest to implement, and arguably "good enough" since duplicate labels are presumably rare). Rejected: the note model's own docstring treats label-uniqueness as a known, deliberate non-guarantee (not an oversight), so silently picking one of several notes sharing a label risks linking to the wrong document with no visible sign of a problem — a design that could go unnoticed for a long time. An explicit, distinctly-worded broken link costs nothing and surfaces the issue immediately.
+- Considered making label matching case-insensitive or trimmed, to be more forgiving of minor typos. Left it as an exact match, consistent with how id matching already works (also exact) and with the "no guessing" philosophy applied to the ambiguity case — a looser match introduces its own new ambiguity risk (could two different notes' labels differ only by case?) without being asked for.
+
+## Verification
+Live end-to-end verification via a hand-rolled CDP script against the running dev server (no restart needed — frontend-only change) and a freshly-created headless Chrome profile. Created real test notes via the API: two notes deliberately sharing the label `duplicate-label-test` (to exercise the ambiguity path), and a source note whose body exercised five cases in one document — a reference by id, by label via `note:`, by label via `note/`, a reference to the ambiguous shared label, and a reference to a nonexistent id/label.
+
+Opened the source note and inspected the rendered output in **both** Browse mode and Preview mode:
+- **By id**: resolved correctly (unchanged from before this turn).
+- **By label, `note:` form**: resolved correctly to the real target note — the new capability this turn adds.
+- **By label, `note/` form**: also resolved correctly — confirms label resolution composes cleanly with the separator-syntax work from two turns prior.
+- **Ambiguous label**: correctly rendered as a broken link with the distinct disambiguation message (`"Multiple notes are labeled 'duplicate-label-test' — reference one by its id instead to disambiguate"`), not silently resolved to either duplicate.
+- **Nonexistent reference**: correctly rendered as a broken link with the original not-found message, unchanged.
+
+Clicked the label-based link in Browse mode and confirmed it correctly closed the source note and opened the real target note (its label, `first-note`, appeared in the editor afterward) — full click-through navigation, not just DOM/regex inspection.
+
+All three test notes (the two duplicates and the source note) deleted afterward. Full `pytest` suite: 84 passed, same 3 pre-existing unrelated `test_mesh.py` failures as before this change (unaffected — frontend-only). `node --check ui/js/app.js` passes. Chrome test instance killed; dev server left running. `git status --short` shows `ui/index.html` and `ui/js/app.js` as this turn's changes.

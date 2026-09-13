@@ -1166,6 +1166,9 @@
             <div class="modal-entity-subtitle">Rich per-account document</div>
           </div>
         </div>
+        <button type="button" class="btn btn-outline-secondary btn-sm d-none me-2" id="btn-note-copy-link" title="Copy a Markdown link to this note, e.g. [label](note:id), for pasting into another note's content">
+          <i class="bi bi-link-45deg me-1"></i>Copy Link
+        </button>
         <button type="button" class="btn btn-outline-secondary btn-sm d-none me-2" id="btn-note-share-open">
           <i class="bi bi-people me-1"></i>Share
         </button>
@@ -1212,7 +1215,7 @@
           <!-- ── Section: Content ── -->
           <div class="node-form-section">
             <div class="node-form-section-header">
-              Content <span class="node-form-section-hint">— Markdown; <code>[text](note:&lt;id&gt;)</code> links to another note, <code>![alt](media:&lt;id&gt;)</code> embeds attached media</span>
+              Content <span class="node-form-section-hint">— Markdown; <code>[text](note:&lt;id-or-label&gt;)</code> links to another note, <code>![alt](media:&lt;id&gt;)</code> embeds attached media</span>
             </div>
             <textarea id="note-text" class="form-control font-monospace" rows="14" placeholder="Write in Markdown..."></textarea>
             <div id="note-preview" class="note-preview-pane d-none"></div>
