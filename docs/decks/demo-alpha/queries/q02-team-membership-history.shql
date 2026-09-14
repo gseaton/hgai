@@ -1,0 +1,15 @@
+shql:
+  from: acme-eng
+  where:
+    - edge:
+        bind: ?edge
+        relation: has-member
+        members:
+          - id: team:perception
+  select:
+    - ?edge.id
+    - ?edge.members
+    - ?edge.attributes
+    - ?edge.valid_from
+    - ?edge.valid_to
+  as: perception_team_all_versions

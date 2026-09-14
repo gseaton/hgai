@@ -43,7 +43,7 @@ class HypergraphStore(ABC):
     async def find_by_id_unscoped(self, graph_id: str) -> Optional[Any]:
         """Look up a graph by id only, ignoring space scope.
 
-        Used by auth/HQL paths that lack space context. Returns the first match.
+        Used by auth/SHQL paths that lack space context. Returns the first match.
         """
 
     @abstractmethod

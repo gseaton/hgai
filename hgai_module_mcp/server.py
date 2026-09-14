@@ -7,7 +7,7 @@ MCP tool groups:
   - hgai_hypernode_*  : Hypernode CRUD operations
   - hgai_hyperedge_*  : Hyperedge CRUD operations
   - hgai_hypergraph_* : Hypergraph management
-  - hgai_query_*      : HQL query execution
+  - hgai_query_*      : SHQL query execution
   - hgai_infer_*      : Semantic inferencing (transitive closure, inverse-of/symmetric/superproperty expansion)
   - hgai_mesh_*       : Mesh federation operations
   - hgai_media_*      : Media (binary file attachment) upload/download/delete
@@ -22,7 +22,6 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from hgai.core import engine
-from hgai_module_hql.engine import execute_hql, HQLError, validate_hql, parse_hql
 from hgai_module_shql.engine import execute_shql
 from hgai_module_shql.parser import parse_shql, validate_shql, SHQLError
 
@@ -32,7 +31,7 @@ mcp = FastMCP(
     name="hgai",
     instructions=(
         "HypergraphAI MCP Server. Provides tools for managing and querying semantic "
-        "hypergraph knowledge stores. Use hgai_query_execute for flexible HQL queries. "
+        "hypergraph knowledge stores. Use hgai_query_execute for flexible SHQL queries. "
         "Hyperedges are first-class entities and can connect n nodes. "
         "All operations require a valid hypergraph_id context."
     ),
@@ -379,41 +378,19 @@ async def hgai_hyperedge_delete(graph_id: str, edge_id: str) -> str:
 
 @mcp.tool()
 async def hgai_query_execute(query_yaml: str, use_cache: bool = True) -> str:
-    """Execute an HQL or SHQL query against a hypergraph.
+    """Execute an SHQL query against a hypergraph.
 
-    The query language is detected automatically from the top-level key:
-    - Top-level 'hql:' key  → HQL  (Hypergraph Query Language, YAML-based declarative)
-    - Top-level 'shql:' key → SHQL (Semantic Hypergraph Query Language, SPARQL-inspired)
+    SHQL (Semantic Hypergraph Query Language) is a SPARQL-inspired,
+    YAML-based pattern-matching language: `?var` bindings, implicit joins
+    across shared variables, multi-hop traversal, OPTIONAL/UNION, and
+    aggregation (`aggregate: {count, group_by}`). The query text must have
+    a top-level 'shql:' key.
 
     Args:
-        query_yaml: HQL or SHQL query in YAML format
+        query_yaml: SHQL query in YAML format
         use_cache: Whether to use query result cache (default True)
 
-    HQL example:
-        hql:
-          from: my-graph
-          match:
-            type: hyperedge
-            relation: has-member
-          where:
-            tags:
-              - original
-          return:
-            - members
-            - attributes
-          as: result
-
-    HQL point-in-time example:
-        hql:
-          from: presidents
-          at: "1963-11-22T00:00:00Z"
-          match:
-            type: hyperedge
-            relation: holds-office
-          return:
-            - members
-
-    SHQL example:
+    Example:
         shql:
           from: my-graph
           where:
@@ -427,6 +404,41 @@ async def hgai_query_execute(query_yaml: str, use_cache: bool = True) -> str:
             - "?person.label"
             - "?person.attributes"
           limit: 50
+
+    Point-in-time example:
+        shql:
+          from: presidents
+          at: "1963-11-22T00:00:00Z"
+          where:
+            - edge: "?e"
+              relation: holds-office
+          select:
+            - "?e.members"
+
+    Aggregation example:
+        shql:
+          from: my-graph
+          where:
+            - edge: "?e"
+          select:
+            - "?e.relation"
+          aggregate:
+            count: true
+            group_by: e.relation
+
+    Inferencing example (axiom expansion — see hgai_infer_* tools for more):
+        shql:
+          from: my-graph
+          infer: true
+          where:
+            - edge: "?e"
+              relation: has-member
+          select:
+            - "?e.relation"
+            - "?e.members"
+            - "?e._inferred"
+            - "?e._source_edge"
+            - "?e._axiom"
     """
     import yaml as _yaml
     try:
@@ -434,40 +446,26 @@ async def hgai_query_execute(query_yaml: str, use_cache: bool = True) -> str:
     except Exception as e:
         return json.dumps({"error": f"Failed to parse query YAML: {e}", "type": "ParseError"})
 
-    if not isinstance(data, dict):
-        return json.dumps({"error": "Query must be a YAML object with a top-level 'hql' or 'shql' key", "type": "ParseError"})
+    if not isinstance(data, dict) or "shql" not in data:
+        return json.dumps({"error": "Query must be a YAML object with a top-level 'shql' key", "type": "ParseError"})
 
-    if "hql" in data:
-        try:
-            result = await execute_hql(query_yaml, use_cache=use_cache)
-            return json.dumps(result.to_dict(), indent=2, default=str)
-        except HQLError as e:
-            return json.dumps({"error": str(e), "type": "HQLError"})
-        except Exception as e:
-            return json.dumps({"error": str(e), "type": "ExecutionError"})
-
-    if "shql" in data:
-        try:
-            result = await execute_shql(query_yaml, use_cache=use_cache)
-            return json.dumps(result.to_dict(), indent=2, default=str)
-        except SHQLError as e:
-            return json.dumps({"error": str(e), "type": "SHQLError"})
-        except Exception as e:
-            return json.dumps({"error": str(e), "type": "ExecutionError"})
-
-    return json.dumps({"error": "Query must have a top-level 'hql' or 'shql' key", "type": "ParseError"})
+    try:
+        result = await execute_shql(query_yaml, use_cache=use_cache)
+        return json.dumps(result.to_dict(), indent=2, default=str)
+    except SHQLError as e:
+        return json.dumps({"error": str(e), "type": "SHQLError"})
+    except Exception as e:
+        return json.dumps({"error": str(e), "type": "ExecutionError"})
 
 
 @mcp.tool()
 async def hgai_query_validate(query_yaml: str) -> str:
-    """Validate an HQL or SHQL query without executing it.
+    """Validate an SHQL query without executing it.
 
-    The query language is detected automatically from the top-level key:
-    - Top-level 'hql:' key  → HQL
-    - Top-level 'shql:' key → SHQL
+    The query text must have a top-level 'shql:' key.
 
     Args:
-        query_yaml: HQL or SHQL query in YAML format to validate
+        query_yaml: SHQL query in YAML format to validate
     """
     import yaml as _yaml
     try:
@@ -475,26 +473,15 @@ async def hgai_query_validate(query_yaml: str) -> str:
     except Exception as e:
         return json.dumps({"valid": False, "errors": [f"Failed to parse YAML: {e}"]})
 
-    if not isinstance(data, dict):
-        return json.dumps({"valid": False, "errors": ["Query must be a YAML object with a top-level 'hql' or 'shql' key"]})
+    if not isinstance(data, dict) or "shql" not in data:
+        return json.dumps({"valid": False, "errors": ["Query must be a YAML object with a top-level 'shql' key"]})
 
-    if "hql" in data:
-        try:
-            hql = parse_hql(query_yaml)
-            errors = validate_hql(hql)
-            return json.dumps({"language": "hql", "valid": len(errors) == 0, "errors": errors, "parsed": hql}, indent=2)
-        except HQLError as e:
-            return json.dumps({"language": "hql", "valid": False, "errors": [str(e)]})
-
-    if "shql" in data:
-        try:
-            shql = parse_shql(query_yaml)
-            errors = validate_shql(shql)
-            return json.dumps({"language": "shql", "valid": len(errors) == 0, "errors": errors, "parsed": shql}, indent=2)
-        except SHQLError as e:
-            return json.dumps({"language": "shql", "valid": False, "errors": [str(e)]})
-
-    return json.dumps({"valid": False, "errors": ["Query must have a top-level 'hql' or 'shql' key"]})
+    try:
+        shql = parse_shql(query_yaml)
+        errors = validate_shql(shql)
+        return json.dumps({"language": "shql", "valid": len(errors) == 0, "errors": errors, "parsed": shql}, indent=2)
+    except SHQLError as e:
+        return json.dumps({"language": "shql", "valid": False, "errors": [str(e)]})
 
 
 # ─── Inference Tools ────────────────────────────────────────────────────────────
@@ -642,33 +629,28 @@ async def hgai_mesh_sync(mesh_id: str) -> str:
 
 @mcp.tool()
 async def hgai_mesh_query(mesh_id: str, query_yaml: str, use_cache: bool = True) -> str:
-    """Execute a federated HQL or SHQL query across all servers in a mesh.
+    """Execute a federated SHQL query across all servers in a mesh.
 
-    The query language is detected from the top-level key ('hql:' or 'shql:').
+    Query text must have a top-level 'shql:' key.
     Results from all servers are merged and tagged with '_mesh_server_id'.
 
     Args:
         mesh_id: The mesh identifier
-        query_yaml: HQL or SHQL query in YAML format
+        query_yaml: SHQL query in YAML format
         use_cache: Whether to use query result cache (default True)
     """
     import yaml as _yaml
-    from hgai_module_mesh.engine import federated_hql, federated_shql
+    from hgai_module_mesh.engine import federated_shql
     try:
         data = _yaml.safe_load(query_yaml)
     except Exception as e:
         return json.dumps({"error": f"Failed to parse query YAML: {e}"})
 
-    if not isinstance(data, dict):
-        return json.dumps({"error": "Query must be a YAML object with a top-level 'hql' or 'shql' key"})
+    if not isinstance(data, dict) or "shql" not in data:
+        return json.dumps({"error": "Query must be a YAML object with a top-level 'shql' key"})
 
     try:
-        if "hql" in data:
-            result = await federated_hql(mesh_id, query_yaml, use_cache=use_cache)
-        elif "shql" in data:
-            result = await federated_shql(mesh_id, query_yaml, use_cache=use_cache)
-        else:
-            return json.dumps({"error": "Query must have a top-level 'hql' or 'shql' key"})
+        result = await federated_shql(mesh_id, query_yaml, use_cache=use_cache)
         return json.dumps(result, indent=2, default=str)
     except ValueError as e:
         return json.dumps({"error": str(e)})

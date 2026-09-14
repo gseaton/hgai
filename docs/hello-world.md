@@ -162,35 +162,37 @@ curl -X POST http://localhost:8000/api/v1/graphs/hello-world/edges \
 
 ## Step 4: Query Your Hypergraph
 
+Queries are written in **SHQL** — match `node`/`edge` patterns against `?variable` bindings, then `select:` the fields you want. See [concepts.md](concepts.md) and the [README's SHQL section](../README.md#shql--semantic-hypergraph-query-language) for the full language reference.
+
 ### Who were the Three Stooges? (All eras)
 
 ```yaml
-hql:
+shql:
   from: hello-world
-  match:
-    type: hyperedge
-    relation: has-member
-  return:
-    - id
-    - relation
-    - members
-    - attributes
-    - valid_from
-    - valid_to
+  where:
+    - edge:
+        bind: ?e
+        relation: has-member
+  select:
+    - ?e.id
+    - ?e.relation
+    - ?e.members
+    - ?e.attributes
 ```
 
 ### Point-in-Time: Who were the Stooges in 1940?
 
 ```yaml
-hql:
+shql:
   from: hello-world
   at: "1940-06-01T00:00:00Z"
-  match:
-    type: hyperedge
-    relation: has-member
-  return:
-    - members
-    - attributes
+  where:
+    - edge:
+        bind: ?e
+        relation: has-member
+  select:
+    - ?e.members
+    - ?e.attributes
 ```
 
 **Result**: Only the `edge-stooges-original` edge matches (Moe, Larry, Curly) because it was valid from 1932 to 1946. The Shemp era and comeback era edges are excluded.
@@ -198,14 +200,15 @@ hql:
 ### Point-in-Time: Who were the Stooges in 1950?
 
 ```yaml
-hql:
+shql:
   from: hello-world
   at: "1950-01-01T00:00:00Z"
-  match:
-    type: hyperedge
-    relation: has-member
-  return:
-    - members
+  where:
+    - edge:
+        bind: ?e
+        relation: has-member
+  select:
+    - ?e.members
 ```
 
 **Result**: The `edge-stooges-shemp` edge matches (Moe, Larry, Shemp) — Curly had retired due to illness.
@@ -213,46 +216,47 @@ hql:
 ### Find all siblings
 
 ```yaml
-hql:
+shql:
   from: hello-world
-  match:
-    type: hyperedge
-    relation: sibling
-    flavor: symmetric
-  return:
-    - members
-    - attributes
+  where:
+    - edge:
+        bind: ?e
+        relation: sibling
+        flavor: symmetric
+  select:
+    - ?e.members
+    - ?e.attributes
 ```
 
 ### Filter by tags
 
 ```yaml
-hql:
+shql:
   from: hello-world
-  match:
-    type: hyperedge
   where:
-    tags:
-      - original
-  return:
-    - id
-    - relation
-    - members
-    - tags
+    - edge:
+        bind: ?e
+        tags: [original]
+  select:
+    - ?e.id
+    - ?e.relation
+    - ?e.members
+    - ?e.tags
 ```
 
 ### Count edges by relation type
 
 ```yaml
-hql:
+shql:
   from: hello-world
-  match:
-    type: hyperedge
-  return:
-    - relation
+  where:
+    - edge:
+        bind: ?e
+  select:
+    - ?e.relation
   aggregate:
     count: true
-    group_by: relation
+    group_by: e.relation
 ```
 
 ---
@@ -288,16 +292,17 @@ admin@http://localhost:8000 [hello-world] hgai> get node moe-howard
     born: '1897-06-19'
   ...
 
-admin@http://localhost:8000 [hello-world] hgai> query
-  Enter HQL query (YAML format, end with line containing just ---):
-  match:
-    type: hyperedge
-    relation: has-member
-  return:
-    - members
+admin@http://localhost:8000 [hello-world] hgai> shql
+  Enter SHQL query (YAML format, end with line containing just ---):
+  where:
+    - edge:
+        bind: ?e
+        relation: has-member
+  select:
+    - ?e.members
   ---
 
-  Query 'result': 3 results
+  SHQL 'result': 3 results
 ```
 
 ---
@@ -308,7 +313,7 @@ admin@http://localhost:8000 [hello-world] hgai> query
 2. **Hyperedges** connect _n_ nodes simultaneously as first-class entities with their own attributes
 3. **Temporal queries** let you ask "who/what was true at this specific moment in time?"
 4. **Semantic flavors** (hub, symmetric) capture the nature of relationships
-5. **HQL** provides a declarative YAML query language for flexible hypergraph traversal
+5. **SHQL** provides a SPARQL-inspired YAML query language — variable bindings, implicit joins, and multi-hop traversal — for flexible hypergraph queries
 
 ---
 

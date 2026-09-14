@@ -1,18 +1,18 @@
 # q01 — every medevac-request fact ever recorded for PZ Bravo, no
 # point-in-time filter. Returns both versions (original + reassessed) —
 # nothing is hidden by default.
-hql:
+shql:
   from: defense-bd-demo-specops
-  match:
-    type: hyperedge
-    relation: medevac-request
   where:
-    members:
-      node_id: loc:pz-bravo
-  return:
-    - id
-    - members
-    - attributes
-    - valid_from
-    - valid_to
+    - edge:
+        bind: ?edge
+        relation: medevac-request
+        members:
+          - id: loc:pz-bravo
+  select:
+    - ?edge.id
+    - ?edge.members
+    - ?edge.attributes
+    - ?edge.valid_from
+    - ?edge.valid_to
   as: pz_bravo_requests_all_versions

@@ -8,7 +8,7 @@
 
 Welcome to HypergraphAI (hgAI) — a semantic hypergraph knowledge platform that lets you model complex, multi-way relationships between entities. Unlike traditional graphs where an edge connects exactly two nodes, hyperedges in hgAI can connect *any number* of nodes simultaneously, letting you represent rich real-world relationships faithfully and query them with precision.
 
-This course walks you through the fundamentals using a fun, familiar use case: **The Three Stooges** comedy group. By the end you will have hands-on experience creating hypergraphs, hypernodes, hyperedges, and writing both HQL and SHQL queries.
+This course walks you through the fundamentals using a fun, familiar use case: **The Three Stooges** comedy group. By the end you will have hands-on experience creating hypergraphs, hypernodes, hyperedges, and writing SHQL queries.
 
 **Prerequisites:** You have a running hgAI server and have already signed into the web application in your browser.
 
@@ -23,9 +23,8 @@ This course walks you through the fundamentals using a fun, familiar use case: *
 3. [Hypergraphs](#3-hypergraphs)
 4. [Hypernodes](#4-hypernodes)
 5. [Hyperedges](#5-hyperedges)
-6. [Queries — HQL](#6-queries--hql-hypergraph-query-language)
-7. [Queries — SHQL](#7-queries--shql-semantic-hypergraph-query-language)
-8. [Reference Summary](#8-reference-summary)
+6. [Queries — SHQL](#6-queries--shql-semantic-hypergraph-query-language)
+7. [Reference Summary](#7-reference-summary)
 
 ---
 
@@ -43,7 +42,6 @@ The left sidebar is your primary navigation. Sections are divided into **Knowled
 | Hypergraphs | Diagram | Create and manage hypergraphs |
 | Hypernodes | Circle | Browse and manage nodes |
 | Hyperedges | Share | Browse and manage edges |
-| Query (HQL) | Terminal | Write and run HQL queries |
 | Query (SHQL) | Braces | Write and run SHQL queries |
 | Spaces *(admin)* | Collection | Multi-tenant space management |
 | Accounts *(admin)* | People | User account management |
@@ -97,18 +95,24 @@ Every hyperedge has:
 **Real-world analogies:**
 - A `hub` edge with relation `has-member` connecting a `Team` node to all its current employees
 - A `symmetric` edge with relation `sibling` connecting three `Person` nodes who share a parent
-- A `direct` edge with relation `reports-to` going from an employee to their manager
-- A `transitive` edge with relation `is-a` placing `Dog` under `Mammal` under `Animal`
+- A 2-member `hub` edge with relation `reports-to` — first member (`seq: 0`) reports to the second — is how a directed fact like "employee reports to manager" is modeled
 
 ### Edge Flavors
 
+Only two flavors exist — deliberately, each describes a genuine N-ary fact
+that can't be decomposed into independent binary facts without losing what
+it asserts:
+
 | Flavor | Pattern | Example Use Case |
 |---|---|---|
-| `hub` | One hub node → many member nodes | Group membership, project team |
-| `symmetric` | All nodes equivalent, no direction | Siblings, co-authors, collaborators |
-| `direct` | Directed from first node to last | Reports-to, inherits-from |
-| `transitive` | A→B, B→C implies A→C | Is-a, contained-in, ancestor-of |
-| `inverse-transitive` | Inverse of transitive | Descendant-of, contains |
+| `hub` | First member (`seq: 0`) is the hub; every other member is an independent (hub, spoke) fact | Group membership, project team — and, with exactly 2 members, any directed fact: reports-to, mentorship |
+| `symmetric` | Every member is mutually equivalent to every other | Siblings, co-authors, collaborators |
+
+A directed *chain* (A reports to B, B reports to C, ...) is not one N-ary
+fact — it's several independent 2-member `hub` edges. Reasoning across such
+a chain ("is A transitively under C?") is a relation-level property,
+declared via an `owl:transitive` axiom hyperedge and enabled per query with
+`infer: true` (see Module 6's inferencing note) — not a per-edge flavor.
 
 ### Time-Scoped Relationships
 
@@ -428,7 +432,7 @@ Now create the group entity that represents The Three Stooges as a collective. T
 | Hypergraph | Yes | The graph that owns this edge |
 | ID | No | Auto-generated if left blank (recommended for most use cases) |
 | Relation | Yes | Semantic label: `has-member`, `sibling`, `broader`, `reports-to`, etc. |
-| Flavor | Yes | `hub`, `symmetric`, `direct`, `transitive`, or `inverse-transitive` |
+| Flavor | Yes | `hub` or `symmetric` |
 | Label | No | Human-readable label for this specific edge instance |
 | Status | No | `active`, `draft`, or `archived` |
 | Valid From | No | When this relationship became valid |
@@ -635,428 +639,45 @@ attributes:
   family: "Howard"
 ```
 
-**Direct — Reporting Relationship (HR):**
+**Hub, 2-member — Reporting Relationship (HR):**
 ```yaml
 relation: reports-to
-flavor: direct
+flavor: hub
 members:
   - node_id: "person:alice"
+    seq: 0
     role: report
   - node_id: "person:carol"
+    seq: 1
     role: manager
 valid_from: "2023-06-01T00:00:00Z"
 ```
+A 2-member `hub` edge is how any simple directed fact is modeled — the
+first member (`seq: 0`) is the hub, the second is its one spoke.
 
-**Transitive — Taxonomy (knowledge graph):**
+**Hub, 2-member — Taxonomy (knowledge graph):**
 ```yaml
 relation: is-a
-flavor: transitive
+flavor: hub
 members:
   - node_id: "concept:golden-retriever"
-    role: child
+    seq: 0
   - node_id: "concept:dog"
-    role: parent
+    seq: 1
 ```
+To make chains of `is-a` facts transitively reachable ("is a golden
+retriever an animal?", several hops up the hierarchy), declare
+`owl:transitive` on the `is-a` relation as a separate axiom hyperedge — see
+Module 6's inferencing note. That's a property of the *relation*, not a
+per-edge flavor.
 
 ---
 
-## 6. Queries — HQL (Hypergraph Query Language)
-
-### What is HQL?
-
-HQL is a YAML-based declarative query language purpose-built for hypergraphs. You write a structured document specifying *where* to query (the hypergraph), *what* to match (nodes, edges, or both), *conditions* to filter on, and *which fields* to return.
-
-HQL maps naturally to the underlying storage layer and is optimized for large result sets with direct attribute filtering.
-
-### Running an HQL Query
-
-1. Click **Query (HQL)** in the left sidebar.
-2. The screen splits into a **left editor pane** (YAML) and a **right results pane**.
-3. Type or paste your HQL query into the editor.
-4. Click **Run Query** (or press the run button). Results appear as JSON on the right.
-5. Use the **Validate** button to check syntax without executing.
-6. Use the **Examples** button to load built-in example queries.
-
-### HQL Structure
-
-```yaml
-hql:
-  from: <graph-id>               # required: graph ID or list [id1, id2]
-  at: <ISO-8601-datetime>        # optional: point-in-time filter
-  match:                          # optional: entity matching conditions
-    type: hypernode | hyperedge | any
-    node_type: <type-string>      # hypernode only
-    relation: <relation>          # hyperedge only
-    flavor: <flavor>              # hyperedge only
-  where:                          # optional: additional filter conditions
-    attributes.<field>: <value>
-    members:
-      node_id: <value>
-    tags:
-      - <tag>
-  return:                         # optional: fields to return
-    - id
-    - label
-    - attributes
-    - members
-  limit: 500                      # optional: max results (default 500)
-  skip: 0                         # optional: pagination offset
-```
-
-### WHERE Operators
-
-| Operator | Meaning | Example |
-|---|---|---|
-| *(none)* | Exact match | `attributes.last_name: Howard` |
-| `$regex` | Regular expression | `$regex: "^Cur"` |
-| `$options` | Regex options | `$options: "i"` (case-insensitive) |
-| `$lt` | Less than | `$lt: 1950` |
-| `$lte` | Less than or equal | `$lte: 1946` |
-| `$gt` | Greater than | `$gt: 1920` |
-| `$gte` | Greater than or equal | `$gte: 1922` |
-| `$ne` | Not equal | `$ne: "archived"` |
-| `$in` | Value in list | `$in: [person:moe, person:larry]` |
-| `$all` | All values present | `$all: [person:moe, person:curly]` |
-| `$or` | Boolean OR | `$or: [{...}, {...}]` |
-| `$and` | Boolean AND | `$and: [{...}, {...}]` |
-
----
-
-### 6.1 Simple Queries — Return All Nodes
-
----
-
-#### Task 6.1.1 — All Nodes in `hg-fun-a`
-
-**Your task:** Write an HQL query that returns all hypernodes in the `hg-fun-a` hypergraph.
-
-Try it yourself first, then check your work below.
-
-<details>
-<summary>Answer — Click to reveal</summary>
-
-```yaml
-hql:
-  from: hg-fun-a
-  match:
-    type: hypernode
-  return:
-    - id
-    - label
-    - type
-    - attributes
-```
-
-**Expected result:** Six `Person` nodes (Moe, Larry, Shemp, Curly, Joe Besser, Joe DeRita).
-
-</details>
-
----
-
-#### Task 6.1.2 — All Nodes in `hg-fun-b`
-
-**Your task:** Write an HQL query that returns all hypernodes in the `hg-fun-b` hypergraph.
-
-<details>
-<summary>Answer — Click to reveal</summary>
-
-```yaml
-hql:
-  from: hg-fun-b
-  match:
-    type: hypernode
-  return:
-    - id
-    - label
-    - type
-    - attributes
-```
-
-**Expected result:** One `Group` node (`group:three-stooges`).
-
-</details>
-
----
-
-#### Task 6.1.3 — All Nodes in Both `hg-fun-a` and `hg-fun-b`
-
-**Your task:** Write an HQL query that returns all hypernodes across *both* hypergraphs in a single query.
-
-<details>
-<summary>Answer — Click to reveal</summary>
-
-```yaml
-hql:
-  from:
-    - hg-fun-a
-    - hg-fun-b
-  match:
-    type: hypernode
-  return:
-    - id
-    - label
-    - type
-    - attributes
-```
-
-**Expected result:** All seven nodes — six `Person` nodes from `hg-fun-a` plus the `Group` node from `hg-fun-b`.
-
-> **Concept:** The `from` field accepts a YAML list of hypergraph IDs. hgAI queries all listed graphs and merges the results. This is the foundation for **logical graph composition** — querying across multiple specialized graphs as if they were one.
-
-</details>
-
----
-
-### 6.2 Matching Exact Values
-
----
-
-#### Task 6.2.1 — HQL: Filter by Exact Attribute Value
-
-**Your task:** Write an HQL query that returns only the `Person` nodes where `last_name` is exactly `Howard`.
-
-<details>
-<summary>Answer — Click to reveal</summary>
-
-```yaml
-hql:
-  from: hg-fun-a
-  match:
-    type: hypernode
-    node_type: Person
-  where:
-    attributes.last_name: Howard
-  return:
-    - id
-    - label
-    - attributes
-```
-
-**Expected result:** Three nodes — Moe Howard, Shemp Howard, Curly Howard.
-
-> **Note:** The `where` clause uses dot notation (`attributes.last_name`) to filter on nested attribute fields. The value `Howard` is an exact, case-sensitive match.
-
-</details>
-
----
-
-### 6.3 Matching Partial Values (Wildcard/Prefix)
-
----
-
-#### Task 6.3.1 — HQL: Filter by Prefix Match
-
-**Your task:** Write an HQL query that returns only the `Person` nodes whose `first_name` starts with `Cur`.
-
-<details>
-<summary>Answer — Click to reveal</summary>
-
-```yaml
-hql:
-  from: hg-fun-a
-  match:
-    type: hypernode
-    node_type: Person
-  where:
-    attributes.first_name:
-      $regex: "^Cur"
-      $options: "i"
-  return:
-    - id
-    - label
-    - attributes
-```
-
-**Expected result:** Two nodes — Curly Howard (`first_name: Curly`) and Joe Besser (`first_name: Curly Joe`).
-
-> **Note:** The `^` anchor in the regex means "starts with". The `$options: "i"` flag makes it case-insensitive. Prefix matching with `^` is index-friendly and performant on large datasets.
-
-</details>
-
----
-
-### 6.4 Matching with Regular Expressions
-
----
-
-#### Task 6.4.1 — HQL: Filter by Regex on `first_name`
-
-**Your task:** Write an HQL query that returns only the `Person` nodes whose `first_name` matches the regex `.*oe.*` (contains the substring `oe`).
-
-<details>
-<summary>Answer — Click to reveal</summary>
-
-```yaml
-hql:
-  from: hg-fun-a
-  match:
-    type: hypernode
-    node_type: Person
-  where:
-    attributes.first_name:
-      $regex: ".*oe.*"
-      $options: "i"
-  return:
-    - id
-    - label
-    - attributes
-```
-
-**Expected result:** Two nodes — Moe Howard (`first_name: Moe`) and Joe DeRita (`first_name: Joe`).
-
-> **Regex tips:**
-> - `.*` matches any characters (zero or more)
-> - `^` anchors to start of string
-> - `$` anchors to end of string
-> - `$options: "i"` enables case-insensitive matching
-> - Full-scan regex (without `^` anchor) is slower on large datasets — prefer anchored patterns when possible
-
-</details>
-
----
-
-### 6.5 List Group Members
-
----
-
-#### Task 6.5.1 — HQL: All Edges Where `group:three-stooges` is a Member
-
-**Your task:** Write an HQL query that returns all hyperedges with relation `rel:member`, flavor `hub`, where `group:three-stooges` is one of the members.
-
-<details>
-<summary>Answer — Click to reveal</summary>
-
-```yaml
-hql:
-  from: hg-fun-b
-  match:
-    type: hyperedge
-    relation: rel:member
-    flavor: hub
-  where:
-    members:
-      node_id: group:three-stooges
-  return:
-    - id
-    - relation
-    - flavor
-    - members
-    - valid_from
-    - valid_to
-    - tags
-```
-
-**Expected result:** All five membership hyperedges, each listing `group:three-stooges` plus the three members of that era's lineup.
-
-</details>
-
----
-
-### 6.6 List Group Members at Point-in-Time
-
----
-
-#### Task 6.6.1 — HQL: Who Were the Stooges on January 1, 1924?
-
-**Your task:** Write an HQL query that returns all `rel:member` / `hub` edges containing `group:three-stooges` that were valid on `1924-01-01T12:12:12Z`.
-
-<details>
-<summary>Answer — Click to reveal</summary>
-
-```yaml
-hql:
-  from: hg-fun-b
-  at: "1924-01-01T12:12:12Z"
-  match:
-    type: hyperedge
-    relation: rel:member
-    flavor: hub
-  where:
-    members:
-      node_id: group:three-stooges
-  return:
-    - id
-    - relation
-    - members
-    - valid_from
-    - valid_to
-```
-
-**Expected result:** One edge — the original lineup (1922–1932): Moe, Shemp, Larry.
-
-> **How `at` works:** When you add an `at` timestamp, hgAI automatically filters all edges (and nodes, if time-scoped) to only those where `valid_from <= at <= valid_to`. This lets you ask "what was true at this moment?" without any manual date arithmetic in your query.
-
-</details>
-
----
-
-### More HQL Examples
-
-**Count all nodes by type:**
-```yaml
-hql:
-  from: hg-fun-a
-  match:
-    type: hypernode
-  return:
-    - type
-  aggregate:
-    count: true
-    group_by: type
-```
-
-**Filter by tag:**
-```yaml
-hql:
-  from: hg-fun-b
-  match:
-    type: hyperedge
-  where:
-    tags:
-      - classic
-  return:
-    - id
-    - relation
-    - tags
-    - members
-```
-
-**Boolean OR condition:**
-```yaml
-hql:
-  from: hg-fun-a
-  match:
-    type: hypernode
-  where:
-    $or:
-      - attributes.last_name: Howard
-      - attributes.last_name: Fine
-  return:
-    - id
-    - label
-    - attributes
-```
-
-**Pagination (page 2 of results):**
-```yaml
-hql:
-  from: hg-fun-a
-  match:
-    type: hypernode
-  return:
-    - id
-    - label
-  limit: 3
-  skip: 3
-```
-
----
-
-## 7. Queries — SHQL (Semantic Hypergraph Query Language)
+## 6. Queries — SHQL (Semantic Hypergraph Query Language)
 
 ### What is SHQL?
 
-SHQL (Semantic Hypergraph Query Language) is a SPARQL-inspired, **pattern-matching** query language. Where HQL is optimized for direct attribute filtering, SHQL excels at **graph traversal** — binding variables to nodes and edges, following relationships across the graph, and composing multi-step join patterns in a single query.
+SHQL (Semantic Hypergraph Query Language) is a SPARQL-inspired, **pattern-matching** query language — HypergraphAI's query language. It's equally comfortable doing direct attribute filtering (one pattern, no joins — Tasks 6.1–6.4) and **graph traversal** — binding variables to nodes and edges, following relationships across the graph, and composing multi-step join patterns in a single query.
 
 Key SHQL concepts:
 - **Variables** start with `?` (e.g., `?person`, `?edge`, `?group`)
@@ -1105,6 +726,10 @@ shql:
   limit: 500                      # optional: max results
   offset: 0                       # optional: pagination
   order_by: ?var.label            # optional: sort
+  infer: true                     # optional: opt-in axiom-driven inferencing (see below)
+  aggregate:                      # optional: computed over the full matched result, pre-pagination
+    count: true
+    group_by: <projected-row-key>
 ```
 
 ### Filter Functions
@@ -1124,11 +749,11 @@ Boolean operators: `AND`, `OR`, `NOT`
 
 ---
 
-### 7.1 Simple Queries — Return All Nodes
+### 6.1 Simple Queries — Return All Nodes
 
 ---
 
-#### Task 7.1.1 — SHQL: All Nodes in `hg-fun-a`
+#### Task 6.1.1 — SHQL: All Nodes in `hg-fun-a`
 
 **Your task:** Write an SHQL query that returns all hypernodes in `hg-fun-a`.
 
@@ -1155,7 +780,7 @@ shql:
 
 ---
 
-#### Task 7.1.2 — SHQL: All Nodes in `hg-fun-b`
+#### Task 6.1.2 — SHQL: All Nodes in `hg-fun-b`
 
 **Your task:** Write an SHQL query that returns all hypernodes in `hg-fun-b`.
 
@@ -1180,7 +805,7 @@ shql:
 
 ---
 
-#### Task 7.1.3 — SHQL: All Nodes in Both `hg-fun-a` and `hg-fun-b`
+#### Task 6.1.3 — SHQL: All Nodes in Both `hg-fun-a` and `hg-fun-b`
 
 **Your task:** Write an SHQL query that returns all hypernodes across both hypergraphs.
 
@@ -1207,11 +832,11 @@ shql:
 
 ---
 
-### 7.2 Matching Exact Values
+### 6.2 Matching Exact Values
 
 ---
 
-#### Task 7.2.1 — SHQL: Filter by Exact Attribute Value
+#### Task 6.2.1 — SHQL: Filter by Exact Attribute Value
 
 **Your task:** Write an SHQL query that returns only the `Person` nodes where `last_name` is exactly `Howard`.
 
@@ -1240,11 +865,11 @@ shql:
 
 ---
 
-### 7.3 Matching Partial Values (Wildcard/Prefix)
+### 6.3 Matching Partial Values (Wildcard/Prefix)
 
 ---
 
-#### Task 7.3.1 — SHQL: Filter by Prefix Using STARTS_WITH
+#### Task 6.3.1 — SHQL: Filter by Prefix Using STARTS_WITH
 
 **Your task:** Write an SHQL query that returns only the `Person` nodes whose `first_name` starts with `Cur`.
 
@@ -1273,11 +898,11 @@ shql:
 
 ---
 
-### 7.4 Matching with Regular Expressions
+### 6.4 Matching with Regular Expressions
 
 ---
 
-#### Task 7.4.1 — SHQL: Filter by Regex Using MATCHES
+#### Task 6.4.1 — SHQL: Filter by Regex Using MATCHES
 
 **Your task:** Write an SHQL query that returns only the `Person` nodes whose `first_name` matches `.*oe.*` (contains `oe`).
 
@@ -1303,11 +928,11 @@ shql:
 
 ---
 
-### 7.5 List Group Members
+### 6.5 List Group Members
 
 ---
 
-#### Task 7.5.1 — SHQL: All Membership Edges for `group:three-stooges`
+#### Task 6.5.1 — SHQL: All Membership Edges for `group:three-stooges`
 
 **Your task:** Write an SHQL query that returns all `rel:member` / `hub` edges that include `group:three-stooges` as a member.
 
@@ -1340,11 +965,11 @@ shql:
 
 ---
 
-### 7.6 List Group Members at Point-in-Time
+### 6.6 List Group Members at Point-in-Time
 
 ---
 
-#### Task 7.6.1 — SHQL: Who Were the Stooges on January 1, 1924?
+#### Task 6.6.1 — SHQL: Who Were the Stooges on January 1, 1924?
 
 **Your task:** Write an SHQL query that returns the membership edge(s) for `group:three-stooges` valid at `1924-01-01T12:12:12Z`.
 
@@ -1371,7 +996,7 @@ shql:
 
 **Expected result:** One edge — the original lineup (1922–1932) with Moe, Shemp, and Larry.
 
-> **The `at` clause applies to all patterns in the query.** Any hypernode or hyperedge with `valid_from`/`valid_to` set will be automatically time-filtered. This is identical behavior to HQL's `at` clause.
+> **The `at` clause applies to all patterns in the query.** Any hypernode or hyperedge with `valid_from`/`valid_to` set will be automatically time-filtered.
 
 </details>
 
@@ -1459,22 +1084,40 @@ shql:
 
 ---
 
-## 8. Reference Summary
+### 6.7 Inferencing — Deriving Facts You Never Stored
 
-### HQL vs SHQL — When to Use Which
+Relation semantics (which relations are transitive, symmetric, each other's
+inverse, or broader/narrower) are never hardcoded — they're declared as
+ordinary **axiom hyperedges** asserting a control-vocabulary relation
+(`owl:transitive`, `owl:symmetric`, `owl:inverse-of`,
+`skos:broaderTransitive`/`narrowerTransitive`) between two `RelationType`
+hypernodes. Add `infer: true` to a query, and the engine synthesizes
+derived facts live from whatever axioms exist — nothing inferred is ever
+persisted, and every inferred result is tagged `_inferred: true`.
 
-| Scenario | Recommended |
-|---|---|
-| Simple node/edge retrieval with attribute filters | HQL |
-| Aggregations (count, group-by) | HQL |
-| Pagination through large result sets | HQL |
-| Multi-hop graph traversal (node → edge → node) | SHQL |
-| Binding variables for join-like queries | SHQL |
-| Complex filter logic with CONTAINS / MATCHES | SHQL |
-| Optional patterns (outer joins) | SHQL |
-| Union of alternative patterns | SHQL |
+**Example:** if an axiom hyperedge asserts `owl:inverse-of [rel:has-member, rel:member-of]`, this query returns both the literal `has-member` edges *and* a synthesized `member-of` edge for each one:
+
+```yaml
+shql:
+  from: hg-fun-b
+  infer: true
+  where:
+    - edge:
+        bind: ?e
+        relation: rel:member
+  select:
+    - ?e.relation
+    - ?e.members
+    - ?e._inferred
+    - ?e._source_edge
+    - ?e._axiom
+```
+
+> **Note:** without a matching axiom hyperedge in the graph, `infer: true` has no effect — it never invents semantics that weren't declared as data. See the [README's Inferencing section](../../README.md#inferencing) for the full axiom vocabulary and mechanics.
 
 ---
+
+## 7. Reference Summary
 
 ### Key Concepts Cheat Sheet
 
@@ -1484,17 +1127,16 @@ shql:
 | Hypernode | An entity (noun) with a type and JSON attributes |
 | Hyperedge | A relationship connecting *n* nodes simultaneously |
 | Relation | Semantic label on an edge (`has-member`, `sibling`, etc.) |
-| Flavor | Structural pattern: `hub`, `symmetric`, `direct`, `transitive`, `inverse-transitive` |
+| Flavor | Structural pattern: `hub` (first member is the hub) or `symmetric` (all members equivalent) — only two exist |
 | `valid_from` / `valid_to` | Time window during which a node or edge is real-world valid |
 | `at` | Point-in-time filter applied to the entire query |
 | `from` | Specifies which hypergraph(s) to query |
-| `match` (HQL) | Coarse entity selector by type, node_type, relation, flavor |
-| `where` (HQL) | Fine-grained attribute/member/tag filter conditions |
-| `return` (HQL) | Fields to include in each result record |
-| `node:` / `edge:` (SHQL) | Pattern that binds matching entities to a variable |
-| `filter:` (SHQL) | Boolean expression applied to bound variables |
-| `?variable` (SHQL) | Named binding; can be referenced in subsequent patterns |
-| `select` (SHQL) | Output projection of variable fields |
+| `node:` / `edge:` | Pattern that binds matching entities to a variable |
+| `filter:` | Boolean expression applied to bound variables |
+| `?variable` | Named binding; can be referenced in subsequent patterns — the same variable in two patterns is an implicit join |
+| `select` | Output projection of variable fields |
+| `infer: true` | Opt-in axiom-driven inferencing (inverse-of, symmetric, SKOS broader/narrower, transitive closure) — see [7.7](#67-inferencing--deriving-facts-you-never-stored) |
+| `aggregate` | `count`/`group_by`, computed over the full matched result before pagination |
 
 ---
 
@@ -1545,9 +1187,9 @@ You have completed the hgAI User Fundamentals course. You can now:
 - Create and manage **hypergraphs** as named containers for your knowledge
 - Create **hypernodes** with typed entities and flexible JSON attributes
 - Create **hyperedges** with multi-node membership, semantic relations, and time-scoped validity
-- Write **HQL** queries for direct attribute filtering, aggregation, and pagination
-- Write **SHQL** queries for pattern-based graph traversal and variable binding
+- Write **SHQL** queries — from simple attribute filters and aggregation to pattern-based graph traversal and variable binding
 - Use **point-in-time** (`at`) filtering to query historical states of your knowledge graph
+- Use **axiom-driven inferencing** (`infer: true`) to derive facts that were never explicitly stored
 
 **Next steps to explore:**
 - The **API Explorer** (System → Swagger UI) to call hgAI programmatically

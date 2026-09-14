@@ -111,7 +111,7 @@ Every hyperedge declares its structural semantics:
 Every node and edge carries `valid_from` / `valid_to`. Ask "what did the org chart look like on March 1st?" and get the correct historical answer.
 
 ### 5. Federated Mesh Queries
-Multiple HypergraphAI servers form a **mesh**. A single HQL or SHQL query fans out across all servers and merges results transparently. No ETL. No data lake. Federated knowledge.
+Multiple HypergraphAI servers form a **mesh**. A single SHQL query fans out across all servers and merges results transparently. No ETL. No data lake. Federated knowledge.
 
 ---
 
@@ -127,7 +127,7 @@ An AI agent can:
 ```
 hgai_hypergraph_list()           → discover available knowledge graphs
 hgai_hypernode_get(node_id)      → retrieve a specific entity with full context
-hgai_query_execute(hql_query)    → run a structured semantic query
+hgai_query_execute(shql_query)   → run a structured semantic query
 hgai_mesh_query(mesh_id, query)  → federate across a distributed knowledge mesh
 hgai_hyperedge_create(...)       → write new knowledge back to the graph
 ```
@@ -143,29 +143,12 @@ No prompt engineering to extract structure. No hallucinated relationships. No lo
 
 ---
 
-## Slide 7 — Query Languages
+## Slide 7 — Query Language
 
-# Two Query Languages. One Knowledge Store.
-
-### HQL — Hypergraph Query Language
-Declarative YAML syntax. Optimized for MongoDB-backed structured retrieval.
-
-```yaml
-hql:
-  from: enterprise-mesh
-  match:
-    type: hyperedge
-    relation: signed-contract
-    flavor: hub
-  where:
-    attributes.value: { $gte: 1000000 }
-  return: [ id, members, attributes ]
-  distinct: true
-  limit: 100
-```
+# One Query Language. Every Query Shape.
 
 ### SHQL — Semantic Hypergraph Query Language
-SPARQL-inspired pattern matching. Optimized for graph traversal and joins.
+SPARQL-inspired pattern matching over YAML — `?variable` bindings, implicit joins, multi-hop traversal, and aggregation in one language, from a one-line lookup to a multi-hop enterprise join.
 
 ```yaml
 shql:
@@ -179,12 +162,17 @@ shql:
       members:
         - node_id: ?person
           seq: 0
+      attributes:
+        value: { $gte: 1000000 }
   select: [ ?person.label, ?contract.id, ?contract.attributes.value ]
   order_by: ?contract.attributes.value
   distinct: true
+  aggregate:
+    count: true
+    group_by: contract.attributes.value
 ```
 
-Both languages support **federated mesh queries**, **distinct**, **point-in-time**, **SKOS inferencing**, and **result caching**.
+One language supports **federated mesh queries**, **distinct**, **point-in-time**, **aggregation**, **axiom-driven inferencing** (inverse-of, symmetric, SKOS broader/narrower, transitive closure), and **result caching** — no second syntax for developers or agents to learn, no feature-parity tax to carry across two engines.
 
 ---
 
@@ -200,8 +188,8 @@ Both languages support **federated mesh queries**, **distinct**, **point-in-time
 │  (Browser)   │  (FastAPI)    │  (Claude/AI) │  (CLI)         │
 ├--------------┴---------------┴--------------┴----------------┤
 │                      Core Modules                            │
-│  hgai_module_hql  │  hgai_module_shql  │  hgai_module_mesh  │
-│  hgai_module_mcp  │  hgai_module_*     │  (marketplace)     │
+│  hgai_module_shql │  hgai_module_mesh  │  hgai_module_mcp   │
+│  hgai_module_*    │  (marketplace)     │                    │
 ├--------------------------------------------------------------┤
 │              Core Engine                                     │
 │  Auth (JWT + API Keys) │ RBAC │ Cache │ SKOS Inferencing     │
@@ -287,7 +275,7 @@ Bespoke hgai modules built by HypergraphAI engineers to customer specification. 
 ### 5. Training & Certification
 *Scalable, brand-building*
 
-HQL/SHQL developer certification, AI agent integration workshops, enterprise administrator training, and partner enablement programs.
+SHQL developer certification, AI agent integration workshops, enterprise administrator training, and partner enablement programs.
 
 **Pricing: $500–$5,000 per seat**
 
@@ -348,7 +336,7 @@ HQL/SHQL developer certification, AI agent integration workshops, enterprise adm
 
 ### Current State
 - ✅ Core platform production-ready (FastAPI, MongoDB, REST API)
-- ✅ HQL and SHQL query engines with federation, distinct, PIT, inferencing
+- ✅ SHQL query engine with federation, distinct, PIT, aggregation, inferencing
 - ✅ MCP server with 19 tools covering full CRUD and query operations
 - ✅ Federated mesh architecture operational across multi-server deployments
 - ✅ Web UI, interactive shell (hgai), and REST API all functional

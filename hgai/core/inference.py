@@ -13,7 +13,7 @@ docs/dev_notes/skhg-inferencing-notes.md.
 primitives every higher-level reasoning operation is built from.
 `expand_edge`/`expand_edge_closure` (inverse-of/symmetric/superproperty
 expansion) and `check_transitive` (transitive-closure reachability) are
-both wired into HQL behind the same `infer: true` flag.
+both wired into SHQL behind the same `infer: true` flag.
 """
 
 from datetime import datetime
@@ -587,7 +587,7 @@ async def project_inference(
         graph, since only the edge itself gets written. That silently
         breaks anything that resolves members by id in the target graph
         (Visualize renders the henode but can draw no relation-links to
-        non-existent members; HQL member-lookups likewise come up empty).
+        non-existent members; SHQL member-lookups likewise come up empty).
         A materialized fact is documented to be "indistinguishable at the
         storage/query level from anything hand-asserted" — so its members
         need to actually exist, not just be referenced. Cached per id since

@@ -3,7 +3,7 @@
 HypergraphAI Interactive Shell (hgai)
 
 A full-featured interactive CLI shell for interacting with HypergraphAI servers.
-Supports all CRUD operations, HQL queries, import/export, and mesh operations.
+Supports all CRUD operations, SHQL queries, import/export, and mesh operations.
 
 Usage:
     python shell/hgai_shell.py
@@ -170,10 +170,6 @@ class HgaiClient:
     def update_edge(self, gid, eid, data): return self._request("PUT", f"/graphs/{gid}/edges/{eid}", body=data)
     def delete_edge(self, gid, eid): return self._request("DELETE", f"/graphs/{gid}/edges/{eid}")
 
-    # Query (HQL)
-    def query(self, hql: str, use_cache=True): return self._request("POST", "/query", body={"hql": hql, "use_cache": use_cache})
-    def validate_query(self, hql: str): return self._request("POST", "/query/validate", body={"hql": hql})
-
     # Query (SHQL)
     def shql_query(self, shql: str, use_cache=True): return self._request("POST", "/shql/query", body={"shql": shql, "use_cache": use_cache})
     def shql_validate(self, shql: str): return self._request("POST", "/shql/validate", body={"shql": shql})
@@ -201,7 +197,6 @@ COMMANDS = [
     "connect", "disconnect", "whoami", "server",
     "use", "ls", "get", "create", "update", "delete",
     "delete-node", "delete-edge",
-    "query", "validate",
     "shql", "shql-validate",
     "import", "export",
     "ping", "sync", "mesh-query",
@@ -247,17 +242,11 @@ HELP_TEXT = {
     "ping": "ping mesh <id>  —  Health-check all servers in a mesh (admin)",
     "sync": "sync mesh <id>  —  Refresh server graph lists from live remotes (admin)",
     "mesh-query": textwrap.dedent("""\
-        mesh-query <id>              Run HQL or SHQL query across all servers in a mesh
+        mesh-query <id>              Run SHQL query across all servers in a mesh
         mesh-query <id> -f <file>    Run query from a YAML file
         mesh-query <id> --no-cache   Bypass query cache"""),
     "delete-node": "delete-node <id>  —  Delete a hypernode from the active graph (alias: dn)",
     "delete-edge": "delete-edge <id>  —  Delete a hyperedge from the active graph (alias: de)",
-    "query": textwrap.dedent("""\
-        query                        Run HQL query (enter YAML, end with a line containing just '---')
-        query -f <file>              Run HQL query from a YAML file
-        query -o <file>              Write results to file instead of console
-        query --no-cache             Bypass the query cache"""),
-    "validate": "validate  —  Validate an HQL query (same input as 'query')",
     "shql": textwrap.dedent("""\
         shql                         Run SHQL query (enter YAML, end with a line containing just '---')
         shql -f <file>               Run SHQL query from a YAML file
@@ -404,8 +393,6 @@ class HgaiShell:
             "delete-edge": self.cmd_delete_edge,
             "dn": self.cmd_delete_node,
             "de": self.cmd_delete_edge,
-            "query": self.cmd_query,
-            "validate": self.cmd_validate,
             "shql": self.cmd_shql,
             "shql-validate": self.cmd_shql_validate,
             "sq": self.cmd_shql,
@@ -741,66 +728,6 @@ class HgaiShell:
         self.client.delete_edge(self.active_graph, eid)
         success(f"Hyperedge '{eid}' deleted from '{self.active_graph}'")
 
-    def cmd_query(self, args):
-        self._require_connection()
-        use_cache = "--no-cache" not in args
-        outfile = self._parse_outfile(args)
-
-        if "-f" in args:
-            idx = args.index("-f")
-            filepath = args[idx+1] if idx+1 < len(args) else None
-            if not filepath:
-                error("Usage: query -f <file>"); return
-            with open(filepath) as f:
-                hql = f.read()
-        else:
-            print("\n  Enter HQL query (YAML format, end with line containing just ---):")
-            if not self.active_graph:
-                dim("  Hint: Use 'use <graph-id>' to set a default graph, or specify 'from' in your query")
-            hql = self._read_multiline()
-
-        if not hql.strip():
-            return
-
-        # Wrap with hql: top-level key if the user omitted it
-        if not hql.lstrip().startswith("hql:"):
-            if self.active_graph and "from:" not in hql:
-                hql = f"hql:\n  from: {self.active_graph}\n" + "\n".join("  " + l for l in hql.split("\n"))
-            else:
-                hql = "hql:\n" + "\n".join("  " + l for l in hql.split("\n"))
-
-        try:
-            result = self.client.query(hql, use_cache=use_cache)
-            count = result.get("count", 0)
-            alias = result.get("alias", "result")
-            cached = result.get("meta", {}).get("cached", False)
-            info(f"Query '{alias}': {count} results" + (" (cached)" if cached else ""))
-            self._write_result(result, outfile)
-        except Exception as e:
-            error(f"Query failed: {e}")
-
-    def cmd_validate(self, args):
-        self._require_connection()
-        if "-f" in args:
-            idx = args.index("-f")
-            filepath = args[idx+1] if idx+1 < len(args) else None
-            with open(filepath) as f:
-                hql = f.read()
-        else:
-            print("\n  Enter HQL query to validate (end with ---):")
-            hql = self._read_multiline()
-
-        try:
-            result = self.client.validate_query(hql)
-            if result.get("valid"):
-                success("HQL is valid")
-            else:
-                error("Validation errors:")
-                for e in result.get("errors", []):
-                    print(f"    - {e}")
-        except Exception as e:
-            error(f"Validation failed: {e}")
-
     def cmd_shql(self, args):
         self._require_connection()
         use_cache = "--no-cache" not in args
@@ -822,11 +749,12 @@ class HgaiShell:
         if not shql.strip():
             return
 
-        # Detect accidental HQL queries entered in the SHQL command
+        # Detect accidental HQL queries entered in the SHQL command — HQL has
+        # been removed from this server; only SHQL is served now.
         stripped = shql.lstrip()
         if stripped.startswith("hql:") or stripped.startswith("{\"hql\""):
             error("This looks like an HQL query (top-level key is 'hql:').")
-            info("Use the 'query' command for HQL, or rewrite with 'shql:' as the top-level key.")
+            info("HQL has been removed — rewrite the query with 'shql:' as the top-level key.")
             return
 
         # Wrap with shql: top-level key if the user omitted it
@@ -961,25 +889,20 @@ class HgaiShell:
             with open(filepath) as f:
                 query_text = f.read()
         else:
-            print(f"\n  Enter HQL or SHQL query for mesh '{mid}' (YAML, end with ---):")
+            print(f"\n  Enter SHQL query for mesh '{mid}' (YAML, end with ---):")
             query_text = self._read_multiline()
 
         if not query_text.strip():
             return
 
         parsed = yaml.safe_load(query_text) if HAS_YAML else json.loads(query_text)
-        if "hql" in parsed:
-            body = {"hql": query_text, "use_cache": use_cache}
-            lang = "HQL"
-        elif "shql" in parsed:
-            body = {"shql": query_text, "use_cache": use_cache}
-            lang = "SHQL"
-        else:
-            error("Query must have a top-level 'hql:' or 'shql:' key"); return
+        if "shql" not in parsed:
+            error("Query must have a top-level 'shql:' key"); return
+        body = {"shql": query_text, "use_cache": use_cache}
 
         result = self.client.query_mesh(mid, body)
         count = result.get("count", 0)
-        info(f"{lang} mesh query '{mid}': {count} results")
+        info(f"SHQL mesh query '{mid}': {count} results")
         self._write_result(result, outfile)
 
     def cmd_cls(self):

@@ -225,8 +225,8 @@ from hgai.core.engine import (
     create_hypernode,
     create_hyperedge,
 )
-from hgai.core.query import execute_hql
-from hgai.core.inference import get_skos_closure
+from hgai_module_shql.engine import execute_shql
+from hgai.core.inference import expand_edge_closure
 
 # Fetch a graph
 graph = await get_hypergraph("my-graph")
@@ -239,23 +239,26 @@ total, nodes = await list_hypernodes(
     limit=100,
 )
 
-# Execute HQL
-result = await execute_hql("""
-hql:
+# Execute SHQL
+result = await execute_shql("""
+shql:
   from: my-graph
-  match:
-    type: hyperedge
-    relation: has-member
-  return:
-    - members
+  where:
+    - edge:
+        bind: ?e
+        relation: has-member
+  select:
+    - ?e.members
 """)
 
-# SKOS inferencing
-broader_concepts = await get_skos_closure(
-    node_id="mammal",
+# Axiom-driven inferencing — inverse-of/symmetric/superproperty (SKOS
+# broader/narrower) expansion over a set of already-fetched fact edges,
+# driven entirely by whatever owl:*/skos:* axiom hyperedges exist between
+# their relations' RelationType hypernodes (see README § Inferencing)
+_, fact_edges = await list_hyperedges("taxonomy", relation="broader")
+inferred = await expand_edge_closure(
+    [e.model_dump() for e in fact_edges],
     graph_ids=["taxonomy"],
-    relation="broader",
-    max_depth=5,
 )
 ```
 

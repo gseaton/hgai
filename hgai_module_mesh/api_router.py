@@ -97,18 +97,12 @@ async def query_mesh(
     body: dict,
     _admin=Depends(require_admin),
 ):
-    """Fan out an HQL or SHQL query across all servers in a mesh and merge results.
+    """Fan out an SHQL query across all servers in a mesh and merge results.
 
-    Provide either an 'hql' key (HQL query text) or an 'shql' key (SHQL query text).
+    Provide an 'shql' key (SHQL query text).
     """
-    from .engine import federated_hql, federated_shql
+    from .engine import federated_shql
     use_cache = body.get("use_cache", True)
-
-    if "hql" in body:
-        try:
-            return await federated_hql(mesh_id, body["hql"], use_cache=use_cache)
-        except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
 
     if "shql" in body:
         try:
@@ -116,7 +110,7 @@ async def query_mesh(
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
 
-    raise HTTPException(status_code=400, detail="Request body must contain an 'hql' or 'shql' field")
+    raise HTTPException(status_code=400, detail="Request body must contain an 'shql' field")
 
 
 @router.api_route(

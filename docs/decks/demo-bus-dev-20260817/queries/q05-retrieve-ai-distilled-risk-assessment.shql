@@ -3,16 +3,15 @@
 # already happened once and was captured as a normal hyperedge; this
 # query costs nothing and can be run by a different agent, a different
 # session, or a human analyst, at any point in the future.
-hql:
+shql:
   from: defense-bd-demo
-  match:
-    type: hyperedge
-    relation: risk-assessment
   where:
-    tags:
-      $in: ["ai-generated"]
-  return:
-    - id
-    - members
-    - attributes
+    - edge:
+        bind: ?edge
+        relation: risk-assessment
+        tags: [ai-generated]
+  select:
+    - ?edge.id
+    - ?edge.members
+    - ?edge.attributes
   as: ai_generated_risk_assessments

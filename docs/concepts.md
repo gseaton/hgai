@@ -138,104 +138,107 @@ HypergraphAI natively supports **point-in-time (PIT) queries**. Every hypernode 
 You can query the state of a hypergraph at any specific moment:
 
 ```yaml
-hql:
+shql:
   from: presidents
   at: "1963-11-22T00:00:00Z"
-  match:
-    type: hyperedge
-    relation: holds-office
-  return:
-    - members
+  where:
+    - edge:
+        bind: ?e
+        relation: holds-office
+  select:
+    - ?e.members
 ```
 
 This returns whoever held office on November 22, 1963 — a PIT query across all `holds-office` hyperedges that were valid on that date.
 
 ---
 
-## Semantic Inferencing (SKOS)
+## Semantic Inferencing
 
-HypergraphAI supports SKOS (Simple Knowledge Organization System) semantic relationships for inferencing:
+Relation semantics — which relations are transitive, symmetric, each other's inverse, or broader/narrower than one another — are never hardcoded. They're declared as ordinary **axiom hyperedges** asserting one of a small, fixed set of control-vocabulary relations between `RelationType` hypernodes:
 
-| SKOS Relation | Meaning |
-|---------------|---------|
-| `broader` | This concept is more specific than the broader concept |
-| `narrower` | This concept subsumes the narrower concept |
-| `related` | Associative (non-hierarchical) relationship |
+| Axiom relation | Meaning |
+|---|---|
+| `owl:transitive` | This relation's facts form a transitive chain (A→B, B→C implies A→C) |
+| `owl:symmetric` | This relation's facts are bidirectional (A→B implies B→A) |
+| `owl:inverse-of [R, R']` | Every fact on relation R also implies the reverse fact on relation R' |
+| `skos:broaderTransitive` / `narrowerTransitive` | This relation is narrower/broader than another — facts project up through the hierarchy |
 
-These relationships support **transitive closure** — if A is broader than B, and B is broader than C, then A is transitively broader than C.
+The inference engine (`hgai/core/inference.py`) recognizes these strings; it never hardcodes a specific domain relation, so adding a new inference rule is a data change (assert an axiom hyperedge), not a code change. Computed live at query time — nothing inferred is ever persisted, and inferred results are tagged `_inferred: true` (plus `_source_edge`/`_axiom` for axiom expansion, or `_transitive`/`_transitive_path` for transitive-closure reachability).
 
-Enable inferencing in HQL with `infer: true`:
+Enable inferencing per query with `infer: true`:
 
 ```yaml
-hql:
+shql:
   from: taxonomy
-  match:
-    type: hypernode
-    id: mammal
   infer: true
-  return:
-    - id
-    - label
-    - _inferred
+  where:
+    - edge:
+        bind: ?e
+        relation: broader
+  select:
+    - ?e.members
+    - ?e._inferred
 ```
+
+See the [README's Inferencing section](../README.md#inferencing) for the full mechanics and worked examples.
 
 ---
 
-## HQL — Hypergraph Query Language
+## SHQL — Semantic Hypergraph Query Language
 
-HQL is a YAML-based declarative query language. Every query starts with the `hql:` key.
+SHQL is HypergraphAI's query language — a SPARQL-inspired, YAML-based pattern-matching language. Every query starts with the `shql:` key, matches `node`/`edge` patterns against `?variable` bindings (a variable shared across patterns is an implicit join), and projects fields with `select:`.
 
 ### Basic Structure
 
 ```yaml
-hql:
-  from: <graph-id>          # Required: graph ID, list of IDs, or mesh dot-refs
-  at: <ISO-8601 datetime>   # Optional: point-in-time qualifier
-  match:                     # Optional: entity matching conditions
-    type: hypernode|hyperedge|any
-    relation: <relation>     # (hyperedge only)
-    flavor: <flavor>         # (hyperedge only)
-    node_type: <type>        # (hypernode only)
-    nodes:                   # (hyperedge only) filter by member nodes
-      - <node-id>
-  where:                     # Optional: additional filters
-    tags:
-      - <tag>
-    status: active
-    attributes.<path>: <value>
-  return:                    # Optional: fields to return (* for all)
-    - id
-    - label
-    - members
-    - attributes
-  as: <alias>               # Optional: result alias name
-  limit: 500                # Optional: max results
-  skip: 0                   # Optional: pagination offset
-  aggregate:                 # Optional: aggregation operations
+shql:
+  from: <graph-id>           # Required: graph ID, list of IDs, or mesh dot-refs
+  at: <ISO-8601 datetime>    # Optional: point-in-time qualifier
+  where:                      # Ordered list of patterns
+    - node: { ... }            # hypernode pattern
+    - edge: { ... }            # hyperedge pattern
+    - filter: "<expression>"   # expression filter, e.g. "?var.field < 10"
+    - optional: [ ... ]        # left outer join — patterns that may not match
+    - union:                   # set union of alternative branches
+        - patterns: [ ... ]
+  select:                     # Fields to return
+    - ?var                     # whole bound entity
+    - ?var.field                # single field
+    - "*"                      # everything (default)
+  order_by: ?var.field        # Optional: sort key
+  limit: 500                  # Optional: max results (default 500)
+  offset: 0                   # Optional: pagination offset
+  distinct: true               # Optional: deduplicate result rows
+  infer: true                  # Optional: opt-in axiom expansion + transitive closure
+  aggregate:                   # Optional: aggregation, computed pre-pagination
     count: true
-    group_by: <field>
+    group_by: <projected-row-key>
+  as: <alias>                  # Optional: result alias name
 ```
+
+A node or edge pattern binds a matched entity to a `?variable`; the same variable used in two different patterns is an implicit join — both patterns must agree on the same entity. See the [README's SHQL section](../README.md#shql--semantic-hypergraph-query-language) for the full Node/Edge Pattern syntax, FILTER expressions, and a dozen worked examples.
 
 ### Multi-Graph Composition
 
 ```yaml
-hql:
+shql:
   from:
     - graph-1
     - graph-2
     - graph-3
-  match:
-    type: hypernode
-  return: ["*"]
+  where:
+    - node: ?n
+  select: ["*"]
 ```
 
 Logical hypergraphs automatically expand their `composition` list, so you can also:
 
 ```yaml
-hql:
+shql:
   from: my-logical-graph   # Expands to all composed physical graphs
-  match:
-    type: hyperedge
+  where:
+    - edge: ?e
 ```
 
 ### Mesh Dot-Notation
@@ -254,17 +257,18 @@ Use `*` as a wildcard in any position:
 Dot-refs can be mixed with local graph IDs in the same `from:` list:
 
 ```yaml
-hql:
+shql:
   from:
     - local-graph                      # local graph (no dots)
     - my-mesh.server-a.remote-graph    # specific graph on one server
     - my-mesh.*.shared-graph           # same graph across all servers
-  match:
-    type: hypernode
-  return:
-    - id
-    - label
-    - _mesh_server_id                  # added to each result from a mesh server
+  where:
+    - node:
+        bind: ?n
+  select:
+    - ?n.id
+    - ?n.label
+    - ?n._mesh_server_id               # added to each result from a mesh server
 ```
 
 **Note:** graph IDs, server IDs, and mesh IDs must not contain `.` — it is reserved as the dot-notation delimiter.
@@ -297,7 +301,7 @@ Permissions can be further scoped per account:
 All HypergraphAI operations are exposed as **MCP (Model Context Protocol) server tools** at `/mcp/`. AI agents (Claude, etc.) can use these tools to:
 
 - Read and write hypernodes and hyperedges
-- Execute HQL queries
+- Execute SHQL queries
 - Manage hypergraphs
 - Build and traverse semantic knowledge structures
 
@@ -319,7 +323,7 @@ Available MCP tool groups:
 - `hgai_hypergraph_*` — Graph management
 - `hgai_hypernode_*` — Node CRUD
 - `hgai_hyperedge_*` — Edge CRUD
-- `hgai_query_*` — HQL query execution
+- `hgai_query_*` — SHQL query execution
 - `hgai_space_*` — Space management
 
 ---
@@ -339,13 +343,13 @@ Available MCP tool groups:
 
 ### Access Resolution
 
-When a request arrives, access is checked in this order:
+Space membership is the **sole gate** for space-scoped graphs — a `permissions.graphs` wildcard (e.g. `["*"]`) does not grant access to a space's graphs on its own. When a request arrives, access is checked in this order:
 
 1. **Global admin role** — full access to everything
-2. **Direct account permissions** — `permissions.graphs` list or `"*"` wildcard
-3. **Space membership** — if the graph belongs to a space where the account is a member
+2. **Space membership** — when the graph belongs to a space, the account must be a member of that space; non-members are rejected regardless of `permissions.graphs`
+3. **Direct account permissions** — `permissions.graphs` list or `"*"` wildcard, applies only to unowned (non-space) graphs
 
-This means a user with no direct graph permissions can still access graphs in spaces they belong to.
+This ensures a `["*"]` permissions wildcard cannot leak across tenant boundaries.
 
 Graph IDs are unique **within a space**. Two spaces can both contain a graph named `my-graph` with no conflict. The flat `/graphs/*` endpoints address only unowned graphs. Space-scoped graphs live at `/spaces/{space_id}/graphs/{graph_id}`.
 
@@ -371,17 +375,17 @@ curl /api/v1/spaces/research-team/graphs/my-graph/nodes
 
 ### Querying Space-Scoped Graphs
 
-Use `space_id/graph_id` slash notation in HQL and SHQL `from:` fields:
+Use `space_id/graph_id` slash notation in SHQL `from:` fields:
 
 ```yaml
-hql:
+shql:
   from: research-team/my-graph
-  match:
-    type: hyperedge
+  where:
+    - edge: ?e
 ```
 
 ```yaml
-hql:
+shql:
   from:
     - research-team/my-graph
     - engineering/my-graph    # same ID, different space

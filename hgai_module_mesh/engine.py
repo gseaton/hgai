@@ -195,12 +195,12 @@ async def _graphs_for_server(server: MeshServer) -> List[str]:
     return await fetch_remote_graphs(server)
 
 
-def _rewrite_from(query_text: str, lang: str, graphs: List[str]) -> str:
-    """Parse an HQL/SHQL YAML document, replace the 'from' field with graphs, re-serialize."""
+def _rewrite_from(query_text: str, graphs: List[str]) -> str:
+    """Parse an SHQL YAML document, replace the 'from' field with graphs, re-serialize."""
     try:
         doc = yaml.safe_load(query_text)
-        if isinstance(doc, dict) and lang in doc:
-            doc[lang]["from"] = graphs[0] if len(graphs) == 1 else graphs
+        if isinstance(doc, dict) and "shql" in doc:
+            doc["shql"]["from"] = graphs[0] if len(graphs) == 1 else graphs
         return yaml.dump(doc, default_flow_style=False, allow_unicode=True)
     except Exception:
         return query_text  # fall back to original on any parse error
@@ -210,29 +210,22 @@ async def _query_server(
     server: MeshServer,
     graph_ids: List[str],
     query_text: str,
-    lang: str,
     use_cache: bool,
 ) -> Dict[str, Any]:
-    """Execute a query on one server for specific graph IDs.
+    """Execute an SHQL query on one server for specific graph IDs.
 
     Returns {'server_id': ..., 'items': [...]} on success.
     Raises on failure so the caller can handle via return_exceptions=True.
     """
-    rewritten = _rewrite_from(query_text, lang, graph_ids)
+    rewritten = _rewrite_from(query_text, graph_ids)
     if _is_local(server):
-        if lang == "hql":
-            from hgai_module_hql.engine import execute_hql
-            result = await execute_hql(rewritten, use_cache=use_cache)
-            items = result.items
-        else:
-            from hgai_module_shql.engine import execute_shql
-            result = await execute_shql(rewritten, use_cache=use_cache)
-            items = result.items
+        from hgai_module_shql.engine import execute_shql
+        result = await execute_shql(rewritten, use_cache=use_cache)
+        items = result.items
     else:
-        endpoint = "/api/v1/query" if lang == "hql" else "/api/v1/shql/query"
-        body: Dict[str, Any] = {lang: rewritten, "use_cache": use_cache}
+        body: Dict[str, Any] = {"shql": rewritten, "use_cache": use_cache}
         r = await get_http_client().post(
-            f"{server.url.rstrip('/')}{endpoint}",
+            f"{server.url.rstrip('/')}/api/v1/shql/query",
             headers=_headers(server),
             json=body,
         )
@@ -372,12 +365,10 @@ async def resolve_dot_refs(
 async def execute_dot_refs(
     refs: List[str],
     query_text: str,
-    lang: str,
     use_cache: bool = True,
 ) -> Dict[str, Any]:
-    """Execute a query across dot-notation mesh refs concurrently and merge results.
+    """Execute an SHQL query across dot-notation mesh refs concurrently and merge results.
 
-    lang: 'hql' or 'shql'
     Returns {'count': int, 'items': [...], 'errors': [...]}
     """
     _local_ids, routing = await resolve_dot_refs(refs)
@@ -387,7 +378,7 @@ async def execute_dot_refs(
         return {"count": 0, "items": [], "errors": []}
 
     results = await asyncio.gather(
-        *[_query_server(s, g, query_text, lang, use_cache) for s, g in active],
+        *[_query_server(s, g, query_text, use_cache) for s, g in active],
         return_exceptions=True,
     )
 
@@ -396,7 +387,7 @@ async def execute_dot_refs(
     for (server, _), result in zip(active, results):
         if isinstance(result, Exception):
             errors.append({"server_id": server.server_id, "error": str(result)})
-            logger.warning(f"Dot-ref {lang.upper()} query failed on {server.server_id}: {result}")
+            logger.warning(f"Dot-ref SHQL query failed on {server.server_id}: {result}")
         else:
             all_items.extend(result["items"])
 
@@ -422,7 +413,7 @@ async def federated_shql(mesh_id: str, shql_text: str, use_cache: bool = True) -
         active.append((server, graphs))
 
     results = await asyncio.gather(
-        *[_query_server(s, g, shql_text, "shql", use_cache) for s, g in active],
+        *[_query_server(s, g, shql_text, use_cache) for s, g in active],
         return_exceptions=True,
     )
 
@@ -478,43 +469,3 @@ async def proxy_request(
             return {"status_code": r.status_code, "body": r.text}
     except Exception as e:
         raise ValueError(f"Proxy request to {server_id} failed: {e}")
-
-
-async def federated_hql(mesh_id: str, hql_text: str, use_cache: bool = True) -> Dict[str, Any]:
-    """Fan out an HQL query to all servers in a mesh concurrently and merge results."""
-    doc = await get_storage().meshes.get(mesh_id)
-    if not doc:
-        raise ValueError(f"Mesh not found: {mesh_id}")
-
-    servers = [MeshServer(**sd) for sd in doc.get("servers", [])]
-
-    # Resolve graph lists for all servers concurrently
-    graph_lists = await asyncio.gather(*[_graphs_for_server(s) for s in servers])
-
-    active: List[Tuple[MeshServer, List[str]]] = []
-    for server, graphs in zip(servers, graph_lists):
-        if not graphs:
-            logger.warning(f"No graphs on {server.server_id}, skipping")
-            continue
-        active.append((server, graphs))
-
-    results = await asyncio.gather(
-        *[_query_server(s, g, hql_text, "hql", use_cache) for s, g in active],
-        return_exceptions=True,
-    )
-
-    all_items: List[Dict] = []
-    errors: List[Dict] = []
-    for (server, _), result in zip(active, results):
-        if isinstance(result, Exception):
-            errors.append({"server_id": server.server_id, "error": str(result)})
-            logger.warning(f"Federated HQL failed on {server.server_id}: {result}")
-        else:
-            all_items.extend(result["items"])
-
-    return {
-        "mesh_id": mesh_id,
-        "count": len(all_items),
-        "items": all_items,
-        "errors": errors,
-    }

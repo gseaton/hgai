@@ -25,7 +25,7 @@ docs/decks/demo-bus-dev-20260817/
 │   ├── staffing-rdf-comparison.ttl   the SAME facts, modeled as RDF/Turtle
 │   └── staffing-sql-comparison.sql   the SAME facts, modeled as SQL
 └── queries/
-    ├── q01-q05  *.hql / *.shql       hgai answers to the example question
+    ├── q01-q05  *.shql / *.shql       hgai answers to the example question
     └── comparison-*.sql / *.rq       the SAME question in SQL and SPARQL
 ```
 
@@ -415,8 +415,8 @@ moment it was written — the query just asks about it.
 ## 16. Now Add Time — For Free
 
 This is the point that doesn't survive the trip to SQL or RDF cleanly: the
-LCAT mod. Two HQL queries, one clause apart (`queries/q02-*.hql` and
-`q03-*.hql`):
+LCAT mod. Two HQL queries, one clause apart (`queries/q02-*.shql` and
+`q03-*.shql`):
 
 ```yaml
 # Before the mod
@@ -452,7 +452,7 @@ it's the same query with one field changed.
 Recall Section 10: an agent reasoned over this exact roster and wrote back
 a risk assessment, tagged with its own provenance. Anyone — a different
 agent, a human analyst, months later — retrieves it with
-`queries/q05-retrieve-ai-distilled-risk-assessment.hql`:
+`queries/q05-retrieve-ai-distilled-risk-assessment.shql`:
 
 ```yaml
 hql:

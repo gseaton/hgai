@@ -1,0 +1,14 @@
+shql:
+  from: acme-eng
+  where:
+    - node:
+        bind: ?person
+        node_type: Person
+        attributes:
+          hired_year: { $lte: 2020 }
+  select:
+    - ?person.id
+    - ?person.label
+    - ?person.attributes.title
+    - ?person.attributes.hired_year
+  as: tenured_employees

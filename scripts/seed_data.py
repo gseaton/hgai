@@ -309,31 +309,30 @@ async def seed(server: str, username: str, password: str):
             print(f"  [ok] Edge: {edge['id']} ({edge['relation']})")
 
         print("\nSeed data complete!")
-        print(f"\nExample HQL queries to try:")
+        print(f"\nExample SHQL queries to try:")
         print("""
   # Who were the Three Stooges in 1940?
-  hql:
+  shql:
     from: hello-world
     at: "1940-06-01T00:00:00Z"
-    match:
-      type: hyperedge
-      relation: has-member
     where:
-      members:
-        node_id: three-stooges
-    return:
-      - members
-      - attributes
+      - edge: "?e"
+        relation: has-member
+        members:
+          - id: three-stooges
+    select:
+      - "?e.members"
+      - "?e.attributes"
 
   # Find all siblings
-  hql:
+  shql:
     from: hello-world
-    match:
-      type: hyperedge
-      relation: sibling
-    return:
-      - members
-      - attributes
+    where:
+      - edge: "?e"
+        relation: sibling
+    select:
+      - "?e.members"
+      - "?e.attributes"
 """)
 
 

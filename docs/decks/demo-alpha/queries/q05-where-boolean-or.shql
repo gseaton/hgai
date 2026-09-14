@@ -1,0 +1,18 @@
+shql:
+  from: acme-eng
+  where:
+    - union:
+        - patterns:
+            - edge:
+                bind: ?edge
+                relation: mentors
+        - patterns:
+            - edge:
+                bind: ?edge
+                relation: collaborates-with
+  select:
+    - ?edge.id
+    - ?edge.relation
+    - ?edge.members
+    - ?edge.attributes
+  as: mentorship_or_collaboration_edges

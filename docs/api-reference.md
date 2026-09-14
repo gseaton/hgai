@@ -183,24 +183,26 @@ Create a hypergraph.
 
 ---
 
-## HQL Query
+## SHQL Query
 
-### POST /query
+SHQL (Semantic Hypergraph Query Language) is a SPARQL-inspired, YAML-based pattern-matching language — `?variable` bindings, implicit joins across shared variables, multi-hop traversal, `OPTIONAL`/`UNION`, point-in-time queries, aggregation, and axiom-driven inferencing. See the [README's SHQL section](../README.md#shql--semantic-hypergraph-query-language) for the full language reference and a worked-example gallery.
 
-Execute an HQL query.
+### POST /shql/query
+
+Execute an SHQL query.
 
 The `from` field accepts:
-- A local graph ID: `"my-graph"`
-- A list of local graph IDs: `["graph-1", "graph-2"]`
-- Mesh dot-notation refs: `"mesh-id.server-id.graph-id"` (wildcards `*` supported in any position)
-- A mix of local IDs and dot-notation refs in the same list
+- A local graph ID: `"my-graph"`, or a space-scoped graph: `"my-space/my-graph"`
+- A list of local/space-scoped graph IDs: `["graph-1", "graph-2"]`
+- Mesh dot-notation refs: `"mesh-id.server-id.graph-id"` (wildcards `*` supported in any position; 4-component `mesh-id.server-id.space-id.graph-id` for space-scoped remote graphs)
+- A mix of local, space-scoped, and dot-notation refs in the same list
 
-Graph IDs, server IDs, and mesh IDs must not contain `.` (reserved as the dot-notation delimiter).
+Graph IDs, space IDs, server IDs, and mesh IDs must not contain `.` (reserved as the dot-notation delimiter).
 
 **Body:**
 ```json
 {
-  "hql": "hql:\n  from: my-graph\n  match:\n    type: hyperedge\n  return:\n    - members",
+  "shql": "shql:\n  from: my-graph\n  where:\n    - edge:\n        bind: ?e\n        relation: has-member\n  select:\n    - ?e.members",
   "use_cache": true
 }
 ```
@@ -213,32 +215,32 @@ Graph IDs, server IDs, and mesh IDs must not contain `.` (reserved as the dot-no
   "items": [...],
   "meta": {
     "graph_ids": ["my-graph"],
-    "match_type": "hyperedge",
+    "dot_refs": null,
     "pit": null,
+    "pattern_count": 1,
+    "infer": false,
     "cached": false
   }
 }
 ```
 
-### POST /query/validate
+When the query includes an `aggregate:` clause (`count`/`group_by`), `meta` additionally carries `count` (total matched rows, pre-pagination) and/or `groups` (a `{"<value>": <count>, ...}` breakdown by the named `group_by` field).
 
-Validate an HQL query without executing.
+### POST /shql/validate
+
+Validate an SHQL query without executing it.
 
 **Response:**
 ```json
 {
   "valid": true,
-  "errors": [],
-  "parsed": {
-    "from": "my-graph",
-    "match": {"type": "hyperedge"}
-  }
+  "errors": []
 }
 ```
 
-### POST /query/cache/invalidate
+### POST /shql/cache/invalidate
 
-Flush the query cache.
+Flush the shared query result cache. Optional `graph_id` query param scopes the flush to entries that queried that graph; omitted, the whole cache is flushed.
 
 ---
 
@@ -319,7 +321,7 @@ Flush the query cache.
   "server_id": "hgai-local",
   "server_name": "HypergraphAI Local",
   "version": "0.1.0",
-  "capabilities": ["hypernodes", "hyperedges", "hypergraphs", "hql", "mcp", "mesh", "temporal", "inference"]
+  "capabilities": ["hypernodes", "hyperedges", "hypergraphs", "shql", "mcp", "mesh", "temporal", "media"]
 }
 ```
 
@@ -349,8 +351,8 @@ http://localhost:8000/mcp/
 | `hgai_hyperedge_get` | Get a hyperedge |
 | `hgai_hyperedge_create` | Create a hyperedge |
 | `hgai_hyperedge_delete` | Delete a hyperedge |
-| `hgai_query_execute` | Execute an HQL query |
-| `hgai_query_validate` | Validate an HQL query |
+| `hgai_query_execute` | Execute an SHQL query |
+| `hgai_query_validate` | Validate an SHQL query |
 
 ---
 
@@ -477,7 +479,7 @@ All errors follow the format:
 
 | HTTP Code | Meaning |
 |-----------|---------|
-| `400` | Bad Request (invalid input or HQL) |
+| `400` | Bad Request (invalid input or SHQL) |
 | `401` | Unauthorized (missing or invalid token) |
 | `403` | Forbidden (insufficient permissions) |
 | `404` | Not Found |

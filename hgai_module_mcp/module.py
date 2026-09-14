@@ -79,7 +79,7 @@ class MCPModule:
     name = "mcp"
     version = "0.1.0"
     description = (
-        "MCP (Model Context Protocol) — exposes hypergraph CRUD and HQL "
+        "MCP (Model Context Protocol) — exposes hypergraph CRUD and SHQL "
         "query operations as MCP tools for AI agents"
     )
 

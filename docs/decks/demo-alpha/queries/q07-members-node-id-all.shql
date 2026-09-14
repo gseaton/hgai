@@ -1,0 +1,15 @@
+shql:
+  from: acme-eng
+  where:
+    - edge:
+        bind: ?edge
+        relation: staffed-on
+        members:
+          - id: person:dana-kim
+          - id: person:priya-nair
+  select:
+    - ?edge.id
+    - ?edge.relation
+    - ?edge.members
+    - ?edge.attributes
+  as: shared_project_staffing

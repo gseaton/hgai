@@ -6,7 +6,7 @@ description: "Step-by-step walkthrough of HypergraphAI's core features, from a c
 # HypergraphAI
 ## Live Demo — "Acme Robotics" Engineering Org
 
-A self-contained, hands-on tour of hypergraphs, HQL, SHQL, temporal queries,
+A self-contained, hands-on tour of hypergraphs, SHQL, temporal queries,
 and AI-native access — starting from a **clean HypergraphAI install with zero
 demo artifacts**.
 
@@ -24,8 +24,8 @@ docs/decks/demo-alpha/
 ├── data/
 │   └── acme-eng-import.yaml        24 hypernodes + 23 hyperedges to bulk-import
 └── queries/
-    ├── q01–q07  *.hql              HQL (filter / aggregate) examples
-    └── q08–q14  *.shql             SHQL (pattern-matching) examples
+    ├── q01–q07  *.shql              SHQL (single-pattern filter / aggregate) examples
+    └── q08–q14  *.shql              SHQL (multi-pattern joins / FILTER / OPTIONAL / UNION) examples
 ```
 
 Every query file in this deck has been executed against a live server as
@@ -42,9 +42,9 @@ not illustrative.
 4. **Phase 1** — create a hypergraph
 5. **Phase 2** — model an org as a hypergraph, bulk-import it
 6. **Phase 3** — explore it in the Web UI
-7. **Phase 4** — HQL: filter & aggregate queries
+7. **Phase 4** — SHQL: filter & aggregate queries
 8. **Phase 5** — point-in-time (temporal) queries
-9. **Phase 6** — SHQL: pattern-matching & multi-hop joins
+9. **Phase 6** — SHQL: multi-hop joins
 10. **Phase 7** — SHQL: FILTER, OPTIONAL, UNION
 11. **Phase 8** — AI-native access via MCP tools
 12. **Phase 9** — RBAC & Spaces (multi-tenant isolation) — *advanced, optional*
@@ -103,16 +103,20 @@ other hypergraphs).
 structure (relation + members). It's how HypergraphAI deduplicates
 semantically identical edges even if you didn't supply an explicit `id`.
 
-**Edge flavor** — describes the *shape* of a relationship. Used in this demo:
+**Edge flavor** — describes how a hyperedge's member list decomposes into
+individual facts. Only two flavors exist — deliberately, each describes a
+genuine N-ary fact that can't be decomposed without losing what it asserts:
 
 | Flavor | Meaning | Used for |
 |---|---|---|
-| `hub` | one-to-many: first member is the "hub" | team rosters, skills, project staffing |
-| `direct` | directed, first member → last member | reports-to, mentorship |
-| `symmetric` | order doesn't imply direction | peer collaboration |
+| `hub` | first member (`seq: 0`) is the hub; every other member is an independent (hub, spoke) fact | team rosters, skills, project staffing — and, for a 2-member edge, any directed fact: reports-to, mentorship |
+| `symmetric` | every member is mutually equivalent to every other | peer collaboration |
 
-(`transitive` and `inverse-transitive` also exist — see Phase 10 for what
-they do today vs. what's on the roadmap.)
+A directed chain (A reports to B, B reports to C, ...) is *not* one N-ary
+fact — it's several independent 2-member `hub` edges, each with its own
+history. Chain-level reasoning ("is A transitively under C?") is a
+relation-level property declared via an `owl:transitive` axiom hyperedge —
+see Phase 10 for what inferencing does today.
 
 ---
 
@@ -222,7 +226,7 @@ This dataset intentionally exercises every major HypergraphAI feature:
 |---|---|
 | `has-skill` hub edges (1 person → several skills) | n-ary hyperedges — the core advantage over binary-edge graphs |
 | `has-member` team-roster edges with `valid_from`/`valid_to` | temporal knowledge — Dana Kim moved from the Perception team to the Platform team on 2024-03-01, and **both** facts stay in the graph |
-| `reports-to` (`direct`) and `collaborates-with` (`symmetric`) | edge *flavors* — the shape of a relationship is explicit, queryable metadata |
+| `reports-to` (`hub`, 2-member) and `collaborates-with` (`symmetric`) | edge *flavors* — the shape of a relationship is explicit, queryable metadata |
 | `RelationType` hypernodes (e.g. `rel:has-member`) with an `inverse` attribute | semantic relation modeling — see Phase 10 for how this is (and isn't yet) used |
 | free-form `attributes` (title, level, hired_year...) | document-database flexibility — no rigid schema per node type |
 
@@ -269,7 +273,7 @@ through:
 4. **Hyperedges** — open `edge-skills-dana` and point out the **3-member**
    `members` array (Dana + 3 skills) in one edge — this is the hyperedge
    advantage from slide 2, made visible
-5. **Query** — the interactive HQL editor; we'll use this (or the shell) for
+5. **Query** — the interactive SHQL editor; we'll use this (or the shell) for
    every query in Phases 4–7
 
 > If you're doing a live demo, this is a good moment to let the audience
@@ -277,88 +281,104 @@ through:
 
 ---
 
-## 7. Phase 4 — HQL: Filter & Aggregate Queries
+## 7. Phase 4 — SHQL: Filter & Aggregate Queries
 
-**Concept note:** HQL is HypergraphAI's primary query language, written in
-YAML and modeled after MongoDB's filter semantics: `match` narrows by
-type/relation, `where` applies field filters (including MongoDB operators
-like `$gt`, `$in`, `$or`), `return` projects fields. Use HQL when you know
-roughly *what* you're filtering for and don't need multi-hop traversal.
+**Concept note:** SHQL is HypergraphAI's query language, written in YAML —
+a SPARQL-inspired pattern-matching language: `where:` lists `node`/`edge`
+patterns to match (each can bind a `?variable`), `select:` projects the
+fields you want. Node/edge patterns accept MongoDB-style operators
+(`$gt`, `$in`, `$or`, ...) directly inside `attributes:`. This phase uses
+SHQL in its simplest shape — one pattern, no joins — before Phase 6 shows
+what it can do once you add a second pattern sharing a variable.
 
 Run any of these with:
 ```bash
-> query -f docs/decks/demo-alpha/queries/q01-list-people.hql
+> shql -f docs/decks/demo-alpha/queries/q01-list-people.shql
 ```
 
-**q01 — list every Person** (`queries/q01-list-people.hql`)
+**q01 — list every Person** (`queries/q01-list-people.shql`)
 ```yaml
-hql:
+shql:
   from: acme-eng
-  match:
-    type: hypernode
-    node_type: Person
-  return:
-    - id
-    - label
-    - attributes
+  where:
+    - node:
+        bind: ?person
+        node_type: Person
+  select:
+    - ?person.id
+    - ?person.label
+    - ?person.attributes
   as: all_people
 ```
 → 7 results, one per engineer.
 
-**q04 — numeric WHERE operator** (`queries/q04-where-numeric.hql`) — people
-hired in 2020 or earlier:
+**q04 — numeric attribute filter** (`queries/q04-where-numeric.shql`) —
+people hired in 2020 or earlier:
 ```yaml
-hql:
+shql:
   from: acme-eng
-  match:
-    type: hypernode
-    node_type: Person
   where:
-    attributes.hired_year:
-      $lte: 2020
-  return:
-    - id
-    - label
-    - attributes.title
-    - attributes.hired_year
+    - node:
+        bind: ?person
+        node_type: Person
+        attributes:
+          hired_year: { $lte: 2020 }
+  select:
+    - ?person.id
+    - ?person.label
+    - ?person.attributes.title
+    - ?person.attributes.hired_year
   as: tenured_employees
 ```
 → 4 results (Alex, Jamie, Sam, Leo).
 
-**q05 — boolean `$or`** (`queries/q05-where-boolean-or.hql`) — edges that
-are either a mentorship or a peer collaboration:
+**q05 — either/or across two relations** (`queries/q05-where-boolean-or.shql`)
+— edges that are either a mentorship or a peer collaboration:
 ```yaml
-hql:
+shql:
   from: acme-eng
-  match:
-    type: hyperedge
   where:
-    $or:
-      - relation: mentors
-      - relation: collaborates-with
-  return:
-    - id
-    - relation
-    - members
-    - attributes
+    - union:
+        - patterns:
+            - edge:
+                bind: ?edge
+                relation: mentors
+        - patterns:
+            - edge:
+                bind: ?edge
+                relation: collaborates-with
+  select:
+    - ?edge.id
+    - ?edge.relation
+    - ?edge.members
+    - ?edge.attributes
   as: mentorship_or_collaboration_edges
 ```
 → 3 results.
 
-> **Concept note — `$or`/`$and`/`$nor`/`$not`:** any `where` key HQL doesn't
-> recognize is passed straight through to MongoDB. This pass-through is
-> wired up for **hyperedge** queries (as above). For **hypernode** queries,
-> put boolean logic on `attributes.<field>` values instead (see q04) —
-> that path is fully supported; only bare top-level boolean operators
-> (`$or` etc.) directly against node attributes should be avoided today.
+> **Concept note — `union:` vs `attributes:` operators.** `union:` merges
+> the results of independent pattern branches — the right tool whenever the
+> "or" is between two different match *keys* (here, two different
+> `relation:` values), not two values of the same field. For an "or" across
+> values of the *same* attribute field, MongoDB pass-through operators work
+> directly inside `attributes:` — see q04's `$lte`, or use `$in`/`$or` the
+> same way. Phase 6 revisits `union:` for a node-level example.
 
 **q06 / q07 — matching by hyperedge member** — "which edges involve either
-Dana or Priya" (`$in`, 11 results) vs. "which edge involves *both* of them"
-(`$all`, 1 result — the Project Sentinel staffing edge). Run both and
-compare:
+Dana or Priya" (11 results) vs. "which edge involves *both* of them" (1
+result — the Project Sentinel staffing edge). Run both and compare:
 ```bash
-> query -f docs/decks/demo-alpha/queries/q06-members-node-id-in.hql
-> query -f docs/decks/demo-alpha/queries/q07-members-node-id-all.hql
+> shql -f docs/decks/demo-alpha/queries/q06-members-node-id-in.shql
+> shql -f docs/decks/demo-alpha/queries/q07-members-node-id-all.shql
+```
+q06 needs a `union:` of two single-member patterns (member presence isn't a
+field SHQL's MongoDB pass-through reaches); q07 is simpler — list both
+member ids in the *same* edge pattern and both must match:
+```yaml
+# q07 (excerpt) — both members required on one edge
+members:
+  - id: person:dana-kim
+  - id: person:priya-nair
 ```
 
 ---
@@ -376,44 +396,44 @@ Recall from the import: the Perception team's roster changed on
 2024-03-01, when Dana Kim moved to the Platform team.
 
 **q02 — see every version, no `at:` clause**
-(`queries/q02-team-membership-history.hql`):
+(`queries/q02-team-membership-history.shql`):
 ```yaml
-hql:
+shql:
   from: acme-eng
-  match:
-    type: hyperedge
-    relation: has-member
   where:
-    members:
-      node_id: team:perception
-  return:
-    - id
-    - members
-    - attributes
-    - valid_from
-    - valid_to
+    - edge:
+        bind: ?edge
+        relation: has-member
+        members:
+          - id: team:perception
+  select:
+    - ?edge.id
+    - ?edge.members
+    - ?edge.attributes
+    - ?edge.valid_from
+    - ?edge.valid_to
   as: perception_team_all_versions
 ```
 → **2 results** — both the pre- and post-move rosters, each with its own
 `valid_from`/`valid_to`. This is the "nothing is hidden by default" point
 made concrete.
 
-**q03 — pin it to mid-2023** (`queries/q03-team-roster-pit.hql`) — same
+**q03 — pin it to mid-2023** (`queries/q03-team-roster-pit.shql`) — same
 filter, plus `at: "2023-06-01T00:00:00Z"`:
 ```yaml
-hql:
+shql:
   from: acme-eng
   at: "2023-06-01T00:00:00Z"
-  match:
-    type: hyperedge
-    relation: has-member
   where:
-    members:
-      node_id: team:perception
-  return:
-    - id
-    - members
-    - attributes
+    - edge:
+        bind: ?edge
+        relation: has-member
+        members:
+          - id: team:perception
+  select:
+    - ?edge.id
+    - ?edge.members
+    - ?edge.attributes
   as: perception_roster_mid_2023
 ```
 → **1 result** — the roster that included Dana, Sam, and Priya. Run q02 and
@@ -421,17 +441,17 @@ q03 back-to-back; the difference is the whole point of temporal queries.
 
 ---
 
-## 9. Phase 6 — SHQL: Pattern-Matching & Multi-Hop Joins
+## 9. Phase 6 — SHQL: Multi-Hop Joins
 
-**Concept note:** SHQL ("shekel") is HypergraphAI's second query language —
-a pattern-matching language inspired by SPARQL, not MongoDB. Instead of
-filtering one collection, you describe a **shape**: nodes and edges with
-`?variables`, where the same variable used in two patterns is an **implicit
-join**. Use SHQL when the question involves traversal — "which X are
-connected to which Y through Z" — something HQL's flat filters can't
-express.
+**Concept note:** Phase 4 used one pattern at a time; this phase adds a
+second. Instead of filtering one collection, you describe a **shape**:
+nodes and edges with `?variables`, where the same variable used in two
+patterns is an **implicit join**. Reach for this whenever the question
+involves traversal — "which X are connected to which Y through Z" —
+something a single pattern's flat filters can't express on their own.
 
-Run with `shql -f <file>` instead of `query -f`.
+Continue using `shql -f <file>` — same command as Phase 4/5, just with more
+than one pattern in `where:`.
 
 **q08 — join people to their teams** (`queries/q08-people-and-teams.shql`):
 ```yaml
@@ -625,8 +645,9 @@ shql:
   order_by: ?person.label
   as: perception_roster_mid_2023_shql
 ```
-→ **3 results** (Dana, Priya, Sam) — same answer as HQL's q03, expressed as
-a pattern-match instead of a filter.
+→ **3 results** (Dana, Priya, Sam) — same answer as Phase 5's q03, this
+time via an explicit `?team`/`?person` join instead of a literal member-id
+filter.
 
 ---
 
@@ -674,8 +695,8 @@ curl -X POST http://localhost:8000/mcp/ \
   }'
 ```
 
-**Run an HQL/SHQL query as a tool call** — this is the same q01 from Phase
-4, called as `hgai_query_execute` instead of the REST `/query` endpoint:
+**Run an SHQL query as a tool call** — this is the same q01 from Phase 4,
+called as `hgai_query_execute` instead of the REST `/shql/query` endpoint:
 ```bash
 curl -X POST http://localhost:8000/mcp/ \
   -H "Content-Type: application/json" \
@@ -688,7 +709,7 @@ curl -X POST http://localhost:8000/mcp/ \
     "params": {
       "name": "hgai_query_execute",
       "arguments": {
-        "query_yaml": "hql:\n  from: acme-eng\n  match:\n    type: hypernode\n    node_type: Person\n  return:\n    - id\n    - label\n  limit: 50"
+        "query_yaml": "shql:\n  from: acme-eng\n  where:\n    - node:\n        bind: ?person\n        node_type: Person\n  select:\n    - ?person.id\n    - ?person.label\n  limit: 50"
       }
     }
   }'
@@ -751,31 +772,36 @@ identically once you're inside a space.
 
 **Concept note for newcomers:** *inferencing* means deriving facts that
 were never explicitly stored — e.g., if "Team has-member Dana" is stored
-and `has-member`'s inverse is declared as `member-of`, an inference engine
-can produce "Dana member-of Team" without you writing that edge yourself.
+and an axiom declares `has-member`'s inverse to be `member-of`, the query
+engine can produce "Dana member-of Team" without you writing that edge
+yourself.
 
-Our dataset includes the scaffolding for this: `rel:has-member` and
-`rel:mentors` both declare an `inverse` attribute, and several edges use
-the `transitive`-capable flavor system. **Be precise with your audience
-about what this means today:**
+Relation semantics (transitive, symmetric, inverse-of, broader/narrower)
+are never hardcoded — they're declared as ordinary **axiom hyperedges**
+asserting a control-vocabulary relation (`owl:transitive`, `owl:symmetric`,
+`owl:inverse-of`, `skos:broaderTransitive`/`narrowerTransitive`) between
+`RelationType` hypernodes. **This dataset doesn't include any axiom
+hyperedges**, so nothing below infers anything by itself yet — but every
+mechanism described here is live in the engine, opt-in per query via
+`infer: true`:
 
 | Capability | Status |
 |---|---|
-| Edge `flavor` field (`hub`, `direct`, `symmetric`, `transitive`, `inverse-transitive`) | **Live** — stored, queryable as plain metadata via `match.flavor` |
-| `RelationType.attributes.inverse` declaration | **Live** — stored as data, human/agent-readable |
-| Automatic inverse-edge generation at query time | Implemented at the engine level (`hgai/core/inference.py`), **not yet wired into HQL, SHQL, the REST API, or MCP tools** |
-| Transitive-closure reachability checks | Same — engine function exists, **not yet exposed** through any query path |
-| SKOS (`broader`/`narrower`/`related`) semantic inferencing | **Roadmap** — planned via hyperedge hub relations |
-| HQL `infer:` clause | **Roadmap** |
+| Edge `flavor` field (`hub`, `symmetric` — only two exist) | **Live** — stored, queryable as plain metadata via `edge.flavor` |
+| `RelationType.attributes.inverse`-style free-text hints (as seen on `rel:has-member`/`rel:mentors` in this dataset) | Illustrative data only — **not read by the engine**. The engine reads `owl:inverse-of` **axiom hyperedges** instead (see below) |
+| Axiom-driven inverse-of / symmetric / SKOS broader-narrower expansion | **Live** — `expand_edge_closure` in `hgai/core/inference.py`, wired into SHQL behind `infer: true` |
+| Transitive-closure reachability checks | **Live** — `check_transitive`, same `infer: true` opt-in, self-gated on an `owl:transitive` axiom actually existing |
+| Rule-based inferencing (`InferenceRule` hypernodes), cross-graph/mesh inferencing, materialized inference cache, OWL-lite property chains | **Roadmap** |
 
 **Why this matters for your demo:** don't promise a live audience that
-querying will "automatically" produce `member-of` from `has-member` today —
-it won't. What you *can* honestly say: the data model already captures
-everything needed for that inference (the `inverse` attribute is sitting
-right there on `rel:has-member`), and turning it on is a matter of the
-query engine catching up to data that's already shaped correctly. That's a
-genuinely strong story about designing for the future without over-claiming
-what runs today.
+querying will "automatically" produce `member-of` from `has-member` in
+*this* dataset — the `inverse: "member-of"` text sitting on `rel:has-member`
+is a human-readable hint, not something the engine consults. What you *can*
+demo live: asserting one `owl:inverse-of` axiom hyperedge between two
+`RelationType` nodes, then re-running a `has-member` query with
+`infer: true` and watching the reverse `member-of` facts appear, tagged
+`_inferred: true`. See the README's Inferencing section for the axiom
+vocabulary and a full worked example.
 
 ---
 
@@ -786,14 +812,15 @@ what runs today.
 - A **hypergraph** namespace (`acme-eng`) created from nothing
 - **Hypernodes** across 6 types (Organization, Team, Person, Skill,
   Project, RelationType) with free-form `attributes`
-- **Hyperedges** with 2–5 members each, across 3 **flavors** (`hub`,
-  `direct`, `symmetric`) — the n-ary advantage made concrete via
-  `edge-skills-dana` (1 edge, 4 members)
+- **Hyperedges** with 2–5 members each, across both **flavors** (`hub`,
+  `symmetric`) — the n-ary advantage made concrete via `edge-skills-dana`
+  (1 edge, 4 members)
 - **Temporal validity** (`valid_from`/`valid_to`) and **point-in-time**
-  queries in both HQL (q03) and SHQL (q14) — nothing overwritten, ever
-- **HQL** — filters, numeric operators, boolean `$or`, member-list
-  matching (`$in`/`$all`)
-- **SHQL** — multi-hop joins via shared `?variables`, `FILTER`,
+  queries, shown two ways: a literal member-id filter (q03) and an explicit
+  join (q14) — nothing overwritten, ever
+- **SHQL, simple shape** — single-pattern filters, numeric/boolean
+  operators, member-list matching, `aggregate:`
+- **SHQL, join shape** — multi-hop joins via shared `?variables`, `FILTER`,
   `OPTIONAL` (left outer join), `UNION`
 - The **Web UI** for non-technical stakeholders
 - **MCP tools** — the exact mechanism an AI agent uses, with no custom

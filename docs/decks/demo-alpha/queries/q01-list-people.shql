@@ -1,0 +1,11 @@
+shql:
+  from: acme-eng
+  where:
+    - node:
+        bind: ?person
+        node_type: Person
+  select:
+    - ?person.id
+    - ?person.label
+    - ?person.attributes
+  as: all_people

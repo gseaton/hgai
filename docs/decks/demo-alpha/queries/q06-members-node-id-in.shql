@@ -1,0 +1,19 @@
+shql:
+  from: acme-eng
+  where:
+    - union:
+        - patterns:
+            - edge:
+                bind: ?edge
+                members:
+                  - id: person:dana-kim
+        - patterns:
+            - edge:
+                bind: ?edge
+                members:
+                  - id: person:priya-nair
+  select:
+    - ?edge.id
+    - ?edge.relation
+    - ?edge.members
+  as: edges_with_dana_or_priya

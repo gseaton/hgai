@@ -73,126 +73,28 @@ A **hypergraph** is a named container for hypernodes and hyperedges. Hypergraphs
 - **Instantiated** — physical collections in MongoDB
 - **Logical** — virtual compositions of one or more other hypergraphs (local or remote)
 
-### HQL (Hypergraph Query Language)
-HypergraphAI queries are written in YAML format:
+### Query Language (SHQL)
+HypergraphAI queries are written in SHQL — a SPARQL-inspired, YAML-based pattern-matching language. Every query starts with the `shql:` key, matches `node`/`edge` patterns against `?variable` bindings (a variable shared across patterns is an implicit join), and projects the fields you want with `select:`:
 
 ```yaml
-hql:
+shql:
   from: my-graph
-  match:
-    type: hyperedge
-    relation: has-member
   where:
-    tags:
-      - original
-  return:
-    - members
-    - attributes
+    - edge:
+        bind: ?e
+        relation: has-member
+        tags: [original]
+  select:
+    - ?e.members
+    - ?e.attributes
   as: result
 ```
 
-### WHERE Operators
+Node and edge patterns accept standard MongoDB query operators (`$lt`, `$lte`, `$gt`, `$gte`, `$ne`, `$in`, `$all`, `$regex`, ...) directly inside `attributes:`, and the top-level boolean operators `$or`/`$and`/`$nor`/`$not` pass through unchanged — the engine maps any unrecognized key straight to the underlying MongoDB query document. See [Node Pattern](#node-pattern) and [Filter Expressions](#filter-expressions) below for the full syntax, including the `?var.field OP value` FILTER form for expressing the same comparisons over an already-bound variable.
 
-┌───────────────────────┬───────────────────┐
-│       Operator        │       YAML        │
-├───────────────────────┼───────────────────┤
-│ less than             │ $lt: 20           │
-├───────────────────────┼───────────────────┤
-│ less than or equal    │ $lte: 20          │
-├───────────────────────┼───────────────────┤
-│ greater than          │ $gt: 20           │
-├───────────────────────┼───────────────────┤
-│ greater than or equal │ $gte: 20          │
-├───────────────────────┼───────────────────┤
-│ not equal             │ $ne: 20           │
-├───────────────────────┼───────────────────┤
-│ in a list             │ $in: [10, 15, 20] │
-└───────────────────────┴───────────────────┘
+See [SHQL — Semantic Hypergraph Query Language](#shql--semantic-hypergraph-query-language) further down for the complete language reference — variables, node/edge patterns, OPTIONAL/UNION, point-in-time queries, aggregation, inferencing, and a full worked-example gallery. The rest of this section walks through one representative query to show variable binding and implicit joins end to end.
 
-### WHERE Boolean Operators
-
-#### Boolean Operators
-- `$or`
-- `$and`
-- `$nor`
-- `$not`
-
-#### Example WHERE Boolean Query
-
-```yaml
-hql:                                                                                                                                              
-    from: my-graph                                                                                                                                
-    match:                                                                                                                                          
-      type: any
-    where:                                                                                                                                          
-      $or:                                                                                                                                        
-        - attributes.answer:
-            $lt: 10
-        - attributes.answer:
-            $gt: 99                                                                                                                                 
-    return:
-      - id                                                                                                                                          
-      - label                                               
-      - type
-      - attributes
-    as: answer_out_of_range
-```
-
-The `$or` key passes directly through to MongoDB unchanged — the query engine maps any unrecognized `where` key straight 
-to the MongoDB query document, so all standard MongoDB logical operators work: `$or`, `$and`, `$nor`, `$not`.
-
-### Query Examples
-
-Multi-graph composition:
-```yaml
-hql:
-  from:
-    - graph-1
-    - graph-2
-  match:
-    type: hypernode
-    node_type: Person
-  where:
-    attributes.city: Paris
-  return:
-    - id
-    - label
-    - attributes
-```
-
-Point-in-time query:
-```yaml
-hql:
-  from: presidents
-  at: "1963-11-22T00:00:00Z"
-  match:
-    type: hyperedge
-    relation: rel:holds-office
-  return:
-    - members
-```
-
-```yaml
-hql:
-    from: 
-      - hg-alpha
-      - hg-bravo
-    at: "1944-11-22T00:00:00Z"
-    match:
-      type: hyperedge
-    where:
-      relation: rel:president-of
-      flavor: hub
-      members.node_id: nation:usa
-    return:
-      - id
-      - relation
-      - members
-      - attributes
-    as: potus-at
-```
-
-This HQL query only narrows down to the president-of edge that contains nation:usa as a member (at any position) — HQL has no variable binding, so it can't single out "the other member" on its own; the full `members` array is returned instead so the caller can read the president's node ID off it directly. The SHQL below does the extraction: (1) find the president-of edge that includes nation:usa as a member, (2) bind the other member (seq 0) as the president's node ID, then (3) join to the Person node to project the requested fields.
+Given a `rel:president-of` hyperedge whose members are `[nation:usa, person:<president>]` (seq 0 = the president), resolve the sitting president's full node record as of a given date:
 
 ```yaml
 shql:
@@ -225,144 +127,18 @@ shql:
 
 How it works:
 
-┌──────┬──────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────┐
-│ Step │                 Pattern                  │                                      Effect                                       │
-├──────┼──────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
-│ 1    │ edge: ?potus_edge with nation:usa member │ Finds edges where nation:usa is a member, binding the edge doc to ?potus_edge     │
-├──────┼──────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
-│ 2    │ node_id: ?president_id + seq: 0          │ Binds the seq-0 member's node ID to ?president_id                                 │
-├──────┼──────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
-│ 3    │ node: ?president + id: ?president_id     │ Resolves ?president_id → MongoDB query, binding the full Person doc to ?president │
-├──────┼──────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
-│ 4    │ select                                   │ Projects id, label, description, attributes from the bound Person                 │
-└──────┴──────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────┘
+| Step | Pattern | Effect |
+|---|---|---|
+| 1 | `edge: ?potus_edge` with `nation:usa` member | Finds edges where `nation:usa` is a member, binding the edge doc to `?potus_edge` |
+| 2 | `node_id: ?president_id` + `seq: 0` | Binds the seq-0 member's node ID to `?president_id` |
+| 3 | `node: ?president` + `id: ?president_id` | Resolves `?president_id` to a node lookup, binding the full Person doc to `?president` |
+| 4 | `select` | Projects `id`, `label`, `description`, `attributes` from the bound Person |
 
 The `at:` timestamp is respected at every stage — both the edge lookup and node lookup are evaluated at the point-in-time `1948-11-22`, so the result reflects whoever held the office on that date.
 
-Step 2's `seq: 0` is enforced positionally: `?president_id` only binds to the member whose `seq` is actually `0` on that edge, not just any unused member. If the edge's seq-0 slot were occupied by someone other than the president (a malformed edge), the pattern would fail to match rather than binding the wrong node.
+Step 2's `seq: 0` is enforced positionally: `?president_id` only binds to the member whose `seq` is actually `0` on that edge, not just any unused member — see [Edge Pattern](#edge-pattern) and worked example #13 ([Positional member filter](#13-positional-member-filter--find-the-first-member-by-seq)) below for the full mechanics. If the edge's seq-0 slot were occupied by someone other than the president (a malformed edge), the pattern would fail to match rather than binding the wrong node.
 
----
-
-Attributes Query:
-
-```yaml
-hql:
-    from: hello-world
-    match:
-      type: any
-    where:
-      attributes.family: Horwitz
-    return:
-      - id
-      - label
-      - attributes
-      - _entity_type
-    as: horwitz_family
-```
-Matches any hypernode or hyperedge whose attributes.family == "Horwitz" — 
-in the seed data this returns the Horwitz Brothers sibling edge.
-
-Numeric WHERE Operators:
-
-```yaml
-hql:
-  from: 
-    - hg-alpha
-    - hg-bravo
-  match:
-    type: any
-  where:
-    attributes.answer:
-      $gt: 2
-  return:
-    - id
-    - label
-    - type
-    - attributes
-  as: answer_lt_20
-```
-
-Hyperedges with member node/edge ids:
-
-```yaml
-hql:
-    from: hg-alpha
-    match:
-      type: hyperedge
-    where:
-      members:
-        node_id: person:curly-joe
-    return:
-      - id
-      - relation
-      - members
-      - attributes
-    as: edges_containing_moe
-```
-The `members.node_id` path is handled as a special case in the HQL engine, translating to a MongoDB `members.node_id` field match — which works against the array of `member` objects **regardless of position** when it's the only member sub-field in `where`. See [Positional member filters (seq)](#positional-member-filters-seq) below for matching a specific array slot.
-
-To match edges containing any one of several nodes:
-
-```yaml
-where:
-  members:
-    node_id:
-      $in: [moe-howard, larry-fine]
-```
-
-To match edges containing all of a set of nodes:
-
-```yaml
-hql:
-    from: hg-alpha
-    match:
-      type: hyperedge
-    where:
-    members.node_id:
-      $all: [person:moe, person:larry]
-    return:
-      - id
-      - relation
-      - members
-      - attributes
-    as: edges_containing_moe_et
-```
-
-#### Positional member filters (seq)
-
-To match a specific *position* within the members array rather than "contains
-this node anywhere," combine `seq` with another member sub-field (typically
-`node_id`) — either as a nested dict or as separate literal dotted keys. Both
-forms bind to the **same** array element, so the query below only matches
-edges whose *first* member (`seq: 0`) is `group:three-stooges`:
-
-```yaml
-hql:
-  from: hello-world
-  match:
-    type: hyperedge
-    relation: "rel:member"
-  where:
-    members:
-      seq: 0
-      node_id: group:three-stooges
-  return:
-    - id
-    - relation
-    - members
-    - attributes
-  as: first_member_is_stooges
-```
-
-Equivalently:
-
-```yaml
-where:
-  members.seq: 0
-  members.node_id: group:three-stooges
-```
-
-Internally, the HQL engine merges every `members.*` / `members: {...}` condition given in the same `where` clause and, when there's more than one, translates them into a single MongoDB [`$elemMatch`](https://www.mongodb.com/docs/manual/reference/operator/query/elemMatch/) so all conditions are required to hold on the same array element — unlike separate top-level dot-paths, which Mongo would otherwise evaluate independently against any (possibly different) elements. A single member sub-field is unaffected and keeps the "contains anywhere" behavior described above.
+For the complete set of member-matching, filtering, aggregation, and inferencing examples (attribute filters, `$in`/`$all`-style membership tests, numeric/boolean operators, positional `seq` filters, aggregation, axiom-driven inferencing), see the worked-example gallery under [SHQL — Semantic Hypergraph Query Language § Examples](#examples) further down.
 
 ### Space-scoped Graph References
 
@@ -376,91 +152,18 @@ Graphs owned by a space are referenced with a slash separator: `space_id/graph_i
 Query all nodes in a space-scoped graph:
 
 ```yaml
-hql:
+shql:
   from: alpha/alpha-hg
-  match:
-    type: hypernode
-  return:
-    - id
-    - label
-    - type
-    - attributes
+  where:
+    - node: ?n
+  select:
+    - ?n.id
+    - ?n.label
+    - ?n.type
+    - ?n.attributes
 ```
 
-Query edges by relation in a space-scoped graph:
-
-```yaml
-hql:
-  from: alpha/alpha-hg
-  match:
-    type: hyperedge
-    relation: has-member
-  return:
-    - id
-    - relation
-    - members
-    - attributes
-```
-
-Multi-graph query across two spaces:
-
-```yaml
-hql:
-  from:
-    - alpha/alpha-hg
-    - beta/beta-hg
-  match:
-    type: hypernode
-    node_type: Person
-  return:
-    - id
-    - label
-    - attributes
-```
-
-Mix a space-scoped graph with an unowned global graph:
-
-```yaml
-hql:
-  from:
-    - hello-world
-    - alpha/alpha-hg
-  match:
-    type: hypernode
-  return:
-    - id
-    - label
-    - type
-```
-
-Point-in-time query on a space-scoped graph:
-
-```yaml
-hql:
-  from: alpha/alpha-hg
-  at: "1940-06-01T00:00:00Z"
-  match:
-    type: hyperedge
-    relation: has-member
-  return:
-    - members
-    - attributes
-    - valid_from
-    - valid_to
-```
-
-For remote graphs on a mesh server, use the 4-component dot-notation `mesh.server.space.graph`:
-
-```yaml
-hql:
-  from: my-mesh.remote-server.alpha.alpha-hg
-  match:
-    type: hypernode
-  return:
-    - id
-    - label
-    - _mesh_server_id
-```
+`from:` accepts a list mixing space-scoped, unowned, and mesh dot-notation refs in any combination, and `at:` (point-in-time) works identically whether or not a graph is space-scoped. See worked examples [#8–12](#8-find-all-nodes-in-a-space-scoped-graph) under [SHQL — Semantic Hypergraph Query Language § Examples](#examples) for multi-space queries, mixing a space graph with an unowned one, PIT on a space graph, and the 4-component mesh dot-notation `mesh.server.space.graph` for remote space-scoped graphs.
 
 ---
 
@@ -488,29 +191,26 @@ hgai/
 │   ├── indexes.py               # All collection index definitions
 │   └── stores/                  # Per-entity store implementations
 │
-├── hgai_module_hql/             # HQL — Hypergraph Query Language module
-│   ├── engine.py                # HQL parser + executor (YAML, PIT, multi-graph, aggregation)
-│   └── api_router.py            # POST /api/v1/query, /validate, /cache/invalidate
-│
 ├── hgai_module_shql/            # SHQL — Semantic Hypergraph Query Language module
 │   ├── parser.py                # parse_shql() + validate_shql()
 │   ├── engine.py                # execute_shql() — binding sets, pattern evaluation, projection
-│   └── api_router.py            # POST /api/v1/shql/query, /validate
+│   └── api_router.py            # POST /api/v1/shql/query, /validate, /cache/invalidate
 │
 ├── hgai_module_mesh/            # Mesh — distributed server registry + federation module
 │   ├── models.py                # MeshServer, MeshCreate, MeshUpdate, MeshResponse
-│   ├── engine.py                # ping, sync, federated HQL
+│   ├── engine.py                # ping, sync, federated SHQL
 │   └── api_router.py            # CRUD + /ping, /sync, /query endpoints
 │
 ├── hgai_module_mcp/             # MCP — Model Context Protocol module
-│   └── server.py                # FastMCP server: 14 tools (CRUD + HQL/SHQL query)
+│   └── server.py                # FastMCP server: 14 tools (CRUD + SHQL query + inferencing)
 │
 ├── ui/                          # Web UI (SPA, vanilla JS + Bootstrap)
 ├── shell/                       # hgai interactive CLI shell
 ├── scripts/                     # MongoDB cold-start and seed scripts
 ├── tests/                       # pytest test suite
 │   ├── test_engine.py           # Hyperkey tests
-│   ├── test_query.py            # HQL parser/validator tests
+│   ├── test_shql.py             # SHQL member-pattern matching tests
+│   ├── test_inference.py        # Inferencing primitives tests
 │   └── test_mesh.py             # Mesh module tests
 ├── hgai.sh                      # Start the hgai server
 ├── shell.sh                     # Start the hgai interactive shell
@@ -842,8 +542,9 @@ DELETE /api/v1/graphs/{g}/edges/{id}   # Delete hyperedge
 
 ### Query
 ```
-POST /api/v1/query             # Execute HQL query
-POST /api/v1/query/validate    # Validate HQL (dry-run)
+POST /api/v1/shql/query               # Execute SHQL query
+POST /api/v1/shql/validate            # Validate SHQL (dry-run)
+POST /api/v1/shql/cache/invalidate    # Flush the query result cache
 ```
 
 ### Accounts (admin only)
@@ -864,7 +565,7 @@ PUT    /api/v1/meshes/{id}              # Update mesh
 DELETE /api/v1/meshes/{id}              # Delete mesh
 GET    /api/v1/meshes/{id}/ping         # Health-check all servers in mesh
 POST   /api/v1/meshes/{id}/sync         # Refresh graph lists from live remotes
-POST   /api/v1/meshes/{id}/query        # Execute federated HQL across all mesh servers
+POST   /api/v1/meshes/{id}/query        # Execute federated SHQL across all mesh servers
 ```
 
 ---
@@ -1015,8 +716,8 @@ curl -X POST http://localhost:8357/mcp/ \
 
 | Tool | Description |
 |------|-------------|
-| `hgai_query_execute` | Execute an HQL or SHQL query — language auto-detected from top-level key |
-| `hgai_query_validate` | Validate an HQL or SHQL query without executing it — returns `language` field |
+| `hgai_query_execute` | Execute an SHQL query (top-level `shql:` key) |
+| `hgai_query_validate` | Validate an SHQL query without executing it |
 
 ### Tool Reference
 
@@ -1064,23 +765,11 @@ tags             Comma-separated tags
 
 #### `hgai_query_execute`
 ```
-query_yaml  HQL or SHQL query in YAML format — top-level 'hql:' or 'shql:' key
+query_yaml  SHQL query in YAML format — top-level 'shql:' key
 use_cache   Whether to use query result cache (default: true)
 ```
 
-HQL example:
-```yaml
-hql:
-  from: my-graph
-  match:
-    type: hyperedge
-    relation: has-member
-  return:
-    - members
-    - attributes
-```
-
-SHQL example:
+Example:
 ```yaml
 shql:
   from: my-graph
@@ -1330,18 +1019,6 @@ If the node does not exist, the tool returns `{"error": "Node '<node_id>' not fo
 }
 ```
 
-#### Execute an HQL Query
-
-```json
-{
-  "name": "hgai_query_execute",
-  "arguments": {
-    "query_yaml": "hql:\n  from: hello-world\n  match:\n    type: hypernode\n    node_type: Person\n  return:\n    - id\n    - label\n    - attributes\n  limit: 50",
-    "use_cache": true
-  }
-}
-```
-
 #### Execute an SHQL Query
 
 ```json
@@ -1360,7 +1037,7 @@ If the node does not exist, the tool returns `{"error": "Node '<node_id>' not fo
 {
   "name": "hgai_query_validate",
   "arguments": {
-    "query_yaml": "hql:\n  from: hello-world\n  match:\n    type: hyperedge\n    relation: has-member\n  return:\n    - members\n    - attributes"
+    "query_yaml": "shql:\n  from: hello-world\n  where:\n    - edge:\n        relation: has-member\n  select:\n    - \"*\""
   }
 }
 ```
@@ -1403,7 +1080,7 @@ If the node does not exist, the tool returns `{"error": "Node '<node_id>' not fo
   "name": "hgai_mesh_query",
   "arguments": {
     "mesh_id": "alpha-bravo-mesh",
-    "query_yaml": "hql:\n  from: alpha-bravo-mesh\n  match:\n    type: hypernode\n    node_type: Person\n  return:\n    - id\n    - label\n    - attributes\n  limit: 100",
+    "query_yaml": "shql:\n  from: alpha-bravo-mesh\n  where:\n    - node:\n        bind: ?person\n        type: Person\n  select:\n    - ?person.id\n    - ?person.label\n    - ?person.attributes\n  limit: 100",
     "use_cache": true
   }
 }
@@ -1450,8 +1127,8 @@ update edge <id>                Update hyperedge
 delete node <id>                Delete hypernode
 delete edge <id>                Delete hyperedge
 
-query                           Run HQL query (paste YAML, end with EOF)
-query -f <file>                 Run HQL query from file
+shql                            Run SHQL query (paste YAML, end with EOF)
+shql -f <file>                  Run SHQL query from file
 
 import -f <file>                Import nodes/edges from YAML file
 export -o <file>                Export current graph to YAML file
@@ -1471,52 +1148,48 @@ The web UI is served at `http://localhost:8357/ui/` (local dev) or `http://local
 - **Hypergraphs** — list and manage hypergraphs
 - **Hypernodes** — full CRUD with attribute editing
 - **Hyperedges** — full CRUD with member management
-- **Query** — interactive HQL query editor with results visualization
+- **Query** — interactive SHQL query editor with results visualization
 - **Admin** — account management, server info (admin role only)
 
 ---
 
 ## Inferencing
 
-HypergraphAI's inference engine (`hgai/core/inference.py`) derives implicit knowledge from the relationships explicitly stored in the hypergraph. Inferencing operates at query time and does not mutate stored data — inferred results are returned alongside real results, annotated with `_inferred: true`.
+HypergraphAI's inference engine (`hgai/core/inference.py`) derives implicit knowledge from the relationships explicitly stored in the hypergraph, computed live at query time — nothing inferred is ever persisted. Relation semantics (which relations are transitive, symmetric, each other's inverse, or broader/narrower than one another) are never hardcoded: they're declared as ordinary axiom hyperedges asserting a small, fixed control-vocabulary relation between `RelationType` hypernodes — `owl:transitive`, `owl:symmetric`, `owl:inverse-of`, `skos:broaderTransitive`, `skos:narrowerTransitive`. The engine recognizes these control-vocabulary strings; it never knows anything about a specific domain relation, so declaring a new inference rule is a data change (create an axiom hyperedge), not a code change.
 
-### SKOS Semantic Inferencing
+Inferencing is opt-in per query — add `infer: true` to an SHQL query (see [SHQL — Semantic Hypergraph Query Language](#shql--semantic-hypergraph-query-language) below). It has no effect unless the query also matches a `relation:` that actually carries one of these axioms in the graph being queried.
 
-SKOS (Simple Knowledge Organization System) inferencing — hierarchical (`broader`/`narrower`) and associative (`related`) concept relationships — is planned for a future release. It will be implemented via hyperedge hub relations rather than as fields on hypernodes.
+### Axiom Expansion (inverse-of / symmetric / superproperty)
 
-### Inverse Edge Inferencing
+Given the literal hyperedges an SHQL edge pattern already matched, `expand_edge_closure` synthesizes additional derived edges from whatever `owl:inverse-of`, `owl:symmetric`, and `skos:broaderTransitive`/`narrowerTransitive` axiom hyperedges exist for those edges' relations:
 
-When a `RelationType` hypernode defines an `inverse` attribute, HypergraphAI can generate the logical inverse of any hyperedge that uses that relation — without storing it explicitly.
+- **`owl:inverse-of [R, R']`** — for a hub-flavor edge, each (hub, spoke) pair also implies a 2-member `R'` edge `(spoke, hub)`. E.g. a `has-member` axiom edge declaring `owl:inverse-of [has-member, member-of]` means every `has-member` fact also implies the reverse `member-of` fact.
+- **`owl:symmetric`** — every member of a symmetric-flavor edge is mutually equivalent to every other; A related-to B implies B related-to A.
+- **`skos:broaderTransitive` / `narrowerTransitive` (superproperty projection)** — if a fact's relation is narrower than one or more broader relations (walked transitively over the axiom graph, so a multi-hop relation hierarchy — e.g. `father` narrower-than `parent` narrower-than `ancestor` — projects through every level), the same fact is copied onto each broader relation unchanged.
 
-For example, if the `has-member` relation node has `attributes.inverse = "member-of"`, then an edge asserting `three-stooges has-member moe-howard` automatically implies an inferred edge asserting `moe-howard member-of three-stooges`.
+This runs to a fixed point (`expand_edge_closure` re-expands its own output until a round produces nothing new, bounded by `max_iterations`), and dedupes by the individual atomic `(relation, subject, object)` facts each candidate asserts — not by edge shape — so the same fact reached two different ways, or via a cyclic axiom graph, is only returned once. Inferred edges carry `_inferred: true`, `_source_edge` (the literal edge it was derived from), and `_axiom` (the axiom hyperedge that licensed it).
 
-Inverse edges are returned with `_inferred: true` and `_source_edge` pointing back to the original.
+In SHQL, this expansion is spliced into an edge pattern's candidate set *before* member-pattern matching and variable binding run — so an inferred edge is first-class: it can bind `?vars`, anchor a later hop, and chain into a further `where:` pattern exactly like a literal edge.
 
-### Transitive Relation Checking
+### Transitive-Closure Reachability
 
-The engine supports checking whether a transitive relation path exists between any two nodes across a set of hypergraphs. This is a reachability query: given a `start_id`, an `end_id`, and a `relation`, it performs a breadth-first walk through all hyperedges of that relation type to determine if the two nodes are transitively connected.
+Separately, `check_transitive`/`walk_closure` answer reachability over a chain of *literal* fact edges (not axiom expansion): given a relation that carries an `owl:transitive` axiom, is node A transitively connected to node B through a chain of edges of that relation? This is a cycle-safe breadth-first walk (`walk_closure`, `max_depth: 10` by default), self-gated on the axiom actually existing — nothing fires for a relation nobody declared transitive. In SHQL this triggers for a fully-resolved 2-member edge pattern (both endpoints already concrete) under `infer: true`, returning a synthesized edge with `_inferred: true`, `_transitive: true`, and `_transitive_path` (the hop-by-hop chain of hyperedge IDs). A 1-hop path is skipped — it's definitionally already a literal edge, not a new derived fact.
 
-This supports `transitive` and `inverse-transitive` edge flavors in HQL queries.
+### Edge Flavors
 
-### Edge Flavors and Inferencing
-
-Hyperedge `flavor` declares the inferencing semantics the relationship supports:
+Hyperedge `flavor` describes how one hyperedge's member list decomposes into individual (subject, object) facts — it is unrelated to transitivity, which is a *relation-level* property declared via an `owl:transitive` axiom, not a per-edge setting:
 
 | Flavor | Semantics |
 |---|---|
-| `hub` | One-to-many (no transitive inference) |
-| `symmetric` | All members are equivalent; A→B implies B→A |
-| `direct` | Directed from first member to last (no transitivity) |
-| `transitive` | A→B and B→C implies A→C (transitive closure) |
-| `inverse-transitive` | Transitive closure in reverse direction |
+| `hub` | The first member (lowest `seq`) is the hub; every other member is an independent (hub, spoke) fact — e.g. "adam is father of cain/abel/seth" is 3 separate facts, not one N-ary fact |
+| `symmetric` | Every member is mutually equivalent to every other — e.g. `sibling(moe, larry, curly)` implies all 6 directed pairs |
 
 ### Roadmap
 
-The following inferencing capabilities are planned for future releases:
+Shipped: axiom-driven inverse-of/symmetric/superproperty expansion, SKOS `broader`/`narrower` projection, and transitive-closure reachability, all wired into SHQL behind `infer: true`. Planned for future releases:
 
-- **SKOS inferencing via hyperedge hub relations** — `broader`, `narrower`, and `related` concept hierarchies expressed as typed hyperedges, with transitive closure at query time
 - **Rule-based inferencing** — user-defined inference rules stored as hypernodes of type `InferenceRule`, evaluated at query time
-- **Cross-graph inferencing** — SKOS closure and transitive walks spanning multiple hypergraphs in a logical composition or mesh
+- **Cross-graph inferencing** — axiom expansion and transitive walks spanning multiple hypergraphs in a logical composition or mesh
 - **Materialized inference cache** — optional pre-computation of common transitive closures, stored in `query_cache` and invalidated on edge mutations
 - **OWL-lite property chains** — support for `owl:propertyChainAxiom`-style inference, where a chain of relations implies a derived relation
 
@@ -1524,7 +1197,7 @@ The following inferencing capabilities are planned for future releases:
 
 ## SHQL — Semantic Hypergraph Query Language
 
-SHQL (pronounced *"shekel"*) is a second query language for HypergraphAI, implemented as a pluggable module (`hgai_module_shql`). While HQL is a filter-and-aggregate language modelled after MongoDB queries, SHQL is a **pattern-matching** language inspired by SPARQL — designed for multi-hop traversal and implicit joins across hypernodes and hyperedges.
+SHQL (pronounced *"shekel"*) is HypergraphAI's query language, implemented as a pluggable module (`hgai_module_shql`). It's a **pattern-matching** language inspired by SPARQL — `?variable` bindings, implicit joins across shared variables, multi-hop traversal, OPTIONAL/UNION, point-in-time queries, aggregation, and axiom-driven inferencing, all over YAML `node`/`edge` patterns.
 
 ### Endpoints
 
@@ -1575,9 +1248,9 @@ shql:
     - ?hub.members
 ```
 
-### Mesh HQL
+### Dot-Notation Mesh References
 
-Like Mesh SHQL, all servers are queried **concurrently**. Dot-notation refs also fan out concurrently within the same `asyncio.gather` call.
+Like Mesh SHQL above, all servers are queried **concurrently** — dot-notation refs fan out within the same `asyncio.gather` call.
 
 #### Dot-notation `from:` reference formats
 
@@ -1591,7 +1264,7 @@ Like Mesh SHQL, all servers are queried **concurrently**. Dot-notation refs also
 
 Dots are prohibited in all ID fields, so splitting on `.` is unambiguous. The third component is the space ID for 4-part refs or the graph ID for 3-part refs.
 
-**Local graph notation in HQL/SHQL `from:`:**
+**Local graph notation in SHQL's `from:`:**
 
 | Format | Meaning |
 |--------|---------|
@@ -1601,31 +1274,20 @@ Dots are prohibited in all ID fields, so splitting on `.` is unambiguous. The th
 The slash separator is used for local space refs; dots remain reserved for mesh routing only.
 
 ```yaml
-hql:
+shql:
   from: alpha-bravo-mesh
-  match:
-    type: hypernode
-    node_type: Person
-  return:
-    - id
-    - label
-    - type
-    - attributes
-    - tags
+  where:
+    - node:
+        bind: ?n
+        node_type: Person
+  select:
+    - ?n.id
+    - ?n.label
+    - ?n.type
+    - ?n.attributes
+    - ?n.tags
   limit: 500
 ```
-
-### HQL vs SHQL
-
-| | HQL | SHQL |
-|---|---|---|
-| Style | Filter / aggregation | Pattern matching |
-| Variables | No | Yes (`?var`) |
-| Implicit joins | No | Yes — shared `?var` across patterns |
-| Multi-hop traversal | No | Yes |
-| Aggregation (`aggregate: count`/`group_by`) | Yes | Yes |
-| Inspired by | MongoDB query API | SPARQL |
-| Use when | Simple filters, PIT queries | Graph traversal, cross-entity joins, relationship discovery, aggregations |
 
 ### Language Structure
 
@@ -1859,7 +1521,7 @@ shql:
 
 ### Space-scoped Graph References
 
-Space-scoped graphs use the same slash-separator syntax as HQL: `space_id/graph_id`. Unowned graphs are referenced by bare `graph_id`.
+Space-scoped graphs use the slash-separator syntax: `space_id/graph_id`. Unowned graphs are referenced by bare `graph_id`.
 
 | `from:` value | Meaning |
 |---|---|
@@ -1972,6 +1634,68 @@ shql:
         bind: ?n
         type: Person
   as: remote_space_people
+```
+
+#### 13. Positional member filter — find the first member by seq
+
+Combine `seq` with another member sub-field (typically `node_id`) inside the same member pattern to require both to hold on the **same** array element, rather than "contains this node anywhere." The query below only matches edges whose *first* member (`seq: 0`) is `three-stooges`:
+
+```yaml
+shql:
+  from: hello-world
+  select:
+    - ?edge.id
+    - ?edge.relation
+    - ?edge.members
+  where:
+    - edge:
+        bind: ?edge
+        relation: has-member
+        members:
+          - node_id: three-stooges
+            seq: 0
+  as: edges_hubbed_on_three_stooges
+```
+
+#### 14. Aggregate — count edges grouped by relation
+
+`aggregate` is computed over the full matched, deduplicated result set, before `order_by`/`limit`/`offset` paginate it. `group_by` names the *projected row key* a `select:` entry produces (no leading `?`) — here `?edge.relation` in `select:` becomes the row key `edge.relation`:
+
+```yaml
+shql:
+  from: hello-world
+  select:
+    - ?edge.relation
+  where:
+    - edge:
+        bind: ?edge
+  aggregate:
+    count: true
+    group_by: edge.relation
+  as: edge_counts_by_relation
+```
+
+Response `meta` includes `count` (total matched rows) and `groups` (a `{"<relation>": <count>, ...}` breakdown) alongside the usual fields.
+
+#### 15. Inferencing — axiom-driven expansion
+
+`infer: true` extends the live candidate set with synthesized edges before member-pattern matching runs (see [Inferencing](#inferencing) above). Assuming an `owl:inverse-of` axiom hyperedge asserting `[has-member, member-of]` between the two relations' `RelationType` hypernodes has been declared in the graph, this also returns a synthesized `member-of` edge — the reverse of each literal `has-member` fact — tagged `_inferred: true`:
+
+```yaml
+shql:
+  from: hello-world
+  infer: true
+  where:
+    - edge:
+        bind: ?edge
+        relation: has-member
+  select:
+    - ?edge.relation
+    - ?edge.members
+    - ?edge._inferred
+    - ?edge._source_edge
+    - ?edge._axiom
+  as: has_member_with_inverse
 ```
 
 ### Module Location
@@ -2106,17 +1830,18 @@ curl http://localhost:8000/api/v1/spaces/my-team/graphs/my-graph/nodes \
   -H "Authorization: Bearer <token>"
 ```
 
-**HQL/SHQL `from:` for space-scoped graphs** use slash notation:
+**SHQL `from:` for space-scoped graphs** use slash notation:
 
 ```yaml
-hql:
+shql:
   from: my-team/my-graph       # space-scoped
-  match:
-    type: hyperedge
+  where:
+    - edge:
+        bind: ?e
 ```
 
 ```yaml
-hql:
+shql:
   from:
     - my-team/my-graph         # space-scoped
     - other-team/my-graph      # same graph ID, different space
@@ -2126,7 +1851,7 @@ hql:
 **Mesh dot-notation for space-scoped remote graphs** uses 4 components:
 
 ```yaml
-hql:
+shql:
   from: alpha-bravo-mesh.server-a.my-team.my-graph
 ```
 
@@ -2164,7 +1889,7 @@ Indexes are created automatically at server startup via `ensure_indexes()` in `h
 |-------|--------|---------|---------|
 | `id_graph_unique` | `id, hypergraph_id` | unique | Single-node lookup; enforces ID uniqueness per graph |
 | `graph_status` | `hypergraph_id, status` | — | Hot path — used on every node list query |
-| `graph_type` | `hypergraph_id, type` | — | `node_type` filter in HQL/SHQL |
+| `graph_type` | `hypergraph_id, type` | — | `node_type` filter in SHQL |
 | `tags` | `tags` | multikey | Tag `$all` filter |
 | `label` | `label` | — | Label regex/text search |
 | `graph_pit` | `hypergraph_id, valid_from, valid_to` | sparse | Point-in-time queries |
@@ -2176,7 +1901,7 @@ Indexes are created automatically at server startup via `ensure_indexes()` in `h
 | `id_graph_unique` | `id, hypergraph_id` | unique | Edge lookup by ID |
 | `hyperkey_graph_unique` | `hyperkey, hypergraph_id` | unique | Hyperkey lookup; enforces semantic deduplication at DB level |
 | `graph_status` | `hypergraph_id, status` | — | Hot path — used on every edge list query |
-| `graph_relation` | `hypergraph_id, relation` | — | Relation filter in HQL/SHQL |
+| `graph_relation` | `hypergraph_id, relation` | — | Relation filter in SHQL |
 | `members_node_id` | `members.node_id` | multikey | Node membership queries (`node_id` filter) |
 | `graph_pit` | `hypergraph_id, valid_from, valid_to` | sparse | Point-in-time queries |
 
@@ -2233,7 +1958,6 @@ All mesh fan-out operations use `asyncio.gather` so server calls run in parallel
 |---|---|---|
 | `ping_mesh` | N servers × 10 s timeout | ~10 s regardless of N |
 | `sync_mesh_graphs` | N servers × fetch time | ~1× fetch time |
-| `federated_hql` | N servers × query time | ~1× query time |
 | `federated_shql` | N servers × query time | ~1× query time |
 | `execute_dot_refs` | N servers × query time | ~1× query time |
 | `resolve_dot_refs` | Sequential mesh + graph lookups | Concurrent mesh lookups + concurrent graph fetches |

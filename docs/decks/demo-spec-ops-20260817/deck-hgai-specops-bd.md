@@ -30,7 +30,7 @@ docs/decks/demo-spec-ops-20260817/
 │   ├── specops-rdf-comparison.ttl      the SAME facts, modeled as RDF/Turtle
 │   └── specops-sql-comparison.sql      the SAME facts, modeled as SQL
 └── queries/
-    ├── q01-q05  *.hql / *.shql         hgai answers to the example question
+    ├── q01-q05  *.shql / *.shql         hgai answers to the example question
     └── comparison-*.sql / *.rq         the SAME question in SQL and SPARQL
 ```
 
@@ -462,7 +462,7 @@ Raptor-14 and the request's current precedence — no bridge table, no
 
 This is the point that doesn't survive the trip to SQL or RDF cleanly:
 Anvil's status upgrade. Two HQL queries, one clause apart
-(`queries/q02-*.hql` and `q03-*.hql`):
+(`queries/q02-*.shql` and `q03-*.shql`):
 
 ```yaml
 # Shortly after the initial request
@@ -500,7 +500,7 @@ Recall Section 11: an agent fused the upgraded request with the
 independent ISR confirmation and wrote back a recommendation — **for a
 human controller to weigh, not an automated action** — tagged with its own
 provenance. Anyone retrieves it with
-`queries/q05-retrieve-ai-recommendation.hql`:
+`queries/q05-retrieve-ai-recommendation.shql`:
 
 ```yaml
 hql:
