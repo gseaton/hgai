@@ -1515,7 +1515,6 @@ Hyperedge `flavor` declares the inferencing semantics the relationship supports:
 The following inferencing capabilities are planned for future releases:
 
 - **SKOS inferencing via hyperedge hub relations** — `broader`, `narrower`, and `related` concept hierarchies expressed as typed hyperedges, with transitive closure at query time
-- **HQL `infer:` clause** — explicit inference directives inside HQL queries (e.g., `infer: transitive`)
 - **Rule-based inferencing** — user-defined inference rules stored as hypernodes of type `InferenceRule`, evaluated at query time
 - **Cross-graph inferencing** — SKOS closure and transitive walks spanning multiple hypergraphs in a logical composition or mesh
 - **Materialized inference cache** — optional pre-computation of common transitive closures, stored in `query_cache` and invalidated on edge mutations
@@ -1624,8 +1623,9 @@ hql:
 | Variables | No | Yes (`?var`) |
 | Implicit joins | No | Yes — shared `?var` across patterns |
 | Multi-hop traversal | No | Yes |
+| Aggregation (`aggregate: count`/`group_by`) | Yes | Yes |
 | Inspired by | MongoDB query API | SPARQL |
-| Use when | Simple filters, aggregations, PIT queries | Graph traversal, cross-entity joins, relationship discovery |
+| Use when | Simple filters, PIT queries | Graph traversal, cross-entity joins, relationship discovery, aggregations |
 
 ### Language Structure
 
@@ -1650,6 +1650,12 @@ shql:
   limit: 100                    # default 500
   offset: 0
   distinct: true                # deduplicate result rows
+  infer: true                   # opt-in axiom expansion + transitive closure (see Inferencing)
+  aggregate:                    # computed over the full matched/deduplicated result, pre-pagination
+    count: true                 # -> meta.count: total matched rows
+    group_by: var.field         # -> meta.groups: { "<value>": <count>, ... } — name the *projected row key*
+                                 # a matching `select:` entry produces (no leading "?", e.g. `?e.relation` in
+                                 # select: becomes row key "e.relation" here)
   as: result_alias
 ```
 

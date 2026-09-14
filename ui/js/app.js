@@ -2542,6 +2542,12 @@ const VIZ_STRUCTURAL_COLOR = '#9ca3af';
 // regardless of the underlying relation's flavor. Opt-in via "Show inferred
 // edges" — never rendered unless explicitly requested.
 const VIZ_INFERRED_COLOR = '#c084fc';
+// The inferred-edge counterpart to VIZ_LINK_FIRST_MEMBER_COLOR: the relation-link
+// to an inferred edge's PRIMARY member (members[0], lowest seq) is pink rather
+// than the generic inferred purple, so member ordering stays readable on inferred
+// facts exactly as it does on literal ones. Kept adjacent in hue to the inferred
+// purple so the complex still reads as one unit.
+const VIZ_INFERRED_FIRST_MEMBER_COLOR = '#f472b6';
 const VIZ_FETCH_LIMIT = 500;
 // Must match the .nodeRelSize() call in initViz3D() — kept as one constant so
 // thumbnail sizing (vizSphereRadius) can never drift out of sync with the
@@ -2960,20 +2966,24 @@ async function fetchGraphElements(graphId) {
 // Inferred edges (inverse-of / symmetric / superproperty expansion, see
 // hgai/core/inference.py) don't exist in the hyperedges collection — they're
 // computed live — so they can't come from fetchGraphElements' plain listEdges
-// call. Runs the same `infer: true` HQL mechanism the Query (HQL) screen
-// exposes, scoped to every hyperedge in the graph (no relation filter), and
-// keeps only the synthesized (`_inferred: true`) results.
+// call. Runs the same `infer: true` SHQL mechanism the Query (SHQL) screen
+// exposes, scoped to every hyperedge in the graph (a bare `edge: ?edge`
+// pattern, no relation filter), and keeps only the synthesized
+// (`_inferred: true`) results. Uses SHQL rather than HQL so this doesn't
+// silently privilege one query language's inference path over the other's —
+// see .project/prompts/mutations for the HQL->SHQL migration.
 //
-// Deliberately does NOT also request transitive-closure reachability
-// (HQL's `match.nodes` + `infer: true` combination) — that answers "is A
-// connected to B", a targeted question with an explicit start/end pair, not
-// "show me everything," so it doesn't fit a whole-graph visualization toggle
-// the way axiom expansion does. Use Query (HQL)/Query (SHQL) for that.
+// Deliberately does NOT also request transitive-closure reachability (a
+// fully-bound 2-member edge pattern under `infer: true`) — that answers "is
+// A connected to B", a targeted question with an explicit start/end pair,
+// not "show me everything," so it doesn't fit a whole-graph visualization
+// toggle the way axiom expansion does. Use Query (HQL)/Query (SHQL) for that.
 async function fetchInferredEdges(graphId) {
-  const hql = `hql:\n  from: ${graphId}\n  match:\n    type: hyperedge\n  infer: true\n  return:\n    - relation\n    - members\n    - flavor\n    - "_inferred"\n    - "_source_edge"\n    - "_axiom"\n`;
-  const result = await HGAI_API.runQuery(hql, false);
+  const shql = `shql:\n  from: ${graphId}\n  infer: true\n  where:\n    - edge: ?edge\n  select:\n    - ?edge\n`;
+  const result = await HGAI_API.runShqlQuery(shql, false);
   return (result.items || [])
-    .filter(it => it._inferred)
+    .map(row => row.edge)
+    .filter(e => e && e._inferred)
     .map((it, i) => ({ ...it, id: `_inferred::${graphId}::${i}`, flavor: it.flavor || 'hub' }));
 }
 
@@ -3353,9 +3363,10 @@ async function renderViz() {
         });
         // relation-labeled edges: members-node -> each member (a hypernode's
         // hnode, or another hyperedge's henode). The first member (lowest seq)
-        // gets a distinct blue so it stands out from the rest — except on an
-        // inferred edge, where every relation-link uses the one inferred
-        // color instead, so the whole synthesized fact reads as one unit.
+        // gets a distinct blue so it stands out from the rest. An inferred
+        // edge keeps the same two-tier scheme in its own hues: pink to the
+        // primary member, inferred purple to the rest, so the synthesized
+        // fact still reads as one unit while its ordering stays legible.
         validMembers.forEach((m, i) => {
           if (!nodesById.has(m.target.vizId) && m.target.crossHit) {
             const hit = m.target.crossHit;
@@ -3385,7 +3396,9 @@ async function renderViz() {
           links.push({
             source: membersId, target: m.target.vizId, kind: 'relation',
             label: e.relation || '', seq: m.seq,
-            color: e._inferred ? VIZ_INFERRED_COLOR : (i === 0 ? VIZ_LINK_FIRST_MEMBER_COLOR : VIZ_LINK_RELATION_COLOR),
+            color: e._inferred
+              ? (i === 0 ? VIZ_INFERRED_FIRST_MEMBER_COLOR : VIZ_INFERRED_COLOR)
+              : (i === 0 ? VIZ_LINK_FIRST_MEMBER_COLOR : VIZ_LINK_RELATION_COLOR),
             raw: e, _inferred: !!e._inferred,
           });
         });
@@ -3477,6 +3490,11 @@ function buildVizLegend(typeCount, flavorSeen, anyInferred) {
     item.title = 'Computed live via inverse-of/symmetric/superproperty axioms — never persisted';
     item.innerHTML = `<span class="viz-legend-swatch bag" style="background:${VIZ_INFERRED_COLOR}"></span>⚡ inferred`;
     el.appendChild(item);
+    const firstItem = document.createElement('div');
+    firstItem.className = 'viz-legend-item';
+    firstItem.title = 'Link to an inferred edge\'s primary member (members[0])';
+    firstItem.innerHTML = `<span class="viz-legend-swatch bag" style="background:${VIZ_INFERRED_FIRST_MEMBER_COLOR}"></span>⚡ inferred (first member)`;
+    el.appendChild(firstItem);
   }
 }
 
@@ -3783,6 +3801,10 @@ const SHQL_EXAMPLES = [
   {
     title: 'Find edges by relation type',
     shql: `shql:\n  from: hello-world\n  where:\n    - edge: ?e\n      relation: has-member\n  select:\n    - ?e.id\n    - ?e.relation\n    - ?e.members`
+  },
+  {
+    title: 'Aggregate: count by relation',
+    shql: `shql:\n  from: hello-world\n  where:\n    - edge: ?e\n  select:\n    - ?e.relation\n  aggregate:\n    count: true\n    group_by: e.relation`
   },
   {
     title: 'Join nodes through a hyperedge',

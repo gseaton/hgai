@@ -420,7 +420,16 @@ async def _eval_edge_pattern(
         # bind ?vars, anchor a later hop, chain into a further pattern.
         # Computed live per pattern evaluation, never persisted. Opt-in
         # only: no `infer` flag means this whole block never runs.
-        if infer and resolved_rel:
+        #
+        # expand_edge_closure is relation-agnostic — it reads each edge's
+        # own `relation` field (see hgai/core/inference.py), so it runs for
+        # ANY edge pattern once `infer` is on, including one with no
+        # `relation:` filter at all (mirrors HQL, whose equivalent
+        # `expand_edge_closure(docs, ...)` call likewise never required a
+        # single query-wide relation). Only the transitive-reachability
+        # check below genuinely needs a concrete `resolved_rel` to walk, so
+        # that stays separately gated on it.
+        if infer:
             from hgai.core.inference import check_transitive, expand_edge_closure
             docs = docs + await expand_edge_closure(docs, graph_ids, pit=pit)
 
@@ -430,7 +439,7 @@ async def _eval_edge_pattern(
             # owl:transitive axiom the same way HQL's does. A 1-hop path
             # is skipped — it's definitionally already a literal edge,
             # already present in `docs` above.
-            if len(member_patterns) == 2 and len(bound_node_ids) == 2:
+            if resolved_rel and len(member_patterns) == 2 and len(bound_node_ids) == 2:
                 path = await check_transitive(
                     resolved_rel, graph_ids, bound_node_ids[0], bound_node_ids[1], mode="path", pit=pit
                 )
@@ -942,6 +951,7 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
     distinct        = shql.get("distinct", False)
     order_by        = shql.get("order_by")
     infer           = shql.get("infer", False)
+    aggregate       = shql.get("aggregate", {})
 
     if isinstance(select_fields, str):
         select_fields = [select_fields]
@@ -1029,6 +1039,29 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
                 deduped.append(item)
         items = deduped
 
+    # AGGREGATE — mirrors HQL's aggregate/group_by (hgai_module_hql/engine.py)
+    # almost line-for-line: same `count`/`group_by` keys, same "unknown"
+    # fallback for a missing field, same additive **agg_results into meta.
+    # Computed over the full matched, deduplicated item set — before ORDER
+    # BY/OFFSET/LIMIT paginate it — so `count`/`groups` describe the whole
+    # result, not just the returned page. One difference in shape, not
+    # logic: an HQL item is the raw returned document (so `group_by:
+    # relation` reads a plain top-level key), while an SHQL item is a
+    # `select:`-projected row keyed by variable — e.g. `select: [?e.relation]`
+    # produces the row key `"e.relation"`, which is what `group_by` must
+    # name here.
+    agg_results: Dict[str, Any] = {}
+    if aggregate:
+        if "count" in aggregate:
+            agg_results["count"] = len(items)
+        if "group_by" in aggregate:
+            field = aggregate["group_by"]
+            groups: Dict[str, int] = {}
+            for item in items:
+                key = str(item.get(field, "unknown"))
+                groups[key] = groups.get(key, 0) + 1
+            agg_results["groups"] = groups
+
     # ORDER BY
     if order_by:
         ob = str(order_by).lstrip("?")
@@ -1057,6 +1090,7 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
         "pattern_count": len(where_patterns),
         "infer":         infer,
         "cached":        False,
+        **agg_results,
     }
 
     result = SHQLResult(alias=alias, items=items, meta=meta)

@@ -167,7 +167,7 @@ def create_app() -> FastAPI:
             "server_id": settings.server_id,
             "server_name": settings.server_name,
             "version": "0.1.0",
-            "capabilities": ["hypernodes", "hyperedges", "hypergraphs", "hql", "mcp", "mesh", "temporal", "media"],
+            "capabilities": ["hypernodes", "hyperedges", "hypergraphs", "hql", "shql", "mcp", "mesh", "temporal", "media"],
         }
 
     # Root redirect to UI
