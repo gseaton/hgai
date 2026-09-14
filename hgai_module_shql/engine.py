@@ -54,6 +54,56 @@ def _get_nested(doc: Any, path: str) -> Any:
     return val
 
 
+def _parse_order_by(order_by: Any) -> List[tuple]:
+    """Normalize `order_by` into an ordered list of (field, descending) pairs.
+
+    Accepts a single field or a list of fields (primary key first). Each
+    field is a `?var.field`-style string (leading `?` optional) with an
+    optional trailing " asc"/" desc" (case-insensitive) — a bare field with
+    no suffix sorts ascending, matching SQL's own default.
+    """
+    specs = order_by if isinstance(order_by, list) else [order_by]
+    parsed: List[tuple] = []
+    for spec in specs:
+        text = str(spec).strip()
+        descending = False
+        head, _, tail = text.rpartition(" ")
+        if head and tail.lower() in ("asc", "desc"):
+            text, descending = head.strip(), tail.lower() == "desc"
+        parsed.append((text.lstrip("?"), descending))
+    return parsed
+
+
+def _order_by_value(row: Dict, field: str) -> Any:
+    """Resolve one `order_by` field against a projected result row, falling
+    back to "" (sorts first) for a missing or null value — same fallback
+    `_project_select` rows already use for an unselected field."""
+    if field in row:
+        v = row[field]
+        return v if v is not None else ""
+    parts = field.split(".", 1)
+    if parts[0] in row:
+        v = row[parts[0]]
+        if len(parts) > 1 and isinstance(v, dict):
+            v = _get_nested(v, parts[1])
+        return v if v is not None else ""
+    return ""
+
+
+def _apply_order_by(items: List[Dict], order_by: Any) -> List[Dict]:
+    """Sort projected result rows per `order_by` (see `_parse_order_by`).
+
+    Multi-key sort with independent per-key direction is done as a series
+    of stable single-key sorts, lowest priority first — Python's sort
+    stability means each subsequent (higher-priority) pass only reorders
+    rows that tied on every pass before it, which is the standard technique
+    for composing a multi-key sort out of single-key ones.
+    """
+    for field, descending in reversed(_parse_order_by(order_by)):
+        items = sorted(items, key=lambda row, f=field: _order_by_value(row, f), reverse=descending)
+    return items
+
+
 def _resolve_var(val: Any, binding: BindingSet) -> Any:
     """Resolve ?var to its bound node id (or scalar). Returns literal unchanged."""
     if not _is_var(val):
@@ -403,7 +453,18 @@ async def _eval_edge_pattern(
 
         filters = HyperedgeSearchFilters(
             hypergraph_ids=graph_ids,
-            relation=resolved_rel,
+            # When inferring, a `relation:` filter names the relation the
+            # CALLER wants — which may only ever exist as something
+            # synthesized (e.g. `rel:member-of`, derived from `rel:member`
+            # via an `owl:inverse-of` axiom). Filtering the literal search
+            # by it would starve expand_edge_closure of anything to derive
+            # from, since it only ever expands edges it's handed. So the
+            # literal fetch stays relation-agnostic here, and `resolved_rel`
+            # is applied as a post-filter below, after expansion — matching
+            # the design intent that `rel:member` and `rel:member-of` are
+            # interchangeable query surfaces regardless of which one is
+            # asserted vs. inferred.
+            relation=None if infer else resolved_rel,
             flavor=flavor,
             status=status,
             tags=tags if not tags or isinstance(tags, list) else [tags],
@@ -420,16 +481,17 @@ async def _eval_edge_pattern(
         # bind ?vars, anchor a later hop, chain into a further pattern.
         # Computed live per pattern evaluation, never persisted. Opt-in
         # only: no `infer` flag means this whole block never runs.
-        #
-        # expand_edge_closure is relation-agnostic — it reads each edge's
-        # own `relation` field (see hgai/core/inference.py), so it runs for
-        # ANY edge pattern once `infer` is on, including one with no
-        # `relation:` filter at all. Only the transitive-reachability check
-        # below genuinely needs a concrete `resolved_rel` to walk, so that
-        # stays separately gated on it.
         if infer:
             from hgai.core.inference import check_transitive, expand_edge_closure
             docs = docs + await expand_edge_closure(docs, graph_ids, pit=pit)
+
+            # Now that expansion has run over the full (relation-agnostic)
+            # candidate set, narrow back down to what the caller actually
+            # asked for — otherwise a query for one relation would silently
+            # include literal/inferred edges of every other relation that
+            # merely happened to expand from the same source docs.
+            if resolved_rel:
+                docs = [d for d in docs if d.get("relation") == resolved_rel]
 
             # A fully-resolved 2-member pattern (both endpoints already
             # concrete — literal ids or already-bound variables) also gets
@@ -1057,23 +1119,12 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
                 groups[key] = groups.get(key, 0) + 1
             agg_results["groups"] = groups
 
-    # ORDER BY
+    # ORDER BY — `order_by` accepts a single field or a list of fields, each
+    # optionally suffixed with " asc"/" desc" (case-insensitive, SQL-style;
+    # e.g. "?e.relation desc"), for multi-key sort with independent
+    # directions per key. A bare field with no suffix sorts ascending.
     if order_by:
-        ob = str(order_by).lstrip("?")
-
-        def sort_key(row: Dict) -> Any:
-            if ob in row:
-                v = row[ob]
-                return v if v is not None else ""
-            parts = ob.split(".", 1)
-            if parts[0] in row:
-                v = row[parts[0]]
-                if len(parts) > 1 and isinstance(v, dict):
-                    v = _get_nested(v, parts[1])
-                return v if v is not None else ""
-            return ""
-
-        items = sorted(items, key=sort_key)
+        items = _apply_order_by(items, order_by)
 
     # OFFSET / LIMIT
     items = items[offset: offset + limit]

@@ -1308,7 +1308,12 @@ shql:
     - union:                    # set union of alternative branches
         - patterns: [ ... ]
         - patterns: [ ... ]
-  order_by: ?var.field          # optional sort key
+  order_by: ?var.field          # optional sort key(s) — a single field, or a list for
+                                 # multi-key sort (primary field first); each field may
+                                 # carry a trailing " asc"/" desc" (case-insensitive,
+                                 # default asc) — e.g. "?e.relation desc", or
+                                 # [?e.relation desc, ?e.label] to sort by relation
+                                 # descending, then label ascending, within each group
   limit: 100                    # default 500
   offset: 0
   distinct: true                # deduplicate result rows
@@ -1696,6 +1701,26 @@ shql:
     - ?edge._source_edge
     - ?edge._axiom
   as: has_member_with_inverse
+```
+
+#### 16. Multi-key sort with descending order
+
+`order_by` takes a list to sort by more than one field, and each field may carry a trailing `asc`/`desc` (default `asc` when omitted) — independent per field, so a primary key can sort one direction while a secondary key sorts the other:
+
+```yaml
+shql:
+  from: hello-world
+  where:
+    - edge:
+        bind: ?edge
+        relation: rel:member
+  select:
+    - ?edge.relation
+    - ?edge.members
+  order_by:
+    - ?edge.relation desc
+    - ?edge.members
+  as: members_by_relation_desc_then_members
 ```
 
 ### Module Location
