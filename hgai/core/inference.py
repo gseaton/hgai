@@ -466,6 +466,7 @@ async def project_inference(
     projected_by: str = "system",
     target_space_id: Optional[str] = None,
     dry_run: bool = False,
+    only_new_hyperedges: bool = False,
 ) -> Dict[str, Any]:
     """Materialize inference results from source graph(s) into a target graph.
 
@@ -493,6 +494,30 @@ async def project_inference(
     indistinguishable at the storage/query level from anything
     hand-asserted, and, notably, NOT kept in sync if the source changes
     later. This is a snapshot, not a live view.
+
+    `only_new_hyperedges` controls how a materialized edge's members that
+    don't already exist in the target graph are handled:
+      - `False` (default): duplicated into the target graph via
+        `_ensure_member_exists` — the target ends up a fully self-contained
+        snapshot with both explicit and inferred hyperedges, no dangling
+        references.
+      - `True`: never duplicated, and never rewritten — a candidate's
+        `relation` and `members` (including any member not already present
+        in the target graph) are materialized byte-for-byte as they came
+        from the source, exactly like a hand-asserted edge would be. This
+        is intentionally NOT a dot-qualified cross-graph reference (that
+        convention is a 3D-visualization-only affordance — HQL/SHQL's own
+        member/node resolution has no notion of it and would fail to
+        resolve one). Left bare, a member reference resolves correctly on
+        its own once the target graph is queried *alongside* its source(s)
+        — a multi-graph `from:` list, or a `type: logical` graph whose
+        `composition` includes both — since HQL/SHQL's node/edge search
+        already matches an id across every graph in scope, not just the
+        one the referencing edge happens to live in (verified directly:
+        `HypernodeSearchFilters`/`HyperedgeSearchFilters.hypergraph_ids`
+        is a list, and the Mongo stores query it with `$in`). Intended for
+        composing an inference-only graph that sits alongside its
+        source(s) for querying, rather than absorbing copies of them.
 
     `dry_run=True` computes and returns exactly what would happen —
     including which candidates already exist (`skipped`) and which are new
@@ -597,6 +622,7 @@ async def project_inference(
 
     for candidate in candidates:
         member_ids = _member_ids(candidate)
+
         entry: Dict[str, Any] = {
             "relation": candidate["relation"],
             "flavor": candidate.get("flavor", "hub"),
@@ -630,8 +656,9 @@ async def project_inference(
             "projected_at": now_utc().isoformat(),
         }
         try:
-            for member_id in member_ids:
-                await _ensure_member_exists(member_id)
+            if not only_new_hyperedges:
+                for member_id in member_ids:
+                    await _ensure_member_exists(member_id)
             data = HyperedgeCreate(
                 relation=candidate["relation"],
                 flavor=candidate.get("flavor", "hub"),

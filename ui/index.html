@@ -739,6 +739,22 @@
               </div>
             </div>
 
+            <div class="form-check mt-3 pt-2 border-top">
+              <input class="form-check-input" type="checkbox" id="pi-only-new-hyperedges"/>
+              <label class="form-check-label small fw-semibold" for="pi-only-new-hyperedges">
+                Project only new hyperedges?
+              </label>
+              <div class="form-text">
+                On: a projected edge's members that don't already exist in the target aren't duplicated into
+                it, and aren't rewritten either — they're left exactly as they appear in the source, so the
+                target stays a thin, inference-only layer meant to be queried <em>alongside</em> the source(s)
+                (a multi-graph query, or a logical graph composing both), where those references resolve on
+                their own.
+                Off (default): missing members are copied into the target, producing a fully self-contained
+                snapshot with both explicit and inferred hyperedges.
+              </div>
+            </div>
+
             <div class="d-flex gap-2 mt-3">
               <button class="btn btn-outline-primary btn-sm" id="btn-pi-preview">
                 <i class="bi bi-eye me-1"></i>Preview

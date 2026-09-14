@@ -1,0 +1,4 @@
+# Mutation Log
+
+## Modified
+- **ui/js/app.js** — `renderViz()`'s `vizMemberTargetId(gid, nodeId)` resolver gained a fallback step: when a bare (non-dot-qualified) member reference doesn't resolve within its own graph, it now searches every OTHER currently-selected graph (in selection order, first match wins) for a hypernode or hyperedge with that exact id, before giving up. Reuses the existing `crossHit`-based materialization path in Pass B (the same mechanism already used for graph-qualified and orphan-hidden references) — no changes needed there. A match found this way is treated as an ordinary node (not flagged `crossGraph: true`) whenever the target graph is already one of the directly-selected graphs, since Pass A will have already pushed it as one of that graph's own real nodes; the `crossGraph` styling only still applies to the narrower fallback case (the target graph's own copy was hidden by the orphan-nodes toggle).

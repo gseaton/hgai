@@ -97,6 +97,14 @@ class ProjectInferenceRequest(BaseModel):
     create_target: bool = Field(default=False, description="Create the target graph (path graph_id) first if it doesn't already exist")
     target_label: Optional[str] = Field(default=None, description="Label for the newly-created target graph, if create_target is true")
     dry_run: bool = Field(default=False, description="Compute and return what would happen without writing anything")
+    only_new_hyperedges: bool = Field(
+        default=False,
+        description="If true, a materialized edge's members that don't already exist in the target graph are "
+        "left exactly as they appear in the source (never duplicated into the target, never rewritten) — "
+        "intended for a target graph that will be queried alongside its source(s) (a multi-graph `from:`, or "
+        "a logical graph composing both), where a bare member reference already resolves correctly on its own. "
+        "If false (default), they're duplicated into the target, producing a fully self-contained snapshot.",
+    )
 
 
 class ProjectInferenceResponse(BaseModel):
@@ -140,7 +148,7 @@ async def infer_project(
         result = await project_inference(
             request.source_graph_ids, graph_id, request.mode,
             relation=request.relation, pit=request.pit, projected_by=account.username,
-            dry_run=request.dry_run,
+            dry_run=request.dry_run, only_new_hyperedges=request.only_new_hyperedges,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

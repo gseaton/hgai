@@ -2984,10 +2984,26 @@ async function fetchInferredEdges(graphId) {
 // of those hyperedges in the same step (otherwise a 1-degree neighborhood
 // would show a hyperedge with none of its other participants, which is
 // useless). Expanding a hyperedge is simpler: just its own direct members.
+//
+// Expansion is gated on `nodeToEdges.has(id)` — "is `id` referenced as a
+// member by some edge in THIS graph" — rather than `nodeIds.has(id)` ("is
+// `id` a hypernode actually defined in this graph"). A hyperedges-only
+// projected graph (see the "only new hyperedges" project-inference mode)
+// deliberately never duplicates a member's hypernode into itself — its
+// edges reference `person:shemp` by bare id without `person:shemp` existing
+// there as a document at all — so gating on `nodeIds` would make every one
+// of that graph's edges permanently unreachable from a focus centered on a
+// hypernode that only "really" lives in an ALSO-selected canonical graph,
+// even though composing that pair of graphs for ordinary (non-focused)
+// viewing already correctly links them (see vizMemberTargetId's
+// cross-graph fallback). `nodeToEdges` is already built purely from each
+// edge's own `members` list, independent of whether those members also
+// exist as real hypernode documents — so this is a strictly looser, not
+// different, condition.
 function vizOneHopNeighbors(id, nodeIds, edgeIds, nodeToEdges, edgeToMembers) {
   const result = new Set();
-  if (nodeIds.has(id)) {
-    (nodeToEdges.get(id) || []).forEach(eid => {
+  if (nodeToEdges.has(id)) {
+    nodeToEdges.get(id).forEach(eid => {
       result.add(eid);
       (edgeToMembers.get(eid) || []).forEach(mid => { if (mid !== id) result.add(mid); });
     });
@@ -3001,11 +3017,14 @@ function vizOneHopNeighbors(id, nodeIds, edgeIds, nodeToEdges, edgeToMembers) {
 // BFS out `degree` one-hop steps (see vizOneHopNeighbors) from `focusId`
 // within one graph's own raw nodes/edges. Returns { nodeIds, edgeIds } (both
 // Sets of raw, unprefixed ids, always including the focus itself) or null if
-// focusId doesn't exist as either a hypernode or hyperedge in this graph.
+// focusId is neither a hypernode/hyperedge defined in this graph NOR
+// referenced as a member by any of this graph's own edges (the latter is
+// exactly the hyperedges-only-projected-graph case described above — the
+// graph can still contribute its edges to a focus view even though the
+// focus itself isn't "from" this graph).
 function vizComputeNeighborhood(rawNodes, edges, focusId, degree) {
   const nodeIds = new Set(rawNodes.map(n => n.id));
   const edgeIds = new Set(edges.map(e => e.id || e.hyperkey).filter(Boolean));
-  if (!nodeIds.has(focusId) && !edgeIds.has(focusId)) return null;
 
   const nodeToEdges = new Map();
   const edgeToMembers = new Map();
@@ -3019,6 +3038,8 @@ function vizComputeNeighborhood(rawNodes, edges, focusId, degree) {
       nodeToEdges.get(mid).add(eid);
     });
   });
+
+  if (!nodeIds.has(focusId) && !edgeIds.has(focusId) && !nodeToEdges.has(focusId)) return null;
 
   const included = new Set([focusId]);
   let frontier = new Set([focusId]);
@@ -3076,7 +3097,7 @@ async function renderViz() {
   let focusFound = false;
 
   try {
-    // Phase 1: fetch every selected graph's own (focus-filtered) data.
+    // Phase 1: fetch every selected graph's own raw data.
     const graphData = new Map(); // gid -> { rawNodes, edges, nodeIdSet, hedgeIdSet }
     for (const gid of graphIds) {
       let { nodes: rawNodes, edges, nodesTotal, edgesTotal } = await fetchGraphElements(gid);
@@ -3090,32 +3111,55 @@ async function renderViz() {
         }
       }
 
-      if (focusId) {
-        const neighborhood = vizComputeNeighborhood(rawNodes, edges, focusId, focusDegree);
-        if (neighborhood) {
-          focusFound = true;
-          if (neighborhood.nodeIds.has(focusId)) focusVizNodeId = `${gid}::${focusId}`;
-          else if (neighborhood.edgeIds.has(focusId)) focusVizNodeId = `${gid}::he::${focusId}`;
-          rawNodes = rawNodes.filter(n => neighborhood.nodeIds.has(n.id));
-          edges = edges.filter(e => neighborhood.edgeIds.has(e.id || e.hyperkey));
-        } else {
-          // The focus element doesn't exist in this particular hypergraph
-          // (relevant when multiple graphs are selected at once) — it
-          // contributes nothing rather than dumping its full unfiltered
-          // content into what's supposed to be a filtered neighborhood view.
-          rawNodes = [];
-          edges = [];
-        }
-      }
-
-      const nodeIdSet = new Set(rawNodes.map(n => n.id));
-      const hedgeIdSet = new Set();
-      edges.forEach(e => {
-        const k = e.id || e.hyperkey;
-        if (k) hedgeIdSet.add(k);
-      });
-      graphData.set(gid, { rawNodes, edges, nodeIdSet, hedgeIdSet });
+      graphData.set(gid, { rawNodes, edges });
     }
+
+    // Phase 1b: focus-filter across every selected graph's raw data
+    // TOGETHER, not one graph at a time — a hop can cross from one graph's
+    // hypernode to another graph's hyperedge and back (exactly the
+    // composition vizMemberTargetId's cross-graph fallback already links
+    // for ordinary, unfocused rendering: e.g. a hyperedges-only projected
+    // graph's rel:member-of/rel:sibling edges reference a hypernode that
+    // only "really" exists in an ALSO-selected canonical graph). Running
+    // vizComputeNeighborhood once per graph independently would never
+    // discover that hop at all — each graph's own edges/rawNodes have no
+    // visibility into any other graph's.
+    if (focusId) {
+      const combinedNodes = [];
+      const combinedEdges = [];
+      graphData.forEach(({ rawNodes, edges }) => {
+        combinedNodes.push(...rawNodes);
+        combinedEdges.push(...edges);
+      });
+      const neighborhood = vizComputeNeighborhood(combinedNodes, combinedEdges, focusId, focusDegree);
+      if (neighborhood) {
+        focusFound = true;
+        graphData.forEach((entry, gid) => {
+          if (!focusVizNodeId && neighborhood.nodeIds.has(focusId) && entry.rawNodes.some(n => n.id === focusId)) {
+            focusVizNodeId = `${gid}::${focusId}`;
+          } else if (!focusVizNodeId && neighborhood.edgeIds.has(focusId) && entry.edges.some(e => (e.id || e.hyperkey) === focusId)) {
+            focusVizNodeId = `${gid}::he::${focusId}`;
+          }
+          entry.rawNodes = entry.rawNodes.filter(n => neighborhood.nodeIds.has(n.id));
+          entry.edges = entry.edges.filter(e => neighborhood.edgeIds.has(e.id || e.hyperkey));
+        });
+      } else {
+        // The focus element doesn't exist across ANY selected hypergraph —
+        // every graph contributes nothing rather than dumping its full
+        // unfiltered content into what's supposed to be a filtered
+        // neighborhood view.
+        graphData.forEach(entry => { entry.rawNodes = []; entry.edges = []; });
+      }
+    }
+
+    graphData.forEach(entry => {
+      entry.nodeIdSet = new Set(entry.rawNodes.map(n => n.id));
+      entry.hedgeIdSet = new Set();
+      entry.edges.forEach(e => {
+        const k = e.id || e.hyperkey;
+        if (k) entry.hedgeIdSet.add(k);
+      });
+    });
 
     // Phase 2: resolve every graph-qualified member reference (see
     // vizParseMemberRef) via a single-item lookup against its target graph —
@@ -3158,7 +3202,20 @@ async function renderViz() {
 
     // A member's node_id may point at a hypernode or hyperedge in the SAME
     // graph as the hyperedge referencing it, or — via a graph-qualified
-    // prefix — one already resolved into crossGraphNodes above.
+    // prefix — one already resolved into crossGraphNodes above. Failing
+    // both, and mirroring how HQL/SHQL itself resolves a bare member id
+    // (HypernodeSearchFilters/HyperedgeSearchFilters.hypergraph_ids is a
+    // list, queried with Mongo $in — a multi-graph query matches an id
+    // across every graph in scope, not just the one the referencing edge
+    // lives in), fall back to searching every OTHER currently-selected
+    // graph for a bare match, in selection order (first match wins — same
+    // "no guessing across multiple candidates" precedent this app already
+    // uses elsewhere for member resolution). This lets a hyperedges-only
+    // projected graph's un-rewritten references (see the immediately
+    // preceding "only new hyperedges" turns) resolve correctly the moment
+    // its canonical source graph is ALSO selected for viewing — without
+    // requiring the graph-qualified dot-prefix at all, matching how the
+    // reference already resolves at the query level.
     const vizMemberTargetId = (gid, nodeId) => {
       const ref = vizParseMemberRef(nodeId);
       if (ref) {
@@ -3168,6 +3225,22 @@ async function renderViz() {
       const target = graphData.get(gid);
       if (target.nodeIdSet.has(nodeId)) return { vizId: `${gid}::${nodeId}`, targetGid: gid, isEdge: false };
       if (target.hedgeIdSet.has(nodeId)) return { vizId: `${gid}::he::${nodeId}`, targetGid: gid, isEdge: true };
+
+      for (const otherGid of graphIds) {
+        if (otherGid === gid) continue;
+        const other = graphData.get(otherGid);
+        if (!other) continue;
+        if (other.nodeIdSet.has(nodeId)) {
+          const vizId = `${otherGid}::${nodeId}`;
+          const raw = other.rawNodes.find(n => n.id === nodeId);
+          return { vizId, targetGid: otherGid, isEdge: false, crossHit: { vizId, raw, isEdge: false } };
+        }
+        if (other.hedgeIdSet.has(nodeId)) {
+          const vizId = `${otherGid}::he::${nodeId}`;
+          const raw = other.edges.find(e => (e.id || e.hyperkey) === nodeId);
+          return { vizId, targetGid: otherGid, isEdge: true, crossHit: { vizId, raw, isEdge: true } };
+        }
+      }
       return null;
     };
 
@@ -3922,6 +3995,7 @@ function updatePiTargetFieldVisibility() {
 // form state, so a user can never project something they haven't seen.
 ['pi-source-graphs', 'pi-mode-expand', 'pi-mode-transitive', 'pi-relation', 'pi-pit',
  'pi-target-existing', 'pi-target-new', 'pi-target-existing-select', 'pi-target-id', 'pi-target-label',
+ 'pi-only-new-hyperedges',
 ].forEach(id => {
   document.getElementById(id).addEventListener('change', () => {
     document.getElementById('btn-pi-commit').disabled = true;
@@ -3953,6 +4027,7 @@ function piBuildRequest() {
   }
 
   const mode = expand && transitive ? 'both' : (transitive ? 'transitive' : 'expand');
+  const onlyNewHyperedges = document.getElementById('pi-only-new-hyperedges').checked;
 
   return {
     targetGraphId,
@@ -3963,6 +4038,7 @@ function piBuildRequest() {
       pit: pitVal ? new Date(pitVal).toISOString() : null,
       create_target: createTarget,
       target_label: targetLabel,
+      only_new_hyperedges: onlyNewHyperedges,
     },
   };
 }

@@ -1,0 +1,6 @@
+# Mutation Log
+
+## Modified
+- **ui/js/app.js** — Two related fixes to the Focus neighborhood filter, both needed together to fix the reported bug:
+  1. `vizOneHopNeighbors()`'s hypernode-expansion branch now gates on `nodeToEdges.has(id)` ("is `id` referenced as a member by some edge in scope") instead of `nodeIds.has(id)` ("is `id` a hypernode actually defined in scope") — and `vizComputeNeighborhood()`'s existence gate was updated to match (`!nodeIds.has(focusId) && !edgeIds.has(focusId) && !nodeToEdges.has(focusId)`). This lets a graph whose edges reference a focus id by bare reference (without that id existing there as an actual hypernode document — exactly the "hyperedges-only projected graph" case) still contribute its own edges to a focus neighborhood.
+  2. `renderViz()`'s Phase 1 restructured: focus-neighborhood computation now runs ONCE across ALL selected graphs' raw nodes/edges combined (a new Phase 1b), instead of once per graph independently. Each graph's `rawNodes`/`edges` are filtered against this one shared neighborhood result afterward, and `nodeIdSet`/`hedgeIdSet` construction moved to a final pass after that filtering completes. `focusVizNodeId` determination was updated to search across all graphs (first match in selection order wins) rather than assuming the focus is found within a single graph's own processing.
