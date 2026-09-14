@@ -19,7 +19,6 @@ const State = {
   notesPageSize: 50,
   graphsPageSize: 50,
   confirmCallback: null,
-  editorCM: null,
   graphsCache: {},       // id -> graph object (includes space_id)
   mediaCache: {},        // id -> media object, from the last list load
   activeSpaceDetailId: null,
@@ -163,7 +162,7 @@ function showScreen(name) {
 
   const titles = {
     dashboard: 'Dashboard', graphs: 'Hypergraphs', nodes: 'Hypernodes',
-    edges: 'Hyperedges', media: 'Media', notes: 'Notes', viz: 'Visualize', query: 'HQL Query', shql: 'SHQL Query',
+    edges: 'Hyperedges', media: 'Media', notes: 'Notes', viz: 'Visualize', shql: 'SHQL Query',
     'project-inference': 'Project Inference',
     spaces: 'Spaces', accounts: 'Accounts', meshes: 'Meshes', system: 'System',
   };
@@ -179,7 +178,6 @@ function showScreen(name) {
     media: () => { State.mediaPage = 0; loadMedia(); },
     notes: () => { State.notesPage = 0; loadNotes(); loadNotesFolderTree(); },
     viz: loadVizScreen,
-    query: initQueryEditor,
     shql: initShqlEditor,
     'project-inference': loadProjectInferenceScreen,
     spaces: loadSpaces,
@@ -2969,15 +2967,13 @@ async function fetchGraphElements(graphId) {
 // call. Runs the same `infer: true` SHQL mechanism the Query (SHQL) screen
 // exposes, scoped to every hyperedge in the graph (a bare `edge: ?edge`
 // pattern, no relation filter), and keeps only the synthesized
-// (`_inferred: true`) results. Uses SHQL rather than HQL so this doesn't
-// silently privilege one query language's inference path over the other's —
-// see .project/prompts/mutations for the HQL->SHQL migration.
+// (`_inferred: true`) results.
 //
 // Deliberately does NOT also request transitive-closure reachability (a
 // fully-bound 2-member edge pattern under `infer: true`) — that answers "is
 // A connected to B", a targeted question with an explicit start/end pair,
 // not "show me everything," so it doesn't fit a whole-graph visualization
-// toggle the way axiom expansion does. Use Query (HQL)/Query (SHQL) for that.
+// toggle the way axiom expansion does. Use Query (SHQL) for that.
 async function fetchInferredEdges(graphId) {
   const shql = `shql:\n  from: ${graphId}\n  infer: true\n  where:\n    - edge: ?edge\n  select:\n    - ?edge\n`;
   const result = await HGAI_API.runShqlQuery(shql, false);
@@ -3072,7 +3068,7 @@ function vizComputeNeighborhood(rawNodes, edges, focusId, degree) {
 // A hyperedge member's node_id may carry a "graph_id." prefix designating it
 // as living in a DIFFERENT hypergraph than the hyperedge that references it —
 // e.g. "bravo.person:john" from a hyperedge in graph "alpha" means "person:john"
-// lives in graph "bravo". Uses the same dot-notation convention as HQL/SHQL's
+// lives in graph "bravo". Uses the same dot-notation convention as SHQL's
 // `from:` clause: hypergraph IDs can never contain '.', so splitting on the
 // FIRST dot is always unambiguous for a real cross-graph reference. Only
 // treated as one when the prefix names a graph this app actually knows about
@@ -3619,175 +3615,6 @@ function syntaxHighlightJson(obj) {
   );
 }
 
-// ── Query (HQL) ────────────────────────────────────────────────────────────
-const HQL_EXAMPLES = [
-  {
-    title: 'List all nodes in a graph',
-    hql: `hql:\n  from: hello-world\n  match:\n    type: hypernode\n  return:\n    - id\n    - label\n    - type\n    - attributes`
-  },
-  {
-    title: 'Find hyperedges by relation',
-    hql: `hql:\n  from: hello-world\n  match:\n    type: hyperedge\n    relation: has-member\n  return:\n    - id\n    - relation\n    - members\n    - attributes\n  as: memberships`
-  },
-  {
-    title: 'Point-in-time query (1940)',
-    hql: `hql:\n  from: hello-world\n  at: "1940-06-01T00:00:00Z"\n  match:\n    type: hyperedge\n    relation: has-member\n  return:\n    - members\n    - attributes\n    - valid_from\n    - valid_to`
-  },
-  {
-    title: 'Filter by tags',
-    hql: `hql:\n  from: hello-world\n  match:\n    type: hyperedge\n  where:\n    tags:\n      - original\n  return:\n    - id\n    - relation\n    - members\n    - tags`
-  },
-  {
-    title: 'Find siblings (symmetric edges)',
-    hql: `hql:\n  from: hello-world\n  match:\n    type: hyperedge\n    relation: sibling\n    flavor: symmetric\n  return:\n    - members\n    - attributes`
-  },
-  {
-    title: 'Aggregate: count by relation',
-    hql: `hql:\n  from: hello-world\n  match:\n    type: hyperedge\n  return:\n    - relation\n  aggregate:\n    count: true\n    group_by: relation`
-  },
-  {
-    title: 'Multi-graph composition',
-    hql: `hql:\n  from:\n    - graph-1\n    - graph-2\n  match:\n    type: hypernode\n    node_type: Person\n  return:\n    - id\n    - label\n    - attributes`
-  },
-  {
-    title: 'Find edges containing a specific node',
-    hql: `hql:\n  from: hello-world\n  match:\n    type: hyperedge\n    nodes:\n      - moe-howard\n  return:\n    - id\n    - relation\n    - members`
-  },
-  {
-    title: 'PIT — group members via rel:member hyperedges',
-    hql: `hql:\n  from:\n    - hg-alpha\n  at: "2026-01-01T00:00:00"\n  match:\n    type: hyperedge\n    relation: "rel:member"\n  where:\n    members.node_id: "group:three-stooges"\n  return:\n    - id\n    - relation\n    - members`
-  },
-  {
-    title: 'Positional member filter — first member is a specific node (seq)',
-    hql: `hql:\n  from: hello-world\n  match:\n    type: hyperedge\n    relation: "rel:member"\n  where:\n    members:\n      seq: 0\n      node_id: "group:three-stooges"\n  return:\n    - id\n    - relation\n    - members\n    - attributes\n  as: first_member_is_stooges`
-  },
-  {
-    title: 'Find nodes by attribute value',
-    hql: `hql:\n  from: hello-world\n  match:\n    type: hypernode\n  where:\n    attributes.last_name: Howard\n  return:\n    - "*"`
-  },
-  {
-    title: 'Find nodes by attribute regex',
-    hql: `hql:\n  from: hello-world\n  match:\n    type: hypernode\n  where:\n    attributes.last_name:\n      $regex: "How.*"\n      $options: "i"\n  return:\n    - "*"`
-  },
-  {
-    title: 'Mesh — all nodes from one graph on one server',
-    hql: `hql:\n  from: bauhaus-strix.bauhaus.stooges-graph\n  match:\n    type: hypernode\n  return:\n    - id\n    - label\n    - type`
-  },
-  {
-    title: 'Mesh — one graph across all servers',
-    hql: `hql:\n  from: bauhaus-strix.*.stooges-graph\n  match:\n    type: hypernode\n  return:\n    - id\n    - label\n    - "_mesh_server_id"`
-  },
-  {
-    title: 'Mesh — all graphs on all servers',
-    hql: `hql:\n  from: bauhaus-strix.*.*\n  match:\n    type: hypernode\n  where:\n    attributes.last_name: Howard\n  return:\n    - id\n    - label\n    - attributes\n    - "_mesh_server_id"`
-  },
-  {
-    title: 'Mesh — mix local and mesh graphs',
-    hql: `hql:\n  from:\n    - hello-world\n    - bauhaus-strix.bauhaus.stooges-graph\n  match:\n    type: hypernode\n  return:\n    - id\n    - label\n    - "_mesh_server_id"`
-  },
-  {
-    title: 'Space — query all nodes in a space graph',
-    hql: `hql:\n  from: alpha/alpha-hg\n  match:\n    type: hypernode\n  return:\n    - id\n    - label\n    - type\n    - attributes`
-  },
-  {
-    title: 'Space — query edges by relation in a space graph',
-    hql: `hql:\n  from: alpha/alpha-hg\n  match:\n    type: hyperedge\n    relation: has-member\n  return:\n    - id\n    - relation\n    - members\n    - attributes`
-  },
-  {
-    title: 'Space — multi-graph across two spaces',
-    hql: `hql:\n  from:\n    - alpha/alpha-hg\n    - beta/beta-hg\n  match:\n    type: hypernode\n    node_type: Person\n  return:\n    - id\n    - label\n    - attributes`
-  },
-  {
-    title: 'Space — mix space graph and global graph',
-    hql: `hql:\n  from:\n    - hello-world\n    - alpha/alpha-hg\n  match:\n    type: hypernode\n  return:\n    - id\n    - label\n    - type`
-  },
-  {
-    title: 'Space — mesh dot-notation (space-scoped remote graph)',
-    hql: `hql:\n  from: bauhaus-strix.bauhaus.alpha.alpha-hg\n  match:\n    type: hypernode\n  return:\n    - id\n    - label\n    - "_mesh_server_id"`
-  },
-  {
-    title: 'Inferencing — expand via inverse-of/symmetric/superproperty axioms',
-    hql: `hql:\n  from: hello-world\n  match:\n    type: hyperedge\n    relation: has-member\n  infer: true\n  return:\n    - id\n    - relation\n    - members\n    - "_inferred"\n    - "_source_edge"\n    - "_axiom"`
-  },
-  {
-    title: 'Inferencing — transitive closure (relation needs an owl:transitive axiom hyperedge)',
-    hql: `hql:\n  from: hello-world\n  match:\n    type: hyperedge\n    relation: "rel:contains"\n    nodes:\n      - warehouse-1\n  infer: true\n  return:\n    - relation\n    - members\n    - "_inferred"\n    - "_transitive"`
-  },
-];
-
-function initQueryEditor() {
-  if (State.editorCM) return;
-  const ta = document.getElementById('query-editor');
-  State.editorCM = CodeMirror.fromTextArea(ta, {
-    mode: 'yaml',
-    theme: 'dracula',
-    lineNumbers: true,
-    lineWrapping: true,
-    indentUnit: 2,
-    tabSize: 2,
-    extraKeys: {
-      'Ctrl-Enter': () => runQuery(),
-      'Cmd-Enter': () => runQuery(),
-    },
-  });
-  // Set default query
-  State.editorCM.setValue(HQL_EXAMPLES[0].hql);
-
-  // Build examples list
-  const exList = document.getElementById('hql-examples-list');
-  HQL_EXAMPLES.forEach(ex => {
-    const card = document.createElement('div');
-    card.className = 'hql-example-card';
-    card.innerHTML = `<div class="example-title">${ex.title}</div><pre>${ex.hql}</pre>`;
-    card.addEventListener('click', () => {
-      State.editorCM.setValue(ex.hql);
-      bootstrap.Offcanvas.getInstance(document.getElementById('offcanvas-examples'))?.hide();
-    });
-    exList.appendChild(card);
-  });
-}
-
-async function runQuery() {
-  const hql = State.editorCM?.getValue() || '';
-  const useCache = document.getElementById('query-use-cache').checked;
-  const resultArea = document.getElementById('query-result-area');
-  const countEl = document.getElementById('query-result-count');
-  resultArea.innerHTML = '<span class="text-muted"><div class="spinner-border spinner-border-sm me-2"></div>Executing...</span>';
-  try {
-    const result = await HGAI_API.runQuery(hql, useCache);
-    countEl.textContent = `${result.count || 0} results`;
-    countEl.className = 'badge bg-success';
-    resultArea.innerHTML = syntaxHighlightJson(result);
-  } catch (err) {
-    countEl.textContent = 'error';
-    countEl.className = 'badge bg-danger';
-    resultArea.innerHTML = `<span class="text-danger">${err.message}</span>`;
-  }
-}
-
-document.getElementById('btn-query-run').addEventListener('click', runQuery);
-
-document.getElementById('btn-query-validate').addEventListener('click', async () => {
-  const hql = State.editorCM?.getValue() || '';
-  try {
-    const result = await HGAI_API.validateQuery(hql);
-    if (result.valid) {
-      toast('HQL is valid', 'success');
-    } else {
-      toast('Validation errors: ' + result.errors.join('; '), 'danger');
-    }
-  } catch (err) { toast(err.message, 'danger'); }
-});
-
-document.getElementById('btn-query-examples').addEventListener('click', () => {
-  new bootstrap.Offcanvas(document.getElementById('offcanvas-examples')).show();
-});
-
-document.getElementById('btn-query-copy').addEventListener('click', () => {
-  const content = document.getElementById('query-result-area').innerText;
-  navigator.clipboard.writeText(content).then(() => toast('Copied to clipboard'));
-});
-
 // ── Query (SHQL) ───────────────────────────────────────────────────────────
 const SHQL_EXAMPLES = [
   {
@@ -3914,7 +3741,7 @@ function initShqlEditor() {
   const exList = document.getElementById('shql-examples-list');
   SHQL_EXAMPLES.forEach(ex => {
     const card = document.createElement('div');
-    card.className = 'hql-example-card';
+    card.className = 'query-example-card';
     card.innerHTML = `<div class="example-title">${ex.title}</div><pre>${ex.shql}</pre>`;
     card.addEventListener('click', () => {
       _shqlEditorCM.setValue(ex.shql);
@@ -4472,7 +4299,6 @@ window.openMeshQuery = (id) => {
 
 document.getElementById('btn-mesh-query-run').addEventListener('click', async () => {
   const id = document.getElementById('mesh-query-id').textContent;
-  const lang = document.getElementById('mesh-query-lang').value;
   const useCache = document.getElementById('mesh-query-use-cache').checked;
   const queryText = document.getElementById('mesh-query-editor').value.trim();
   const resultArea = document.getElementById('mesh-query-result-area');
@@ -4484,16 +4310,12 @@ document.getElementById('btn-mesh-query-run').addEventListener('click', async ()
   countEl.textContent = '…';
   countEl.className = 'badge bg-secondary';
 
-  // Auto-wrap with language key if missing
-  let body;
+  // Auto-wrap with the 'shql:' top-level key if the user omitted it
   const stripped = queryText.trimStart();
-  if (stripped.startsWith(`${lang}:`)) {
-    body = { [lang]: queryText, use_cache: useCache };
-  } else {
-    // Wrap it
-    const wrapped = `${lang}:\n` + queryText.split('\n').map(l => '  ' + l).join('\n');
-    body = { [lang]: wrapped, use_cache: useCache };
-  }
+  const shql = stripped.startsWith('shql:')
+    ? queryText
+    : 'shql:\n' + queryText.split('\n').map(l => '  ' + l).join('\n');
+  const body = { shql, use_cache: useCache };
 
   try {
     const result = await HGAI_API.queryMesh(id, body);

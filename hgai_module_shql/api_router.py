@@ -48,3 +48,19 @@ async def validate_shql_query(
         return {"valid": len(errors) == 0, "errors": errors}
     except SHQLError as e:
         return {"valid": False, "errors": [str(e)]}
+
+
+@router.post("/cache/invalidate")
+async def clear_cache(
+    graph_id: str = None,
+    account: AccountInDB = Depends(get_current_account),
+):
+    """Flush the shared query result cache (used by SHQL query execution).
+
+    Formerly lived under the now-removed HQL module's router — relocated
+    here rather than dropped, since the cache itself (`hgai.core.cache`,
+    `query_cache` collection) was never HQL-specific.
+    """
+    from hgai.core.cache import invalidate_cache
+    count = await invalidate_cache(graph_id)
+    return {"invalidated": count}

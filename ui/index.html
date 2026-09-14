@@ -61,7 +61,6 @@
     <a class="sidebar-link" data-screen="media" href="#"><i class="bi bi-file-earmark-fill"></i> Media</a>
     <a class="sidebar-link" data-screen="notes" href="#"><i class="bi bi-journal-richtext"></i> Notes</a>
     <a class="sidebar-link" data-screen="viz" href="#"><i class="bi bi-bezier2"></i> Visualize</a>
-    <a class="sidebar-link" data-screen="query" href="#"><i class="bi bi-terminal-fill"></i> Query (HQL)</a>
     <a class="sidebar-link" data-screen="shql" href="#"><i class="bi bi-braces"></i> Query (SHQL)</a>
     <a class="sidebar-link" data-screen="project-inference" href="#"><i class="bi bi-diagram-2-fill"></i> Project Inference</a>
 
@@ -584,52 +583,6 @@
                 <div id="viz-detail-empty" class="text-muted small">Click a node, hyperedge, or link to inspect it.</div>
                 <pre id="viz-detail-content" class="d-none bg-dark text-light p-3 rounded" style="font-size:0.75rem;white-space:pre-wrap;"></pre>
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ─── QUERY (HQL) ─────────────────────────────────────────────── -->
-      <div id="screen-query" class="screen d-none">
-        <div class="screen-header">
-          <h4><i class="bi bi-terminal-fill text-warning me-2"></i>HQL Query</h4>
-          <div class="d-flex gap-2">
-            <button class="btn btn-outline-secondary btn-sm" id="btn-query-examples">
-              <i class="bi bi-code-slash me-1"></i>Examples
-            </button>
-            <button class="btn btn-outline-secondary btn-sm" id="btn-query-validate">
-              <i class="bi bi-check-circle me-1"></i>Validate
-            </button>
-            <button class="btn btn-warning btn-sm text-dark" id="btn-query-run">
-              <i class="bi bi-play-fill me-1"></i>Run Query
-            </button>
-          </div>
-        </div>
-        <div class="row g-3" style="height: calc(100vh - 180px);">
-          <div class="col-md-5 d-flex flex-column">
-            <div class="d-flex justify-content-between align-items-center mb-1">
-              <label class="form-label fw-semibold mb-0">HQL (YAML)</label>
-              <div class="form-check form-switch mb-0">
-                <input class="form-check-input" type="checkbox" id="query-use-cache" checked/>
-                <label class="form-check-label small" for="query-use-cache">Cache</label>
-              </div>
-            </div>
-            <div id="query-editor-wrapper" class="flex-grow-1 border rounded overflow-hidden">
-              <textarea id="query-editor"></textarea>
-            </div>
-          </div>
-          <div class="col-md-7 d-flex flex-column">
-            <div class="d-flex justify-content-between align-items-center mb-1">
-              <label class="form-label fw-semibold mb-0">Results</label>
-              <div class="d-flex gap-2 align-items-center">
-                <span id="query-result-count" class="badge bg-secondary"></span>
-                <button class="btn btn-outline-secondary btn-sm" id="btn-query-copy">
-                  <i class="bi bi-clipboard"></i>
-                </button>
-              </div>
-            </div>
-            <div id="query-result-area" class="flex-grow-1 border rounded bg-dark text-light p-3 overflow-auto font-monospace" style="font-size:0.8rem; white-space: pre-wrap;">
-              <span class="text-muted">Run a query to see results...</span>
             </div>
           </div>
         </div>
@@ -1930,17 +1883,6 @@
   </div>
 </div>
 
-<!-- Query Examples Offcanvas -->
-<div class="offcanvas offcanvas-end" tabindex="-1" id="offcanvas-examples" style="width:500px">
-  <div class="offcanvas-header">
-    <h5 class="offcanvas-title">HQL Query Examples</h5>
-    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
-  </div>
-  <div class="offcanvas-body">
-    <div id="hql-examples-list"></div>
-  </div>
-</div>
-
 <!-- SHQL Examples Offcanvas -->
 <div class="offcanvas offcanvas-end" tabindex="-1" id="offcanvas-shql-examples" style="width:500px">
   <div class="offcanvas-header">
@@ -2111,10 +2053,6 @@
   <div class="offcanvas-body d-flex flex-column p-0">
     <div class="p-3 border-bottom">
       <div class="d-flex gap-2 align-items-center mb-2">
-        <select id="mesh-query-lang" class="form-select form-select-sm" style="width:auto">
-          <option value="hql">HQL</option>
-          <option value="shql">SHQL</option>
-        </select>
         <div class="form-check form-switch mb-0">
           <input class="form-check-input" type="checkbox" id="mesh-query-use-cache" checked/>
           <label class="form-check-label small" for="mesh-query-use-cache">Cache</label>
@@ -2124,7 +2062,7 @@
         </button>
       </div>
       <textarea id="mesh-query-editor" class="form-control font-monospace" rows="10"
-        placeholder="Enter HQL or SHQL query YAML here..."></textarea>
+        placeholder="Enter SHQL query YAML here..."></textarea>
     </div>
     <div class="p-3 flex-grow-1 overflow-auto">
       <div class="d-flex align-items-center gap-2 mb-2">

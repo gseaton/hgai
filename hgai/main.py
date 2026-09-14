@@ -117,15 +117,6 @@ def create_app() -> FastAPI:
     except BaseException as e:
         logger.warning(f"Mesh module not available (continuing without it): {type(e).__name__}: {e}")
 
-    # HQL module — mounted conditionally; failures are non-fatal
-    try:
-        from hgai_module_hql import HQLModule
-        hql_module = HQLModule()
-        app.include_router(hql_module.get_router(), prefix=prefix)
-        logger.info("HQL module mounted at /api/v1/query")
-    except BaseException as e:
-        logger.warning(f"HQL module not available (continuing without it): {type(e).__name__}: {e}")
-
     # SHQL module — mounted conditionally; failures are non-fatal
     try:
         from hgai_module_shql import SHQLModule
@@ -167,7 +158,7 @@ def create_app() -> FastAPI:
             "server_id": settings.server_id,
             "server_name": settings.server_name,
             "version": "0.1.0",
-            "capabilities": ["hypernodes", "hyperedges", "hypergraphs", "hql", "shql", "mcp", "mesh", "temporal", "media"],
+            "capabilities": ["hypernodes", "hyperedges", "hypergraphs", "shql", "mcp", "mesh", "temporal", "media"],
         }
 
     # Root redirect to UI

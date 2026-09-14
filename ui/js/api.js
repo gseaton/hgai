@@ -180,20 +180,14 @@ const HGAI_API = (() => {
   async function listMedia(params = {}) { return request('GET', '/media', null, params); }
   async function updateMedia(mediaId, data) { return request('PUT', `/media/${mediaId}`, data); }
 
-  // ── Query (HQL) ───────────────────────────────────────────────────────────
-  async function runQuery(hql, useCache = true) {
-    return request('POST', '/query', { hql, use_cache: useCache });
-  }
-  async function validateQuery(hql) { return request('POST', '/query/validate', { hql }); }
-  async function flushCache(graphId = null) {
-    return request('POST', '/query/cache/invalidate', null, graphId ? { graph_id: graphId } : {});
-  }
-
   // ── Query (SHQL) ──────────────────────────────────────────────────────────
   async function runShqlQuery(shql, useCache = true) {
     return request('POST', '/shql/query', { shql, use_cache: useCache });
   }
   async function validateShqlQuery(shql) { return request('POST', '/shql/validate', { shql }); }
+  async function flushCache(graphId = null) {
+    return request('POST', '/shql/cache/invalidate', null, graphId ? { graph_id: graphId } : {});
+  }
 
   // ── Accounts ──────────────────────────────────────────────────────────────
   async function listAccounts(params = {}) { return request('GET', '/accounts', null, params); }
@@ -252,10 +246,8 @@ const HGAI_API = (() => {
     listNotes, getNote, createNote, updateNote, deleteNote, listNoteShares, shareNote, unshareNote,
     // media
     uploadMedia, downloadMedia, deleteMedia, listMedia, updateMedia,
-    // query (HQL)
-    runQuery, validateQuery, flushCache,
     // query (SHQL)
-    runShqlQuery, validateShqlQuery,
+    runShqlQuery, validateShqlQuery, flushCache,
     // accounts
     listAccounts, getAccount, createAccount, updateAccount, deleteAccount,
     listAccountSpaces, assignAccountToSpace, removeAccountFromSpace,

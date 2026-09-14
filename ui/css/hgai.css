@@ -260,17 +260,17 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
   font-size: 0.85rem;
   border-radius: 0;
 }
-#query-editor-wrapper .CodeMirror { border-radius: 6px; }
+#shql-editor-wrapper .CodeMirror { border-radius: 6px; }
 
-/* ── HQL Examples ──────────────────────────────────────────────────────────── */
-.hql-example-card {
+/* ── Query Examples ────────────────────────────────────────────────────────── */
+.query-example-card {
   background: #f9fafb; border: 1px solid #e5e7eb;
   border-radius: 8px; padding: 12px; margin-bottom: 12px; cursor: pointer;
   transition: border-color 0.15s;
 }
-.hql-example-card:hover { border-color: var(--hgai-primary); background: #f0f4ff; }
-.hql-example-card .example-title { font-weight: 600; font-size: 0.85rem; margin-bottom: 4px; }
-.hql-example-card pre { font-size: 0.75rem; margin: 0; background: transparent; padding: 0; color: #374151; }
+.query-example-card:hover { border-color: var(--hgai-primary); background: #f0f4ff; }
+.query-example-card .example-title { font-weight: 600; font-size: 0.85rem; margin-bottom: 4px; }
+.query-example-card pre { font-size: 0.75rem; margin: 0; background: transparent; padding: 0; color: #374151; }
 
 /* ── JSON syntax highlighting (result panes) ───────────────────────────────── */
 /* Dracula-inspired palette to match the CodeMirror theme */
