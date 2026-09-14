@@ -164,7 +164,7 @@ Relation semantics — which relations are transitive, symmetric, each other's i
 | `owl:inverse-of [R, R']` | Every fact on relation R also implies the reverse fact on relation R' |
 | `skos:broaderTransitive` / `narrowerTransitive` | This relation is narrower/broader than another — facts project up through the hierarchy |
 
-The inference engine (`hgai/core/inference.py`) recognizes these strings; it never hardcodes a specific domain relation, so adding a new inference rule is a data change (assert an axiom hyperedge), not a code change. Computed live at query time — nothing inferred is ever persisted, and inferred results are tagged `_inferred: true` (plus `_source_edge`/`_axiom` for axiom expansion, or `_transitive`/`_transitive_path` for transitive-closure reachability).
+The inference engine (`hgai/core/inference.py`) recognizes these strings; it never hardcodes a specific domain relation, so adding a new inference rule is a data change (assert an axiom hyperedge), not a code change. Computed live at query time — nothing inferred is ever persisted, and inferred results are tagged `_inferred: true` (plus `_source_edge`/`_axiom` for axiom expansion, or `_transitive`/`_transitive_path` for transitive-closure derivations). `owl:transitive` is expanded the same general way as the other three axioms — a whole-relation closure computed once per relation rather than per edge — so it surfaces in any `infer: true` query, not only a targeted two-endpoint check.
 
 Enable inferencing per query with `infer: true`:
 
@@ -206,7 +206,8 @@ shql:
     - ?var                     # whole bound entity
     - ?var.field                # single field
     - "*"                      # everything (default)
-  order_by: ?var.field        # Optional: sort key
+  order_by: ?var.field        # Optional: sort key(s) — a single field or a list for
+                               # multi-key sort; each may end in " asc"/" desc" (default asc)
   limit: 500                  # Optional: max results (default 500)
   offset: 0                   # Optional: pagination offset
   distinct: true               # Optional: deduplicate result rows
@@ -324,6 +325,9 @@ Available MCP tool groups:
 - `hgai_hypernode_*` — Node CRUD
 - `hgai_hyperedge_*` — Edge CRUD
 - `hgai_query_*` — SHQL query execution
+- `hgai_infer_*` — Inference primitives (`check_transitive`, axiom expansion) without composing a full query
+- `hgai_media_*` — Media asset management
+- `hgai_mesh_*` — Cross-server mesh federation
 - `hgai_space_*` — Space management
 
 ---

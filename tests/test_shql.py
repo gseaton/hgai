@@ -184,6 +184,81 @@ async def test_infer_true_excludes_other_relations_after_expansion():
     assert all(binding["?e"]["relation"] == "rel:member-of" for binding in result)
 
 
+# ── infer: true + owl:transitive, open-ended (Visualize-shaped) query ──────
+#
+# Visualize's "show inferred" fetch (ui/js/app.js:fetchInferredEdges) runs
+# exactly this pattern — a bare `edge: ?edge`, no relation/members filter —
+# because it wants every inferred edge in the graph, not a targeted
+# start/end pair. Regression coverage for the fix that lets owl:transitive
+# participate in that same general expansion (previously only owl:
+# inverse-of/symmetric/broaderTransitive did; transitive closure only fired
+# for a fully-bound 2-endpoint pattern, so a whole-graph query like this
+# one, or Visualize, never saw a transitively-derived edge at all).
+
+_PARENT_EDGE_AB = {
+    "id": "edge-ab", "relation": "rel:parent", "flavor": "hub",
+    "members": [{"node_id": "andy-1", "seq": 0}, {"node_id": "andy-2", "seq": 1}],
+}
+_PARENT_EDGE_BC = {
+    "id": "edge-bc", "relation": "rel:parent", "flavor": "hub",
+    "members": [{"node_id": "andy-2", "seq": 0}, {"node_id": "andy-3", "seq": 1}],
+}
+_TRANSITIVE_AXIOM = {
+    "id": "axiom-transitive-parent", "relation": "owl:transitive", "flavor": "hub",
+    "members": [{"node_id": "rel:parent", "seq": 0}],
+}
+
+
+class _FakeTransitiveStore:
+    """Fake storage backing a 2-hop rel:parent chain (andy-1->andy-2->andy-3)
+    declared owl:transitive, for exercising the open-ended (no bound
+    endpoints) `infer: true` path end to end."""
+
+    async def search(self, filters, skip=0, limit=2000):
+        if filters.relation in (None, "rel:parent"):
+            return [dict(_PARENT_EDGE_AB), dict(_PARENT_EDGE_BC)]
+        return []
+
+    async def find_for_transitive(self, tsf):
+        if tsf.relation == "owl:transitive" and "rel:parent" in tsf.member_node_ids:
+            return [dict(_TRANSITIVE_AXIOM)]
+        if tsf.relation == "rel:parent":
+            edges = [_PARENT_EDGE_AB, _PARENT_EDGE_BC]
+            return [dict(e) for e in edges if any(m["node_id"] in tsf.member_node_ids for m in e["members"])]
+        return []
+
+
+@pytest.mark.asyncio
+async def test_infer_true_open_ended_query_surfaces_transitive_edge():
+    """The exact pattern shape Visualize's whole-graph inferred-edge fetch
+    uses (`edge: ?edge`, no relation/members filter) must include the
+    transitively-derived andy-1 -> andy-3 edge, not just literal ones."""
+    fake_storage = _FakeStorage(_FakeTransitiveStore())
+
+    with patch("hgai_module_shql.engine.get_storage", return_value=fake_storage), \
+         patch("hgai.core.inference.get_storage", return_value=fake_storage):
+        result = await _eval_edge_pattern(
+            {"bind": "?edge"},
+            graph_ids=["test-ordering"],
+            pit=None,
+            bindings=[{}],
+            infer=True,
+        )
+
+    transitive = [
+        b["?edge"] for b in result
+        if b["?edge"].get("relation") == "rel:parent" and b["?edge"].get("_inferred")
+    ]
+    assert len(transitive) == 1
+    edge = transitive[0]
+    assert edge["members"] == [
+        {"node_id": "andy-1", "seq": 0},
+        {"node_id": "andy-3", "seq": 1},
+    ]
+    assert edge["_transitive"] is True
+    assert edge["_transitive_path"] == ["edge-ab", "edge-bc"]
+
+
 # ── order_by: descending + multi-field sort ─────────────────────────────────
 
 def test_parse_order_by_single_field_defaults_ascending():

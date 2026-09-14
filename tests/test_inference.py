@@ -7,10 +7,13 @@ import pytest
 from hgai.core.inference import (
     _atomic_facts,
     _broader_chain,
+    _expand_transitive_relation,
     _make_inferred_edge,
     _member_ids,
     _other_member,
+    _reconstruct_path,
     atomic_pairs,
+    expand_edge_closure,
 )
 
 
@@ -110,6 +113,27 @@ def test_make_inferred_edge_shape():
         "_inferred": True,
         "_source_edge": "src1",
         "_axiom": "axiom1",
+    }
+
+
+def test_make_inferred_edge_shape_with_transitive_path():
+    """transitive_path is additive to axiom, not a replacement for it —
+    both the axiom that licensed the derivation and the explanatory hop
+    chain must be present."""
+    edge = _make_inferred_edge(
+        relation="rel:parent", members=[_m("a", 0), _m("c", 1)],
+        flavor="hub", source_edge=None, axiom="axiom-transitive",
+        transitive_path=["edge-ab", "edge-bc"],
+    )
+    assert edge == {
+        "relation": "rel:parent",
+        "flavor": "hub",
+        "members": [_m("a", 0), _m("c", 1)],
+        "_inferred": True,
+        "_source_edge": None,
+        "_axiom": "axiom-transitive",
+        "_transitive": True,
+        "_transitive_path": ["edge-ab", "edge-bc"],
     }
 
 
@@ -243,3 +267,109 @@ async def test_broader_chain_skips_redundant_inverse_of_naming_broadertransitive
     assert chain == {"rel:broad": ("ax-bt", "start")}
     called_relations = [call.args[1] for call in walk_mock.call_args_list]
     assert called_relations.count("skos:broaderTransitive") == 1
+
+
+# ─── _reconstruct_path ──────────────────────────────────────────────────────
+
+def test_reconstruct_path_walks_predecessors_back_to_start():
+    reached = {"b": ("edge-ab", "a"), "c": ("edge-bc", "b")}
+    assert _reconstruct_path(reached, "a", "c") == ["edge-ab", "edge-bc"]
+
+
+def test_reconstruct_path_empty_when_end_unreached():
+    reached = {"b": ("edge-ab", "a")}
+    assert _reconstruct_path(reached, "a", "z") == []
+
+
+# ─── _expand_transitive_relation / expand_edge_closure (owl:transitive) ────
+#
+# General, whole-relation owl:transitive support — the counterpart to
+# expand_edge's inverse-of/symmetric/superproperty rules, but computed once
+# per relation (over the whole graph) rather than per edge, since
+# reachability isn't a property of one edge in isolation. Exercises the
+# actual bug this was built to fix: a fully open-ended `infer: true` query
+# (or a whole-graph Visualize fetch) with no concrete start/end pair still
+# needs to surface multi-hop derived facts, not just the point-to-point
+# check_transitive already wired into a targeted 2-endpoint SHQL pattern.
+
+def _fake_storage_with_edges(edges):
+    return SimpleNamespace(hyperedges=SimpleNamespace(search=AsyncMock(return_value=edges)))
+
+
+def _chain_walk_closure(routes):
+    """walk_closure stub keyed by start_id, ignoring relation/graph_ids/pit —
+    sufficient here since _broader_chain's own walk_closure calls (over
+    axiom relations like skos:narrowerTransitive) use start_ids that never
+    collide with the fact-graph's own node ids in these tests."""
+    async def _route(start_id, relation, graph_ids, direction="forward", pit=None):
+        return routes.get(start_id, {})
+    return _route
+
+
+@pytest.mark.asyncio
+async def test_expand_transitive_relation_returns_empty_without_axiom():
+    with patch("hgai.core.inference.get_axiom_edges", new_callable=AsyncMock, return_value=[]):
+        result = await _expand_transitive_relation("rel:parent", ["g1"])
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_expand_transitive_relation_derives_non_1_hop_pairs_only():
+    """A 3-node chain a->b->c must derive (a, c) — tagged with the
+    explanatory hop path and the axiom that licensed it — but must NOT
+    re-derive either already-literal 1-hop pair (a,b) or (b,c)."""
+    axiom_edges = [{"id": "axiom-transitive-parent"}]
+    literal_edges = [
+        {"id": "edge-ab", "relation": "rel:parent", "flavor": "hub", "members": [_m("a", 0), _m("b", 1)]},
+        {"id": "edge-bc", "relation": "rel:parent", "flavor": "hub", "members": [_m("b", 0), _m("c", 1)]},
+    ]
+    routes = {
+        "a": {"b": ("edge-ab", "a"), "c": ("edge-bc", "b")},
+        "b": {"c": ("edge-bc", "b")},
+    }
+
+    with patch("hgai.core.inference.get_axiom_edges", new_callable=AsyncMock, return_value=axiom_edges), \
+         patch("hgai.core.inference.get_storage", return_value=_fake_storage_with_edges(literal_edges)), \
+         patch("hgai.core.inference.walk_closure", side_effect=_chain_walk_closure(routes)):
+        result = await _expand_transitive_relation("rel:parent", ["g1"])
+
+    assert len(result) == 1
+    edge = result[0]
+    assert edge["relation"] == "rel:parent"
+    assert edge["members"] == [_m("a", 0), _m("c", 1)]
+    assert edge["_inferred"] is True
+    assert edge["_transitive"] is True
+    assert edge["_transitive_path"] == ["edge-ab", "edge-bc"]
+    assert edge["_axiom"] == "axiom-transitive-parent"
+
+
+@pytest.mark.asyncio
+async def test_expand_edge_closure_surfaces_transitive_edges_for_open_ended_query():
+    """expand_edge_closure — the general mechanism a whole-graph `infer:
+    true` query or Visualize's inferred-edge fetch actually runs — must
+    include owl:transitive-derived edges too, not just inverse-of/symmetric/
+    superproperty ones, given only a literal chain and no concrete
+    start/end pair to check against."""
+    literal_edges = [
+        {"id": "edge-ab", "relation": "rel:parent", "flavor": "hub", "members": [_m("a", 0), _m("b", 1)]},
+        {"id": "edge-bc", "relation": "rel:parent", "flavor": "hub", "members": [_m("b", 0), _m("c", 1)]},
+    ]
+    routes = {
+        "a": {"b": ("edge-ab", "a"), "c": ("edge-bc", "b")},
+        "b": {"c": ("edge-bc", "b")},
+    }
+
+    async def _get_axioms(relation_id, axiom, graph_ids, pit=None):
+        if relation_id == "rel:parent" and axiom == "owl:transitive":
+            return [{"id": "axiom-transitive-parent"}]
+        return []
+
+    with patch("hgai.core.inference.get_axiom_edges", side_effect=_get_axioms), \
+         patch("hgai.core.inference.get_storage", return_value=_fake_storage_with_edges(literal_edges)), \
+         patch("hgai.core.inference.walk_closure", side_effect=_chain_walk_closure(routes)):
+        inferred = await expand_edge_closure(literal_edges, ["g1"])
+
+    transitive = [e for e in inferred if e.get("_transitive")]
+    assert len(transitive) == 1
+    assert transitive[0]["members"] == [_m("a", 0), _m("c", 1)]
+    assert transitive[0]["_transitive_path"] == ["edge-ab", "edge-bc"]

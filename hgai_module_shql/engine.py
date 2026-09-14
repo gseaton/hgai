@@ -469,7 +469,18 @@ async def _eval_edge_pattern(
             status=status,
             tags=tags if not tags or isinstance(tags, list) else [tags],
             pit=pit,
-            member_node_ids_all=bound_node_ids if bound_node_ids else None,
+            # Same reasoning as `relation` above: a transitive fact spans
+            # MULTIPLE literal edges, none of which individually contains
+            # both endpoints — pre-filtering the literal fetch down to
+            # "edges containing all of these already-bound members" would
+            # starve owl:transitive expansion of the very chain it needs to
+            # walk, for a fully-resolved 2-endpoint pattern like
+            # `members: [{id: A}, {id: B}]` under `infer: true`. Dropping it
+            # here only widens the literal candidate set fed into
+            # expansion; final results are still narrowed correctly by the
+            # member-pattern matching loop below, same as dropping
+            # `relation` doesn't loosen the final `docs` filter above.
+            member_node_ids_all=None if infer else (bound_node_ids if bound_node_ids else None),
             attributes=attributes if attributes else None,
             extra_filters={"id": resolved_id} if resolved_id is not None else None,
         )
@@ -481,8 +492,15 @@ async def _eval_edge_pattern(
         # bind ?vars, anchor a later hop, chain into a further pattern.
         # Computed live per pattern evaluation, never persisted. Opt-in
         # only: no `infer` flag means this whole block never runs.
+        #
+        # expand_edge_closure covers owl:inverse-of/owl:symmetric/
+        # skos:broaderTransitive/narrowerTransitive AND owl:transitive
+        # (see hgai/core/inference.py) — so a fully-resolved 2-endpoint
+        # pattern like `members: [{id: A}, {id: B}]` gets its transitive
+        # chain, if any, from the same general mechanism as any other
+        # inferred edge; no separate check_transitive call needed here.
         if infer:
-            from hgai.core.inference import check_transitive, expand_edge_closure
+            from hgai.core.inference import expand_edge_closure
             docs = docs + await expand_edge_closure(docs, graph_ids, pit=pit)
 
             # Now that expansion has run over the full (relation-agnostic)
@@ -492,29 +510,6 @@ async def _eval_edge_pattern(
             # merely happened to expand from the same source docs.
             if resolved_rel:
                 docs = [d for d in docs if d.get("relation") == resolved_rel]
-
-            # A fully-resolved 2-member pattern (both endpoints already
-            # concrete — literal ids or already-bound variables) also gets
-            # a transitive-reachability check, self-gated on an
-            # owl:transitive axiom actually existing for the relation. A
-            # 1-hop path is skipped — it's definitionally already a literal
-            # edge, already present in `docs` above.
-            if resolved_rel and len(member_patterns) == 2 and len(bound_node_ids) == 2:
-                path = await check_transitive(
-                    resolved_rel, graph_ids, bound_node_ids[0], bound_node_ids[1], mode="path", pit=pit
-                )
-                if len(path) > 1:
-                    docs = docs + [{
-                        "relation": resolved_rel,
-                        "flavor": "hub",
-                        "members": [
-                            {"node_id": bound_node_ids[0], "seq": 0},
-                            {"node_id": bound_node_ids[1], "seq": 1},
-                        ],
-                        "_inferred": True,
-                        "_transitive": True,
-                        "_transitive_path": path,
-                    }]
 
         for doc in docs:
             for _f in _SKOS_FIELDS:

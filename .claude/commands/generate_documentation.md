@@ -8,15 +8,12 @@ Run these in parallel:
 
 1. Find all Python source files (exclude `.venv/`, `site-packages/`, `__pycache__/`).
 2. Find any existing documentation files: `README*`, `*.md` at the project root, any `docs/` directory.
-3. Read `notes/dev/entity_structures.md` if it exists — it contains the intended domain model and is required context for accurate documentation.
 
 Read every non-empty, non-test Python source file in full:
 - `main.py`
 - `scratch/math.py`
 - `run_all.py`
 - `models/structure.py`
-- `stores/mongo/__init__.py`
-- `stores/mongo/entities/annotation.py`
 
 Also read the test infrastructure file `tests/runner.py`.
 
@@ -77,9 +74,6 @@ Explain that every entity is defined as a JSON Schema dict in `models/structure.
 - MongoDB (local or remote)
 - Install dependencies: `pip install -r requirements.txt` (or note if none exists yet)
 
-### Configuration
-Describe the `.env` file: list the key environment variables (`MONGO_URI` or individual `MONGO_HOST` / `MONGO_PORT` / `MONGO_USERNAME` etc.) and what they control. Use the variable names from `stores/mongo/__init__.py`.
-
 ### Running the application
 How to start / use the project (noting that `main.py` is currently a placeholder).
 
@@ -88,12 +82,6 @@ How to start / use the project (noting that `main.py` is currently a placeholder
 ### Creating and saving an annotation
 A complete, runnable Python code example that calls `make_annotation`, then `save`.
 
-### Querying annotations
-A code example using `get_by_document` and/or `get_by_annotator`.
-
-### Validating an entity dict
-A code example calling `validate_structure` both with an explicit schema and via `entity_type=`.
-
 ## Testing
 
 ### Running the test suite
@@ -101,23 +89,8 @@ A code example calling `validate_structure` both with an explicit schema and via
 python run_all.py
 ```
 
-### Running a single suite
-```
-python -m tests.scratch.math
-python -m tests.models.structure
-python -m tests.stores.mongo.entities.annotation
-```
-
-### Test framework
-One paragraph explaining the dict-based framework in `tests/runner.py`: test cases as plain dicts with `arguments`, `expected_result`, and optional `expected_exception` / `kwargs` keys.
-
-## Project Structure
-A file tree (as a fenced code block) of the meaningful project files, with a one-line annotation for each.
-```
-
 Rules for writing `README.md`:
 - Do not invent features, behaviors, or configuration options not present in the source.
-- Where the `entity_structures.md` describes entities not yet implemented in code, label them clearly as "planned" rather than omitting them or presenting them as implemented.
 - Keep code examples short — three to eight lines is ideal.
 - No emojis.
 

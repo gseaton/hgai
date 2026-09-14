@@ -509,7 +509,6 @@ Base URL: `http://localhost:8357/api/v1`
 ### Authentication
 ```
 POST /api/v1/auth/token        # Login (returns JWT)
-POST /api/v1/auth/refresh      # Refresh token
 GET  /api/v1/auth/me           # Current user info
 ```
 
@@ -538,6 +537,33 @@ POST   /api/v1/graphs/{g}/edges        # Create hyperedge
 GET    /api/v1/graphs/{g}/edges/{id}   # Get hyperedge
 PUT    /api/v1/graphs/{g}/edges/{id}   # Update hyperedge
 DELETE /api/v1/graphs/{g}/edges/{id}   # Delete hyperedge
+```
+
+### Inference
+```
+POST /api/v1/graphs/{g}/infer/transitive   # Single-pair/closure/path reachability over an owl:transitive relation
+POST /api/v1/graphs/{g}/infer/expand       # Axiom-driven expansion of one hyperedge
+POST /api/v1/graphs/{g}/infer/project      # Materialize inference results as persisted hyperedges
+```
+
+### Notes
+```
+GET    /api/v1/notes                          # List notes visible to the caller
+POST   /api/v1/notes                          # Create a note
+GET    /api/v1/notes/{id}                     # Get a note
+PUT    /api/v1/notes/{id}                     # Update a note
+DELETE /api/v1/notes/{id}                     # Delete a note
+POST   /api/v1/notes/{id}/share               # Grant/replace an account's access
+DELETE /api/v1/notes/{id}/share/{username}    # Revoke an account's access
+```
+
+### Media
+```
+GET    /api/v1/media           # List media
+POST   /api/v1/media           # Upload a file
+GET    /api/v1/media/{id}      # Download a file
+PUT    /api/v1/media/{id}      # Update metadata
+DELETE /api/v1/media/{id}      # Delete a file
 ```
 
 ### Query
@@ -718,6 +744,41 @@ curl -X POST http://localhost:8357/mcp/ \
 |------|-------------|
 | `hgai_query_execute` | Execute an SHQL query (top-level `shql:` key) |
 | `hgai_query_validate` | Validate an SHQL query without executing it |
+
+#### Inference Tools
+
+| Tool | Description |
+|------|-------------|
+| `hgai_infer_expand_edge` | Axiom-driven expansion (inverse-of/symmetric/superproperty/transitive) of one hyperedge |
+| `hgai_infer_check_transitive` | Single-pair/closure/path reachability over a relation carrying an `owl:transitive` axiom |
+
+#### Mesh Tools
+
+| Tool | Description |
+|------|-------------|
+| `hgai_mesh_list` | List configured meshes |
+| `hgai_mesh_get` | Get a mesh's configuration |
+| `hgai_mesh_ping` | Check reachability of a mesh's servers |
+| `hgai_mesh_sync` | Sync graph listings from a mesh's servers |
+| `hgai_mesh_query` | Execute a federated SHQL query across a mesh's servers |
+
+#### Media Tools
+
+| Tool | Description |
+|------|-------------|
+| `hgai_media_upload` | Upload a media file |
+| `hgai_media_download` | Download a media file |
+| `hgai_media_delete` | Delete a media file |
+
+#### Space Tools
+
+| Tool | Description |
+|------|-------------|
+| `hgai_space_list` | List spaces |
+| `hgai_space_get` | Get a space's details and members |
+| `hgai_space_create` | Create a space |
+| `hgai_space_add_member` | Add or update a space member |
+| `hgai_space_list_graphs` | List hypergraphs in a space |
 
 ### Tool Reference
 
@@ -1159,21 +1220,22 @@ HypergraphAI's inference engine (`hgai/core/inference.py`) derives implicit know
 
 Inferencing is opt-in per query — add `infer: true` to an SHQL query (see [SHQL — Semantic Hypergraph Query Language](#shql--semantic-hypergraph-query-language) below). It has no effect unless the query also matches a `relation:` that actually carries one of these axioms in the graph being queried.
 
-### Axiom Expansion (inverse-of / symmetric / superproperty)
+### Axiom Expansion (inverse-of / symmetric / superproperty / transitive)
 
-Given the literal hyperedges an SHQL edge pattern already matched, `expand_edge_closure` synthesizes additional derived edges from whatever `owl:inverse-of`, `owl:symmetric`, and `skos:broaderTransitive`/`narrowerTransitive` axiom hyperedges exist for those edges' relations:
+Given the literal hyperedges an SHQL edge pattern already matched, `expand_edge_closure` synthesizes additional derived edges from whatever `owl:inverse-of`, `owl:symmetric`, `skos:broaderTransitive`/`narrowerTransitive`, and `owl:transitive` axiom hyperedges exist for those edges' relations:
 
 - **`owl:inverse-of [R, R']`** — for a hub-flavor edge, each (hub, spoke) pair also implies a 2-member `R'` edge `(spoke, hub)`. E.g. a `has-member` axiom edge declaring `owl:inverse-of [has-member, member-of]` means every `has-member` fact also implies the reverse `member-of` fact.
 - **`owl:symmetric`** — every member of a symmetric-flavor edge is mutually equivalent to every other; A related-to B implies B related-to A.
 - **`skos:broaderTransitive` / `narrowerTransitive` (superproperty projection)** — if a fact's relation is narrower than one or more broader relations (walked transitively over the axiom graph, so a multi-hop relation hierarchy — e.g. `father` narrower-than `parent` narrower-than `ancestor` — projects through every level), the same fact is copied onto each broader relation unchanged.
+- **`owl:transitive`** — unlike the other three, this isn't a per-edge transformation: reachability is a whole-relation, whole-graph property. Once per distinct relation seen in the candidate set (not once per edge), `_expand_transitive_relation` walks the complete network of that relation's literal facts and synthesizes every non-1-hop pair as a 2-member hub edge — e.g. given `rel:parent` facts `A→B→C` and an `owl:transitive` axiom on `rel:parent`, it synthesizes `A→C`. This is what lets a general, open-ended `infer: true` query — including Visualize's whole-graph "show inferred" fetch — surface transitively-derived facts, not just a targeted single-pair reachability question (see [Transitive-Closure Reachability](#transitive-closure-reachability) below for that separate, narrower use case).
 
-This runs to a fixed point (`expand_edge_closure` re-expands its own output until a round produces nothing new, bounded by `max_iterations`), and dedupes by the individual atomic `(relation, subject, object)` facts each candidate asserts — not by edge shape — so the same fact reached two different ways, or via a cyclic axiom graph, is only returned once. Inferred edges carry `_inferred: true`, `_source_edge` (the literal edge it was derived from), and `_axiom` (the axiom hyperedge that licensed it).
+This runs to a fixed point (`expand_edge_closure` re-expands its own output — including transitively-derived edges, which may themselves have an inverse or a broader projection — until a round produces nothing new, bounded by `max_iterations`), and dedupes by the individual atomic `(relation, subject, object)` facts each candidate asserts — not by edge shape — so the same fact reached two different ways, or via a cyclic axiom graph, is only returned once. Inferred edges carry `_inferred: true`, `_source_edge` (the literal edge it was derived from — `null` for a transitively-derived edge, which has no single source edge), and `_axiom` (the axiom hyperedge that licensed it); a transitively-derived edge additionally carries `_transitive: true` and `_transitive_path` (the ordered chain of literal hyperedge IDs connecting the pair).
 
-In SHQL, this expansion is spliced into an edge pattern's candidate set *before* member-pattern matching and variable binding run — so an inferred edge is first-class: it can bind `?vars`, anchor a later hop, and chain into a further `where:` pattern exactly like a literal edge.
+In SHQL, this expansion is spliced into an edge pattern's candidate set *before* member-pattern matching and variable binding run — so an inferred edge is first-class: it can bind `?vars`, anchor a later hop, and chain into a further `where:` pattern exactly like a literal edge. This also means the *literal* candidate fetch itself is relation- and member-agnostic whenever `infer: true` is set (a `relation:`/concrete `members:` filter is applied only *after* expansion) — otherwise a query naming only the *inferred* side of a relation, or a fully-resolved 2-endpoint transitive pattern (neither of which corresponds to a single literal edge), would be starved of anything to expand from.
 
 ### Transitive-Closure Reachability
 
-Separately, `check_transitive`/`walk_closure` answer reachability over a chain of *literal* fact edges (not axiom expansion): given a relation that carries an `owl:transitive` axiom, is node A transitively connected to node B through a chain of edges of that relation? This is a cycle-safe breadth-first walk (`walk_closure`, `max_depth: 10` by default), self-gated on the axiom actually existing — nothing fires for a relation nobody declared transitive. In SHQL this triggers for a fully-resolved 2-member edge pattern (both endpoints already concrete) under `infer: true`, returning a synthesized edge with `_inferred: true`, `_transitive: true`, and `_transitive_path` (the hop-by-hop chain of hyperedge IDs). A 1-hop path is skipped — it's definitionally already a literal edge, not a new derived fact.
+Separately, `check_transitive`/`walk_closure` answer a single targeted reachability *question* over a chain of literal fact edges: is node A transitively connected to node B through a chain of edges of a given relation (or: what's everything reachable from A, or: what's the specific path)? This is a cycle-safe breadth-first walk (`walk_closure`, `max_depth: 10` by default), self-gated on an `owl:transitive` axiom actually existing — nothing fires for a relation nobody declared transitive. It's exposed directly via `POST /graphs/{graph_id}/infer/transitive` (and the equivalent MCP tool) for a one-off answer without composing a query, independent of the general SHQL expansion above.
 
 ### Edge Flavors
 
@@ -1186,7 +1248,7 @@ Hyperedge `flavor` describes how one hyperedge's member list decomposes into ind
 
 ### Roadmap
 
-Shipped: axiom-driven inverse-of/symmetric/superproperty expansion, SKOS `broader`/`narrower` projection, and transitive-closure reachability, all wired into SHQL behind `infer: true`. Planned for future releases:
+Shipped: axiom-driven inverse-of/symmetric/superproperty/transitive expansion, SKOS `broader`/`narrower` projection, and single-pair transitive-closure reachability, all wired into SHQL behind `infer: true`. Planned for future releases:
 
 - **Rule-based inferencing** — user-defined inference rules stored as hypernodes of type `InferenceRule`, evaluated at query time
 - **Cross-graph inferencing** — axiom expansion and transitive walks spanning multiple hypergraphs in a logical composition or mesh

@@ -1,5 +1,7 @@
 # Semantic Knowledge Hypergraph Inferencing
 
+> **SUPERSEDED.** This note describes an early design sketch — axiom hyperedges asserted with a placeholder `relation: is` and the axiom name as a member (e.g. `members: [rel:contains, owl:transitive]`) — that predates the actual implementation. The mechanism that was actually built and shipped (`hgai/core/inference.py`, wired into SHQL behind `infer: true`) instead asserts the axiom hyperedge's own `relation` field as the axiom name itself (e.g. `relation: owl:transitive`), with the target relation(s) as members — see the [README's Inferencing section](../../README.md#inferencing) for the current, correct mechanics and worked examples. Kept here for historical reference only; do not follow the examples below.
+
 ## Inference Relations
 
 - `skos:broader` : broader concept

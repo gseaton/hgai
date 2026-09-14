@@ -725,7 +725,9 @@ shql:
   distinct: false                 # optional: deduplicate
   limit: 500                      # optional: max results
   offset: 0                       # optional: pagination
-  order_by: ?var.label            # optional: sort
+  order_by: ?var.label            # optional: sort key(s) — a single field, or a list for
+                                   # multi-key sort (primary first); each may carry a trailing
+                                   # " asc"/" desc" (default asc), e.g. "?var.label desc"
   infer: true                     # optional: opt-in axiom-driven inferencing (see below)
   aggregate:                      # optional: computed over the full matched result, pre-pagination
     count: true
@@ -859,7 +861,7 @@ shql:
 
 **Expected result:** Moe Howard, Shemp Howard, Curly Howard.
 
-> **Note:** In SHQL, exact attribute matching goes inside the `attributes:` block of a node pattern. This is equivalent to the HQL `where: attributes.last_name: Howard` syntax but expressed as a node pattern constraint.
+> **Note:** In SHQL, exact attribute matching goes inside the `attributes:` block of a node pattern, expressed as a node pattern constraint rather than a flat `where:` clause.
 
 </details>
 
@@ -1095,7 +1097,7 @@ hypernodes. Add `infer: true` to a query, and the engine synthesizes
 derived facts live from whatever axioms exist — nothing inferred is ever
 persisted, and every inferred result is tagged `_inferred: true`.
 
-**Example:** if an axiom hyperedge asserts `owl:inverse-of [rel:has-member, rel:member-of]`, this query returns both the literal `has-member` edges *and* a synthesized `member-of` edge for each one:
+**Example:** if an axiom hyperedge asserts `owl:inverse-of [rel:member, rel:member-of]`, this query returns both the literal `rel:member` edges *and* a synthesized `rel:member-of` edge for each one — and, since the literal search itself is relation-agnostic under `infer: true`, querying `relation: rel:member-of` directly instead would return the same synthesized edges without needing to know that `rel:member` is the asserted side:
 
 ```yaml
 shql:

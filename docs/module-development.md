@@ -12,59 +12,44 @@ A HypergraphAI module is a Python package that follows a naming convention and i
 
 ```
 hgai_module_<name>/       # Package directory
-  __init__.py
-  module.py               # Required: HgaiModule subclass
-  mcp_tools.py            # Optional: MCP tool definitions
+  __init__.py             # Required: re-exports the module descriptor class
+  module.py               # Required: module descriptor class (name/version/description + get_router())
   api_router.py           # Optional: FastAPI router
+  engine.py               # Optional: business logic the router delegates to
   models.py               # Optional: Pydantic data models
-  README.md               # Required: module documentation
 ```
 
+Existing built-in modules, for reference: `hgai_module_shql` (SHQL query language), `hgai_module_mesh` (cross-server federation), `hgai_module_mcp` (Model Context Protocol tools), `hgai_module_storage` / `hgai_module_storage_mongodb` (pluggable storage backend).
+
 Module names must:
-- Use lowercase with hyphens: `hgai_module_my-module`
+- Use lowercase with underscores: `hgai_module_mymodule`
 - Be unique across your HypergraphAI deployment
-- Not conflict with built-in module names: `core`, `auth`, `cache`, `inference`, `query`
 
 ---
 
 ## Minimal Module Structure
 
+There is no shared base class to subclass — a module is any class exposing `name`/`version`/`description` plus a `get_router()` method returning a FastAPI `APIRouter` (a REST-exposing module), or a `get_app()` method returning an ASGI app to `mount()` instead (an HTTP-sub-app module, like MCP — see `hgai_module_mcp/module.py`). `hgai/main.py` imports and registers each module directly; there is no plugin auto-discovery.
+
 ### `hgai_module_mymodule/__init__.py`
 ```python
-"""My HypergraphAI Module."""
+from .module import MyModule
 
-__version__ = "0.1.0"
-__module_name__ = "mymodule"
-__module_description__ = "My custom HypergraphAI module"
+__all__ = ["MyModule"]
 ```
 
 ### `hgai_module_mymodule/module.py`
 ```python
-"""HypergraphAI module entry point."""
+"""My HypergraphAI module descriptor."""
 
-class HgaiModule:
-    name: str = "mymodule"
-    version: str = "0.1.0"
-    description: str = "My custom module"
-
-    async def startup(self, app, db, settings):
-        """Called when HypergraphAI server starts."""
-        pass
-
-    async def shutdown(self):
-        """Called when HypergraphAI server stops."""
-        pass
-
-
-class MyModule(HgaiModule):
+class MyModule:
     name = "mymodule"
     version = "0.1.0"
     description = "My custom HypergraphAI module"
 
-    async def startup(self, app, db, settings):
-        # Register routes, initialize resources, etc.
+    def get_router(self):
         from .api_router import router
-        app.include_router(router, prefix="/api/v1")
+        return router
 ```
 
 ---
@@ -117,7 +102,7 @@ async def analyze_edges(
 ### `hgai_module_mymodule/mcp_tools.py`
 ```python
 import json
-from hgai.mcp.server import mcp  # Use the shared MCP instance
+from hgai_module_mcp.server import mcp  # Use the shared MCP instance
 
 
 @mcp.tool()
@@ -197,6 +182,8 @@ async def get_node(graph_id: str, node_id: str):
 | `spaces` | `get_storage().spaces` | Multi-tenant space management |
 | `meshes` | `get_storage().meshes` | Mesh federation registry |
 | `cache` | `get_storage().cache` | Query result cache |
+| `media` | `get_storage().media` | Binary file metadata (upload/download/delete) |
+| `notes` | `get_storage().notes` | Account-owned note documents |
 
 ### Custom Module Storage
 
@@ -290,22 +277,20 @@ HGAI_MYMODULE_MAX_DEPTH=5
 
 ## Registering a Module
 
-To register your module with the HypergraphAI server, add it to `hgai/main.py`:
+To register your module with the HypergraphAI server, add it to `create_app()` in `hgai/main.py`, following the pattern used for the built-in `hgai_module_mesh`/`hgai_module_shql`/`hgai_module_mcp` modules — imported and mounted directly, wrapped in a broad `try`/`except` so a missing or broken optional module never prevents the server from starting:
 
 ```python
-# In create_app() in hgai/main.py
+# In create_app() in hgai/main.py, alongside the other module registrations
 try:
-    from hgai_module_mymodule.module import MyModule
-    module = MyModule()
-    await module.startup(app, get_settings())
-except ImportError:
-    pass  # Module not installed
+    from hgai_module_mymodule import MyModule
+    my_module = MyModule()
+    app.include_router(my_module.get_router(), prefix=prefix)
+    logger.info("MyModule mounted at /api/v1/mymodule")
+except BaseException as e:
+    logger.warning(f"MyModule not available (continuing without it): {type(e).__name__}: {e}")
 ```
 
-Or configure via environment for auto-discovery (future feature):
-```env
-HGAI_MODULES=mymodule,anothermodule
-```
+There is no environment-based auto-discovery — every module is imported explicitly in `hgai/main.py`.
 
 ---
 
@@ -328,7 +313,7 @@ async def admin_endpoint(account = Depends(require_admin)):
 # Check graph access
 @router.get("/graph-data/{graph_id}")
 async def graph_endpoint(graph_id: str, account = Depends(get_current_account)):
-    if not can_access_graph(account, graph_id):
+    if not await can_access_graph(account, graph_id):
         raise HTTPException(403, "Access denied")
     ...
 ```

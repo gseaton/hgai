@@ -12,15 +12,18 @@ docs/dev_notes/skhg-inferencing-notes.md.
 `atomic_pairs`, `get_axiom_edges`, and `walk_closure` are the shared
 primitives every higher-level reasoning operation is built from.
 `expand_edge`/`expand_edge_closure` (inverse-of/symmetric/superproperty
-expansion) and `check_transitive` (transitive-closure reachability) are
-both wired into SHQL behind the same `infer: true` flag.
+expansion, plus whole-relation `owl:transitive` closure — see
+`_expand_transitive_relation`) and `check_transitive` (single-pair/closure/
+path reachability queries, e.g. the direct REST and MCP tools) are both
+wired into SHQL behind the same `infer: true` flag; `expand_edge_closure`
+is what a general, open-ended SHQL/Visualize query actually runs.
 """
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from hgai.db.storage import get_storage
-from hgai_module_storage.filters import TransitiveSearchFilter
+from hgai_module_storage.filters import HyperedgeSearchFilters, TransitiveSearchFilter
 
 
 def atomic_pairs(members: List[Dict[str, Any]], flavor: str) -> List[Tuple[str, str]]:
@@ -174,11 +177,20 @@ def _make_inferred_edge(
     flavor: str,
     source_edge: Optional[str],
     axiom: Optional[str],
+    transitive_path: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """An ephemeral, never-persisted synthesized fact. No hyperkey, no
     mutations history — this is a read-time computation result, not a
-    document; see the module docstring."""
-    return {
+    document; see the module docstring.
+
+    `transitive_path` is set only for an `owl:transitive`-derived edge (see
+    `_expand_transitive_relation`) — the ordered chain of literal hyperedge
+    ids connecting the two members, the same explanatory shape
+    `check_transitive(mode="path")` returns. It's additive to `axiom`
+    (which still names the `owl:transitive` axiom hyperedge that licensed
+    the derivation), not a replacement for it.
+    """
+    edge: Dict[str, Any] = {
         "relation": relation,
         "flavor": flavor,
         "members": members,
@@ -186,6 +198,10 @@ def _make_inferred_edge(
         "_source_edge": source_edge,
         "_axiom": axiom,
     }
+    if transitive_path is not None:
+        edge["_transitive"] = True
+        edge["_transitive_path"] = transitive_path
+    return edge
 
 
 def _atomic_facts(edge: Dict[str, Any]) -> Set[Tuple[str, str, str]]:
@@ -337,19 +353,94 @@ async def expand_edge(
     return synthesized
 
 
+def _reconstruct_path(reached: Dict[str, Tuple[str, str]], start_id: str, end_id: str) -> List[str]:
+    """Ordered chain of hyperedge ids connecting `start_id` to `end_id`,
+    given `walk_closure`'s `{reached_node: (via_edge_id, predecessor)}` map
+    (empty list if `end_id` wasn't reached). Shared by `check_transitive`'s
+    `mode="path"` and `_expand_transitive_relation`'s general closure, so
+    both report the same explanatory chain shape for the same kind of fact.
+    """
+    if end_id not in reached:
+        return []
+    path_edges: List[str] = []
+    node = end_id
+    while node != start_id:
+        edge_id, predecessor = reached[node]
+        path_edges.append(edge_id)
+        node = predecessor
+    path_edges.reverse()
+    return path_edges
+
+
+async def _expand_transitive_relation(
+    relation: str,
+    graph_ids: List[str],
+    pit: Optional[datetime] = None,
+) -> List[Dict[str, Any]]:
+    """Every non-1-hop pair connected by a chain of `relation` facts, as
+    synthesized 2-member hub edges — the `owl:transitive` counterpart to
+    `expand_edge`'s inverse-of/symmetric/superproperty rules.
+
+    Unlike those three, this isn't a per-edge transformation: reachability
+    is a whole-relation, whole-graph property, so this walks the complete
+    network of `relation`'s literal facts once per relation rather than
+    being driven edge-by-edge like `expand_edge`. Self-gated on an
+    `owl:transitive` axiom actually existing for `relation`, same as
+    `check_transitive` — calling this on a relation nobody declared
+    transitive always safely returns `[]`. A 1-hop pair is skipped — it's
+    definitionally already a literal edge, not a new derived fact.
+
+    Each synthesized edge carries `_transitive_path`, the ordered chain of
+    literal hyperedge ids that connects the pair — the same shape
+    `check_transitive(mode="path")` returns for a single pair, but computed
+    here for every reachable pair at once so a general `infer: true` query
+    (or `project_inference`'s `mode="transitive"`) doesn't need to already
+    know which two endpoints to ask about.
+    """
+    axiom_edges = await get_axiom_edges(relation, "owl:transitive", graph_ids, pit=pit)
+    if not axiom_edges:
+        return []
+    axiom_id = axiom_edges[0].get("id")
+
+    filters = HyperedgeSearchFilters(hypergraph_ids=graph_ids, relation=relation, pit=pit)
+    fact_edges = await get_storage().hyperedges.search(filters, skip=0, limit=5000)
+    subjects = {
+        s for e in fact_edges
+        for s, _o in atomic_pairs(e.get("members", []), e.get("flavor", "hub"))
+    }
+
+    synthesized: List[Dict[str, Any]] = []
+    for start_id in subjects:
+        reached = await walk_closure(start_id, relation, graph_ids, direction="forward", pit=pit)
+        for node_id, (_via_edge, predecessor) in reached.items():
+            if predecessor == start_id:
+                continue  # 1-hop — already a literal edge, not a new fact
+            synthesized.append(_make_inferred_edge(
+                relation=relation,
+                members=[{"node_id": start_id, "seq": 0}, {"node_id": node_id, "seq": 1}],
+                flavor="hub",
+                source_edge=None,
+                axiom=axiom_id,
+                transitive_path=_reconstruct_path(reached, start_id, node_id),
+            ))
+    return synthesized
+
+
 async def expand_edge_closure(
     fact_edges: List[Dict[str, Any]],
     graph_ids: List[str],
     pit: Optional[datetime] = None,
     max_iterations: int = 10,
 ) -> List[Dict[str, Any]]:
-    """Fixed-point closure of `expand_edge` over a starting set of fact edges.
+    """Fixed-point closure of `expand_edge` (plus, once per relation seen,
+    `_expand_transitive_relation`) over a starting set of fact edges.
 
-    A single pass of `expand_edge` isn't enough — e.g. projecting a fact up
-    to a broader relation only becomes eligible for `owl:inverse-of`
-    expansion once that projection exists. This repeatedly expands the
-    frontier (starting with `fact_edges`, then whatever was newly
-    synthesized last round) until a round produces nothing new.
+    A single pass isn't enough — e.g. projecting a fact up to a broader
+    relation only becomes eligible for `owl:inverse-of` expansion once that
+    projection exists, and a transitively-derived fact may itself have an
+    inverse. This repeatedly expands the frontier (starting with
+    `fact_edges`, then whatever was newly synthesized last round) until a
+    round produces nothing new.
 
     A candidate is skipped once every individual atomic fact it asserts is
     already known — from an original fact edge, or from anything already
@@ -360,6 +451,13 @@ async def expand_edge_closure(
     from growing. Bounded by `max_iterations` as a belt-and-suspenders
     safety valve underneath that.
 
+    `_expand_transitive_relation` is checked once per distinct relation
+    seen across the frontier so far (memoized in `seen_relations`), not
+    per edge like `expand_edge` — it's a whole-relation computation, so
+    re-running it for every edge of the same relation would be redundant
+    (and, for a relation without the axiom, redundantly re-querying for
+    one that will never be there).
+
     Returns only the newly-synthesized (`_inferred: true`) edges, not the
     original `fact_edges`.
     """
@@ -369,6 +467,7 @@ async def expand_edge_closure(
 
     all_inferred: List[Dict[str, Any]] = []
     frontier = fact_edges
+    seen_relations: Set[str] = set()
 
     for _ in range(max_iterations):
         new_edges: List[Dict[str, Any]] = []
@@ -378,6 +477,16 @@ async def expand_edge_closure(
                 if not candidate_facts <= known_facts:  # at least one genuinely new fact
                     known_facts |= candidate_facts
                     new_edges.append(candidate)
+
+        frontier_relations = {e.get("relation") for e in frontier} - seen_relations
+        for relation in frontier_relations:
+            seen_relations.add(relation)
+            for candidate in await _expand_transitive_relation(relation, graph_ids, pit=pit):
+                candidate_facts = _atomic_facts(candidate)
+                if not candidate_facts <= known_facts:
+                    known_facts |= candidate_facts
+                    new_edges.append(candidate)
+
         if not new_edges:
             break
         all_inferred.extend(new_edges)
@@ -434,17 +543,8 @@ async def check_transitive(
     if mode == "bool":
         return end_id in reached
 
-    # mode == "path": follow predecessors backward from end_id to start_id
-    if end_id not in reached:
-        return []
-    path_edges: List[str] = []
-    node = end_id
-    while node != start_id:
-        edge_id, predecessor = reached[node]
-        path_edges.append(edge_id)
-        node = predecessor
-    path_edges.reverse()
-    return path_edges
+    # mode == "path"
+    return _reconstruct_path(reached, start_id, end_id)
 
 
 # ─── Materialization ──────────────────────────────────────────────────────────
@@ -538,7 +638,6 @@ async def project_inference(
     )
     from hgai.models.hyperedge import HyperedgeCreate
     from hgai.models.hypernode import HypernodeCreate
-    from hgai_module_storage.filters import HyperedgeSearchFilters
     from hgai.models.common import now_utc
 
     if mode not in ("expand", "transitive", "both"):
@@ -554,25 +653,7 @@ async def project_inference(
         candidates.extend(await expand_edge_closure(fact_edges, source_graph_ids, pit=pit))
 
     if mode in ("transitive", "both"):
-        if await get_axiom_edges(relation, "owl:transitive", source_graph_ids, pit=pit):
-            filters = HyperedgeSearchFilters(hypergraph_ids=source_graph_ids, relation=relation, pit=pit)
-            fact_edges = await get_storage().hyperedges.search(filters, skip=0, limit=5000)
-            subjects = {
-                s for e in fact_edges
-                for s, _o in atomic_pairs(e.get("members", []), e.get("flavor", "hub"))
-            }
-            for start_id in subjects:
-                reached = await walk_closure(start_id, relation, source_graph_ids, direction="forward", pit=pit)
-                for node_id, (edge_id, predecessor) in reached.items():
-                    if predecessor == start_id:
-                        continue  # 1-hop — already a literal edge
-                    candidates.append(_make_inferred_edge(
-                        relation=relation,
-                        members=[{"node_id": start_id, "seq": 0}, {"node_id": node_id, "seq": 1}],
-                        flavor="hub",
-                        source_edge=None,
-                        axiom=edge_id,
-                    ))
+        candidates.extend(await _expand_transitive_relation(relation, source_graph_ids, pit=pit))
 
     created, skipped, errors = 0, 0, 0
     created_edge_ids: List[str] = []

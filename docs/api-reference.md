@@ -183,6 +183,141 @@ Create a hypergraph.
 
 ---
 
+## Inference
+
+Direct programmatic access to the same reasoning engine wired into SHQL behind `infer: true` (`hgai/core/inference.py`) — useful for a single expansion/reachability answer without composing a full query. Everything here is computed live, at read time; nothing is persisted except `/project`.
+
+### POST /graphs/{graph_id}/infer/transitive
+
+Single-pair/closure/path reachability over a chain of literal fact edges of one relation. Self-gated on that relation actually carrying an `owl:transitive` axiom hyperedge.
+
+**Body:**
+```json
+{
+  "relation": "rel:parent",
+  "start_id": "andy-1",
+  "end_id": "andy-3",
+  "mode": "path"
+}
+```
+`mode`: `"bool"` (is `end_id` reachable — requires `end_id`), `"closure"` (every node reachable from `start_id`), or `"path"` (ordered chain of hyperedge ids — requires `end_id`).
+
+### POST /graphs/{graph_id}/infer/expand
+
+Axiom-driven expansion (`owl:inverse-of`/`owl:symmetric`/`skos:broaderTransitive`/`narrowerTransitive`/`owl:transitive`) of one specific hyperedge.
+
+**Body:**
+```json
+{ "edge_id": "edge-stooges-original" }
+```
+
+### POST /graphs/{graph_id}/infer/project
+
+Materialize inference results from source graph(s) into this (target) graph as ordinary, persisted hyperedges — the one write-capable inference operation. Safe to re-run: an unchanged source produces zero new edges.
+
+**Body:**
+```json
+{
+  "source_graph_ids": ["hello-world"],
+  "mode": "expand",
+  "relation": null,
+  "create_target": false,
+  "dry_run": false,
+  "only_new_hyperedges": false
+}
+```
+`mode`: `"expand"` (inverse-of/symmetric/superproperty/transitive closure), `"transitive"` (requires `relation`), or `"both"`.
+
+---
+
+## Notes
+
+Notes are a standalone, account-owned resource — not nested under any hypergraph — closer to a flat document (label, tags, Markdown text) than a hypernode. Visibility is controlled by ownership plus a per-note access-control list, not path-based scoping.
+
+### GET /notes
+
+List notes visible to the caller (owned, or shared via the note's ACL; admins see all).
+
+| Query Param | Type | Default | Description |
+|-------------|------|---------|-------------|
+| `tags` | string[] | - | Filter by tags |
+| `search` | string | - | Substring match against label or text |
+| `skip` | int | `0` | Pagination offset |
+| `limit` | int | `50` | Max results (max 200) |
+| `sort` | string | - | Comma-separated fields, `-` prefix = descending |
+
+### POST /notes
+
+**Body:**
+```json
+{ "label": "Meeting Notes", "name": "Optional subtitle", "text": "Markdown body", "tags": ["project-x"] }
+```
+
+### GET /notes/{note_id}
+### PUT /notes/{note_id}
+### DELETE /notes/{note_id}
+
+### GET /notes/{note_id}/share
+
+List accounts the note has been shared with and their role.
+
+### POST /notes/{note_id}/share
+
+Grant (or replace) one account's access.
+
+**Body:**
+```json
+{ "username": "alice", "role": "viewer" }
+```
+`role`: `"viewer"` or `"editor"`.
+
+### DELETE /notes/{note_id}/share/{username}
+
+Revoke an account's access.
+
+---
+
+## Media
+
+Binary file upload/download/delete — a standalone resource referenced by hypernodes/hyperedges via their `media` field, not graph-scoped.
+
+### GET /media
+
+| Query Param | Type | Default | Description |
+|-------------|------|---------|-------------|
+| `id` | string | - | Exact-match on media id |
+| `search` | string | - | Case-insensitive substring search across filename/name/label/description |
+| `content_type` | string | - | Filter by MIME type |
+| `status` | string | - | Filter by status |
+| `tags` | string[] | - | Filter by tags |
+| `skip` | int | `0` | Pagination offset |
+| `limit` | int | `50` | Max results (max 200) |
+| `sort` | string | - | Comma-separated fields, `-` prefix = descending |
+
+### POST /media
+
+Multipart file upload (`file` field).
+
+### GET /media/{media_id}
+
+Streams the file content.
+
+### PUT /media/{media_id}
+
+Update metadata (`filename`, `name`, `label`, `description`, `tags`, `status`).
+
+### DELETE /media/{media_id}
+
+### POST /media/sweep-orphaned
+
+Admin only — delete media with zero references from any hypernode/hyperedge.
+
+### POST /media/backfill-duration
+
+Admin only — compute and store `duration_seconds` for audio/video media missing it.
+
+---
+
 ## SHQL Query
 
 SHQL (Semantic Hypergraph Query Language) is a SPARQL-inspired, YAML-based pattern-matching language — `?variable` bindings, implicit joins across shared variables, multi-hop traversal, `OPTIONAL`/`UNION`, point-in-time queries, aggregation, and axiom-driven inferencing. See the [README's SHQL section](../README.md#shql--semantic-hypergraph-query-language) for the full language reference and a worked-example gallery.
@@ -353,6 +488,21 @@ http://localhost:8000/mcp/
 | `hgai_hyperedge_delete` | Delete a hyperedge |
 | `hgai_query_execute` | Execute an SHQL query |
 | `hgai_query_validate` | Validate an SHQL query |
+| `hgai_infer_expand_edge` | Axiom-driven expansion of one hyperedge |
+| `hgai_infer_check_transitive` | Single-pair/closure/path reachability over an `owl:transitive` relation |
+| `hgai_mesh_list` | List configured meshes |
+| `hgai_mesh_get` | Get a mesh's configuration |
+| `hgai_mesh_ping` | Check reachability of a mesh's servers |
+| `hgai_mesh_sync` | Sync graph listings from a mesh's servers |
+| `hgai_mesh_query` | Run an SHQL query against a remote mesh server |
+| `hgai_media_upload` | Upload a media file |
+| `hgai_media_download` | Download a media file |
+| `hgai_media_delete` | Delete a media file |
+| `hgai_space_list` | List spaces |
+| `hgai_space_get` | Get a space's details and members |
+| `hgai_space_create` | Create a space |
+| `hgai_space_add_member` | Add or update a space member |
+| `hgai_space_list_graphs` | List hypergraphs in a space |
 
 ---
 
