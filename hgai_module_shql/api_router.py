@@ -64,3 +64,44 @@ async def clear_cache(
     from hgai.core.cache import invalidate_cache
     count = await invalidate_cache(graph_id)
     return {"invalidated": count}
+
+
+class SHQLHistoryEntryRequest(BaseModel):
+    shql: str
+
+
+@router.get("/history")
+async def get_shql_history(
+    account: AccountInDB = Depends(get_current_account),
+):
+    """The caller's own last 50 submitted queries, newest first.
+
+    History is per-account (never shared) and server-side, so it follows
+    the account across browsers/devices and survives a server restart —
+    unlike the client-only localStorage list this replaced.
+    """
+    from .history import list_history
+    return {"items": await list_history(account.username)}
+
+
+@router.post("/history")
+async def add_shql_history_entry(
+    request: SHQLHistoryEntryRequest,
+    account: AccountInDB = Depends(get_current_account),
+):
+    """Record one submitted query. Called by the UI right when a query is
+    run, independent of whether it succeeds — this is a history of what
+    was *submitted*, not of what executed cleanly."""
+    from .history import add_history_entry
+    entry = await add_history_entry(account.username, request.shql)
+    return entry
+
+
+@router.delete("/history")
+async def clear_shql_history(
+    account: AccountInDB = Depends(get_current_account),
+):
+    """Delete all of the caller's own history entries."""
+    from .history import clear_history
+    count = await clear_history(account.username)
+    return {"deleted": count}

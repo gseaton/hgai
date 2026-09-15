@@ -137,4 +137,12 @@ async def ensure_indexes() -> None:
         IndexModel([("tags", ASCENDING)], name="tags"),
     ])
 
+    # ── shql_query_history ───────────────────────────────────────────────────
+    # See hgai_module_shql/history.py — module-owned collection (not part of
+    # the pluggable storage-backend abstraction), same pattern as query_cache.
+    await db["shql_query_history"].create_indexes([
+        IndexModel([("id", ASCENDING)], unique=True, name="id_unique"),
+        IndexModel([("username", ASCENDING), ("created_at", DESCENDING)], name="username_created_at"),
+    ])
+
     logger.info("MongoDB indexes ensured")

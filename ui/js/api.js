@@ -188,6 +188,9 @@ const HGAI_API = (() => {
   async function flushCache(graphId = null) {
     return request('POST', '/shql/cache/invalidate', null, graphId ? { graph_id: graphId } : {});
   }
+  async function listShqlHistory() { return request('GET', '/shql/history'); }
+  async function addShqlHistoryEntry(shql) { return request('POST', '/shql/history', { shql }); }
+  async function clearShqlHistory() { return request('DELETE', '/shql/history'); }
 
   // ── Accounts ──────────────────────────────────────────────────────────────
   async function listAccounts(params = {}) { return request('GET', '/accounts', null, params); }
@@ -248,6 +251,7 @@ const HGAI_API = (() => {
     uploadMedia, downloadMedia, deleteMedia, listMedia, updateMedia,
     // query (SHQL)
     runShqlQuery, validateShqlQuery, flushCache,
+    listShqlHistory, addShqlHistoryEntry, clearShqlHistory,
     // accounts
     listAccounts, getAccount, createAccount, updateAccount, deleteAccount,
     listAccountSpaces, assignAccountToSpace, removeAccountFromSpace,
