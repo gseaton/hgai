@@ -60,7 +60,74 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 
 /* ── Login ─────────────────────────────────────────────────────────────────── */
 /* Deliberately NOT theme-driven — a brand moment shown before any in-app
-   preference is relevant, kept visually constant across every theme. */
+   preference is relevant, kept visually constant across every theme. This
+   needs to be an actual reset, not just "happens not to reference a token
+   that varies": #screen-login's own Bootstrap-native children (form
+   controls, .text-muted, headings, the .btn-primary submit button) all
+   inherit or derive from the SAME global --bs-* variables the active
+   [data-bs-theme] just repointed — e.g. under a dark theme, --bs-body-color
+   becomes near-white, which every un-overridden heading/label inside this
+   still-hardcoded-white card would otherwise inherit, right into
+   invisibility. Re-declaring the base Light values here, scoped to the
+   #screen-login id (specificity high enough to beat any
+   [data-bs-theme="…"] descendant-selector override in themes.css
+   regardless of stylesheet order — see themes.css's own header comment),
+   makes that inheritance chain resolve back to Light unconditionally. */
+#screen-login {
+  /* Redefining the custom-property tokens below isn't enough on its own —
+     `color` is a plain inherited CSS property, and <body>'s own `color:
+     var(--bs-body-color)` was already resolved (to the active theme's
+     value) at the <body> element itself, an ANCESTOR of #screen-login, so
+     that literal value is what flows down by ordinary inheritance
+     regardless of what #screen-login redefines the token to afterward.
+     Explicitly setting `color` here forces it to be recomputed against
+     the corrected token at this boundary, so everything below (.text-
+     muted, headings via --bs-heading-color: inherit, form labels, …)
+     correctly inherits the Light value instead. */
+  color: var(--bs-body-color);
+  color-scheme: light;
+  --bs-body-color: #212529;
+  --bs-body-color-rgb: 33, 37, 41;
+  --bs-body-bg: #fff;
+  --bs-body-bg-rgb: 255, 255, 255;
+  --bs-emphasis-color: #000;
+  --bs-secondary-color: rgba(33, 37, 41, 0.75);
+  --bs-secondary-bg: #e9ecef;
+  --bs-tertiary-color: rgba(33, 37, 41, 0.5);
+  --bs-tertiary-bg: #f8f9fa;
+  --bs-border-color: #dee2e6;
+  --bs-border-color-translucent: rgba(0, 0, 0, 0.175);
+  --bs-link-color: #0d6efd;
+  --bs-link-color-rgb: 13, 110, 253;
+  --bs-link-hover-color: #0a58ca;
+  --bs-primary: #0d6efd;
+  --bs-primary-rgb: 13, 110, 253;
+  --bs-danger-text-emphasis: #58151c;
+  --bs-danger-bg-subtle: #f8d7da;
+  --bs-danger-border-subtle: #f1aeb5;
+  --hgai-primary: #4f46e5;
+  --hgai-primary-dark: #3730a3;
+  --hgai-primary-rgb: 79, 70, 229;
+}
+/* .btn-primary's own background/border are --bs-btn-* values fixed on the
+   class itself (not derived from --bs-primary at runtime) — every custom
+   theme's .btn-primary patch in themes.css therefore needs its own
+   counter-patch here too, not just the --bs-primary reset above. */
+#screen-login .btn-primary {
+  --bs-btn-color: #fff;
+  --bs-btn-bg: #0d6efd;
+  --bs-btn-border-color: #0d6efd;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: #0b5ed7;
+  --bs-btn-hover-border-color: #0a58ca;
+  --bs-btn-focus-shadow-rgb: 49, 132, 253;
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: #0a58ca;
+  --bs-btn-active-border-color: #0a53be;
+  --bs-btn-disabled-color: #fff;
+  --bs-btn-disabled-bg: #0d6efd;
+  --bs-btn-disabled-border-color: #0d6efd;
+}
 .screen-full {
   position: fixed; inset: 0;
   background: linear-gradient(135deg, #0f0f1a 0%, #1e1b4b 50%, #0f0f1a 100%);

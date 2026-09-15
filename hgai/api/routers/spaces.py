@@ -1,5 +1,6 @@
 """Spaces CRUD, membership, and space-scoped graph/node/edge API endpoints."""
 
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -329,11 +330,13 @@ async def list_space_edges(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=500),
     sort: Optional[str] = Query(default=None, description=f"Comma-separated fields, '-' prefix = descending. Allowed: {sorted(EDGE_SORT_FIELDS)}"),
+    pit: Optional[datetime] = Query(default=None, description="Point-in-time filter — only edges valid at this instant (valid_from <= pit <= valid_to) are returned"),
     account: AccountInDB = Depends(require_graph_access("read")),
 ):
     total, edges = await engine.list_hyperedges(
         graph_id, relation=relation, flavor=flavor, status=status,
         tags=tags, node_id=node_id, skip=skip, limit=limit, space_id=space_id,
+        pit=pit,
         sort=parse_sort_param(sort, EDGE_SORT_FIELDS),
     )
     return PaginatedResponse(total=total, skip=skip, limit=limit, items=[e.model_dump() for e in edges])

@@ -532,6 +532,15 @@
                 <input type="text" id="viz-search" class="form-control form-control-sm" placeholder="Filter by label..." style="width:180px"/>
               </div>
               <div class="col-auto">
+                <label class="form-label small mb-1" title="Only hyperedges valid at this instant (valid_from &le; at &le; valid_to) are rendered. Hypernodes are never filtered by this — they always render regardless of their own valid_from/valid_to.">At (point-in-time)</label>
+                <div class="input-group input-group-sm" style="width:220px">
+                  <input type="datetime-local" id="viz-at-datetime" class="form-control" step="1"/>
+                  <button class="btn btn-outline-secondary" id="btn-viz-at-clear" title="Clear — show current/all-time state">
+                    <i class="bi bi-x-lg"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="col-auto">
                 <label class="form-label small mb-1">Focus <span class="text-muted fw-normal">— show only this element's neighborhood</span></label>
                 <div class="input-group input-group-sm" style="width:280px">
                   <input type="text" id="viz-focus-id" class="form-control" placeholder="hyperedge/hypernode id..."/>

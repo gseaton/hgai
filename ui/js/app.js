@@ -3011,14 +3011,26 @@ function initViz3D() {
   }
 }
 
-async function fetchGraphElements(graphId) {
+// The `#viz-at-datetime` value (a `datetime-local` input's own
+// "YYYY-MM-DDTHH:mm:ss" string, no timezone) or undefined if unset — a
+// naive datetime string the backend's `pit` query param / SHQL `at:`
+// already parse elsewhere (e.g. hyperedge valid_from/valid_to), same
+// format, no conversion needed.
+function vizGetPit() {
+  return document.getElementById('viz-at-datetime').value || undefined;
+}
+
+async function fetchGraphElements(graphId, pit) {
   const spaceId = graphSpaceId(graphId);
   const status = document.getElementById('viz-status-filter').value || undefined;
   const [nodesResp, edgesResp] = await Promise.all([
+    // Point-in-time is deliberately NOT passed here — hypernodes are never
+    // filtered by their own valid_from/valid_to for rendering, only
+    // hyperedges are.
     spaceId ? HGAI_API.listSpaceNodes(spaceId, graphId, { limit: VIZ_FETCH_LIMIT, status })
             : HGAI_API.listNodes(graphId, { limit: VIZ_FETCH_LIMIT, status }),
-    spaceId ? HGAI_API.listSpaceEdges(spaceId, graphId, { limit: VIZ_FETCH_LIMIT })
-            : HGAI_API.listEdges(graphId, { limit: VIZ_FETCH_LIMIT }),
+    spaceId ? HGAI_API.listSpaceEdges(spaceId, graphId, { limit: VIZ_FETCH_LIMIT, pit })
+            : HGAI_API.listEdges(graphId, { limit: VIZ_FETCH_LIMIT, pit }),
   ]);
   return {
     nodes: nodesResp.items || [], nodesTotal: nodesResp.total || 0,
@@ -3039,8 +3051,9 @@ async function fetchGraphElements(graphId) {
 // A connected to B", a targeted question with an explicit start/end pair,
 // not "show me everything," so it doesn't fit a whole-graph visualization
 // toggle the way axiom expansion does. Use Query (SHQL) for that.
-async function fetchInferredEdges(graphId) {
-  const shql = `shql:\n  from: ${graphId}\n  infer: true\n  where:\n    - edge: ?edge\n  select:\n    - ?edge\n`;
+async function fetchInferredEdges(graphId, pit) {
+  const atLine = pit ? `  at: "${pit}"\n` : '';
+  const shql = `shql:\n  from: ${graphId}\n${atLine}  infer: true\n  where:\n    - edge: ?edge\n  select:\n    - ?edge\n`;
   const result = await HGAI_API.runShqlQuery(shql, false);
   return (result.items || [])
     .map(row => row.edge)
@@ -3167,16 +3180,18 @@ async function renderViz() {
   let focusVizNodeId = null;
   let focusFound = false;
 
+  const pit = vizGetPit();
+
   try {
     // Phase 1: fetch every selected graph's own raw data.
     const graphData = new Map(); // gid -> { rawNodes, edges, nodeIdSet, hedgeIdSet }
     for (const gid of graphIds) {
-      let { nodes: rawNodes, edges, nodesTotal, edgesTotal } = await fetchGraphElements(gid);
+      let { nodes: rawNodes, edges, nodesTotal, edgesTotal } = await fetchGraphElements(gid, pit);
       if (rawNodes.length < nodesTotal || edges.length < edgesTotal) truncated = true;
 
       if (document.getElementById('viz-show-inferred').checked) {
         try {
-          edges = edges.concat(await fetchInferredEdges(gid));
+          edges = edges.concat(await fetchInferredEdges(gid, pit));
         } catch (err) {
           toast(`Inferred edges unavailable for '${gid}': ${err.message}`, 'warning');
         }
@@ -3597,6 +3612,9 @@ function vizStopAutoRotate() {
 document.getElementById('btn-viz-render').addEventListener('click', renderViz);
 document.getElementById('btn-viz-fit').addEventListener('click', () => State.viz3d?.zoomToFit(600, 60));
 document.getElementById('btn-viz-clear').addEventListener('click', vizClear);
+document.getElementById('btn-viz-at-clear').addEventListener('click', () => {
+  document.getElementById('viz-at-datetime').value = '';
+});
 
 // Collapsing the Element Details panel frees its column width for the 3D
 // canvas (which uses a flexible `col`, not a fixed `col-md-9`, specifically
