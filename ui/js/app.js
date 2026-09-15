@@ -206,6 +206,71 @@ document.getElementById('btn-logout').addEventListener('click', e => {
   location.reload();
 });
 
+// ── Theme ─────────────────────────────────────────────────────────────────
+// Bootstrap 5.3's own color-mode mechanism (`data-bs-theme` on <html>) is
+// what actually drives this — Light and Dark are its two built-in modes,
+// each with a full set of `--bs-*` variable overrides already shipped in
+// bootstrap.min.css. High Contrast and Bumble are added the same way
+// Bootstrap's own docs describe for any *custom* mode: css/themes.css
+// defines a `[data-bs-theme="<id>"]` block that overrides those same
+// `--bs-*` variables (so Bootstrap's own components — buttons, cards,
+// modals, tables, dropdowns — reskin for free) plus this app's own
+// `--hgai-*` tokens (for the custom chrome hgai.css defines: sidebar,
+// topbar, stat cards, query editor, viz legend, etc).
+//
+// Adding a new theme in the future needs exactly two changes, nowhere else:
+//   1. A `[data-bs-theme="<id>"] { --bs-...: ...; --hgai-...: ...; }` block
+//      in css/themes.css — copy an existing one as a starting point.
+//   2. One entry in HGAI_THEMES below.
+// The switcher menu (built from this list, not hardcoded HTML), the saved
+// preference, and the SHQL editor's CodeMirror theme are all driven off
+// this one registry.
+const THEME_STORAGE_KEY = 'hgai-theme'; // must match the inline anti-FOUC script in index.html <head>
+const HGAI_THEMES = [
+  { id: 'light', label: 'Light', icon: 'bi-sun-fill', cmTheme: 'eclipse' },
+  { id: 'dark', label: 'Dark', icon: 'bi-moon-stars-fill', cmTheme: 'dracula' },
+  // Custom CodeMirror themes (cm-s-hgai-contrast / cm-s-bumble) live in
+  // css/themes.css, following CodeMirror's own standard theming
+  // convention (https://codemirror.net/5/demo/theme.html) — authored
+  // in-house rather than an off-the-shelf package so their palettes
+  // exactly match these two app themes' own (a published community theme
+  // close to "black background, white/grey text, orange+yellow accents"
+  // invariably also drags in blues/greens/purples that don't belong here).
+  { id: 'high-contrast', label: 'High Contrast', icon: 'bi-circle-half', cmTheme: 'hgai-contrast' },
+  { id: 'bumble', label: 'Bumble', icon: 'bi-lightning-charge-fill', cmTheme: 'bumble' },
+];
+
+function getSavedTheme() {
+  try { return localStorage.getItem(THEME_STORAGE_KEY); } catch { return null; }
+}
+
+function applyTheme(id) {
+  const theme = HGAI_THEMES.find(t => t.id === id) || HGAI_THEMES[0];
+  document.documentElement.setAttribute('data-bs-theme', theme.id);
+  try { localStorage.setItem(THEME_STORAGE_KEY, theme.id); } catch { /* localStorage unavailable — choice just won't persist */ }
+  if (_shqlEditorCM) _shqlEditorCM.setOption('theme', theme.cmTheme);
+  document.querySelectorAll('#theme-switcher-menu [data-theme-id]').forEach(item => {
+    item.classList.toggle('active', item.dataset.themeId === theme.id);
+  });
+}
+
+function initThemeSwitcher() {
+  const menu = document.getElementById('theme-switcher-menu');
+  menu.innerHTML = '';
+  HGAI_THEMES.forEach(theme => {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'dropdown-item d-flex align-items-center gap-2';
+    btn.dataset.themeId = theme.id;
+    btn.innerHTML = `<i class="bi ${theme.icon}"></i> ${theme.label}`;
+    btn.addEventListener('click', () => applyTheme(theme.id));
+    li.appendChild(btn);
+    menu.appendChild(li);
+  });
+  applyTheme(getSavedTheme() || 'light');
+}
+
 document.getElementById('btn-confirm-delete').addEventListener('click', () => {
   if (State.confirmCallback) {
     State.confirmCallback();
@@ -3764,9 +3829,10 @@ let _shqlEditorCM = null;
 function initShqlEditor() {
   if (_shqlEditorCM) return;
   const ta = document.getElementById('shql-editor');
+  const activeTheme = HGAI_THEMES.find(t => t.id === getSavedTheme()) || HGAI_THEMES[0];
   _shqlEditorCM = CodeMirror.fromTextArea(ta, {
     mode: 'yaml',
-    theme: 'dracula',
+    theme: activeTheme.cmTheme,
     lineNumbers: true,
     lineWrapping: true,
     indentUnit: 2,
@@ -4699,4 +4765,5 @@ document.getElementById('btn-flush-cache').addEventListener('click', async () =>
 });
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
+initThemeSwitcher();
 initApp();

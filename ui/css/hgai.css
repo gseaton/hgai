@@ -1,22 +1,66 @@
-/* HypergraphAI UI Stylesheet */
+/* HypergraphAI UI Stylesheet
+ *
+ * Color values below are almost all `var(--hgai-*)` custom-chrome tokens or
+ * `var(--bs-*)` Bootstrap tokens, not literal colors — this is what lets
+ * css/themes.css reskin the whole app per `data-bs-theme` value without
+ * touching this file. See css/themes.css's own header comment for the full
+ * token contract and how to add a new theme.
+ */
 
 :root {
   --hgai-primary: #4f46e5;
   --hgai-primary-dark: #3730a3;
+  --hgai-primary-rgb: 79, 70, 229;
   --hgai-sidebar-width: 240px;
   --hgai-sidebar-bg: #0f0f1a;
   --hgai-sidebar-text: #c9c9e3;
-  --hgai-sidebar-hover: rgba(79,70,229,0.15);
-  --hgai-sidebar-active: rgba(79,70,229,0.3);
+  --hgai-sidebar-hover: rgba(79, 70, 229, 0.15);
+  --hgai-sidebar-active: rgba(79, 70, 229, 0.3);
+  --hgai-sidebar-border: rgba(255, 255, 255, 0.08);
   --hgai-topbar-height: 56px;
   --hgai-bg: #f0f2f9;
+  --hgai-surface: #ffffff;
+  --hgai-surface-alt: #f9fafb;
+  --hgai-border: #e5e7eb;
+  --hgai-border-strong: #d1d5db;
+  --hgai-text: #111827;
+  --hgai-text-muted: #6b7280;
+  --hgai-text-subtle: #374151;
+  --hgai-text-faint: #9ca3af;
+  /* Reuses Bootstrap's own "subtle danger" tokens (already theme-aware —
+     Bootstrap redefines them under [data-bs-theme=dark] itself) instead of
+     a separate hgai-only set; themes.css only needs to add these for the
+     two modes Bootstrap doesn't know about, high-contrast and bumble. */
+  --hgai-danger: var(--bs-danger-text-emphasis);
+  --hgai-danger-bg: var(--bs-danger-bg-subtle);
+  --hgai-danger-border: var(--bs-danger-border-subtle);
+  /* JSON syntax highlighting (result panes) — these panes (#shql-result-area,
+     .node-attributes-editor, note code blocks) are deliberately always-dark
+     regardless of the active app theme (like a terminal/code pane in most
+     IDEs), so this Dracula-inspired palette is calibrated against a dark
+     background unconditionally, not swapped for Light/Dark/High Contrast —
+     only Bumble retunes it, to keep its own dark panes on-palette too. */
+  --hgai-json-key: #f1fa8c;
+  --hgai-json-string: #50fa7b;
+  --hgai-json-number: #bd93f9;
+  --hgai-json-bool: #ff79c6;
+  /* Per-entity modal header accent (blends into --hgai-surface at 65%) and
+     matching bottom border — see the Modal sections below. */
+  --hgai-modal-accent-node: #f0fdf4;
+  --hgai-modal-border-node: #d1fae5;
+  --hgai-modal-accent-graph: #eff6ff;
+  --hgai-modal-border-graph: #bfdbfe;
+  --hgai-modal-accent-edge: #ecfeff;
+  --hgai-modal-border-edge: #a5f3fc;
 }
 
 /* ── Global ────────────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; }
-body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--hgai-bg); }
+body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--hgai-bg); color: var(--bs-body-color); }
 
 /* ── Login ─────────────────────────────────────────────────────────────────── */
+/* Deliberately NOT theme-driven — a brand moment shown before any in-app
+   preference is relevant, kept visually constant across every theme. */
 .screen-full {
   position: fixed; inset: 0;
   background: linear-gradient(135deg, #0f0f1a 0%, #1e1b4b 50%, #0f0f1a 100%);
@@ -75,7 +119,7 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
   align-items: center;
   gap: 10px;
   padding: 16px 16px 12px;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  border-bottom: 1px solid var(--hgai-sidebar-border);
   text-decoration: none;
   color: #fff;
 }
@@ -118,7 +162,7 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 .sidebar-footer {
   margin-top: auto;
   padding: 8px 0;
-  border-top: 1px solid rgba(255,255,255,0.08);
+  border-top: 1px solid var(--hgai-sidebar-border);
 }
 .sidebar-user {
   display: flex; align-items: center; gap: 10px;
@@ -139,8 +183,8 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 /* ── Topbar ────────────────────────────────────────────────────────────────── */
 #topbar {
   height: var(--hgai-topbar-height);
-  background: #fff;
-  border-bottom: 1px solid #e5e7eb;
+  background: var(--hgai-surface);
+  border-bottom: 1px solid var(--hgai-border);
   display: flex;
   align-items: center;
   padding: 0 20px;
@@ -166,25 +210,29 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 
 /* ── Stat Cards ────────────────────────────────────────────────────────────── */
 .stat-card {
-  background: #fff;
+  background: var(--hgai-surface);
   border-radius: 12px;
   padding: 20px;
   text-align: center;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--hgai-border);
 }
 .stat-icon { font-size: 2rem; margin-bottom: 8px; }
-.stat-value { font-size: 2rem; font-weight: 700; line-height: 1; color: #111; }
-.stat-label { font-size: 0.8rem; color: #6b7280; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+.stat-value { font-size: 2rem; font-weight: 700; line-height: 1; color: var(--hgai-text); }
+.stat-label { font-size: 0.8rem; color: var(--hgai-text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
 
 /* ── Cards ─────────────────────────────────────────────────────────────────── */
-.card { border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-.card-header { background: #f9fafb; border-bottom: 1px solid #e5e7eb; font-size: 0.9rem; border-radius: 12px 12px 0 0 !important; }
+/* .card's own background already tracks the theme dynamically via
+   Bootstrap's --bs-card-bg (derived from --bs-body-bg) — only border/shadow
+   need a custom override here, so border-color (not the `border` shorthand,
+   which would blot out --bs-card-border-color entirely) is all that's set. */
+.card { border-color: var(--hgai-border); border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.card-header { background: var(--hgai-surface-alt); border-bottom: 1px solid var(--hgai-border); font-size: 0.9rem; border-radius: 12px 12px 0 0 !important; }
 
 /* ── Tables ────────────────────────────────────────────────────────────────── */
 .table { font-size: 0.875rem; }
-.table th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; font-weight: 600; background: #f9fafb; }
-.table-hover tbody tr:hover { background: #f0f4ff; cursor: pointer; }
+.table th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--hgai-text-muted); font-weight: 600; background: var(--hgai-surface-alt); }
+.table-hover tbody tr:hover { background: var(--hgai-surface-alt); cursor: pointer; }
 
 /* ── Sortable table headers ───────────────────────────────────────────────── */
 .sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
@@ -202,6 +250,11 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 }
 
 /* ── Badges ────────────────────────────────────────────────────────────────── */
+/* Kept as fixed, colorful pastel-on-dark-text chips across every theme (the
+   same convention GitHub/Linear-style labels use) — they read fine
+   regardless of the surrounding page background. High Contrast overrides
+   them anyway, below, since low-contrast pastel combinations are exactly
+   what that theme exists to avoid. */
 .badge-status-active { background: #d1fae5; color: #065f46; }
 .badge-status-draft { background: #fef3c7; color: #92400e; }
 .badge-status-archived { background: #f3f4f6; color: #6b7280; }
@@ -212,7 +265,7 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 /* ── Member Row ────────────────────────────────────────────────────────────── */
 .member-row {
   display: flex; gap: 8px; align-items: center;
-  background: #f9fafb; border: 1px solid #e5e7eb;
+  background: var(--hgai-surface-alt); border: 1px solid var(--hgai-border);
   border-radius: 8px; padding: 8px; margin-bottom: 6px;
 }
 .member-row .member-seq { width: 60px; flex-shrink: 0; }
@@ -221,7 +274,7 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 /* ── Media Item ────────────────────────────────────────────────────────────── */
 .media-item {
   display: flex; gap: 8px; align-items: center;
-  background: #f9fafb; border: 1px solid #e5e7eb;
+  background: var(--hgai-surface-alt); border: 1px solid var(--hgai-border);
   border-radius: 8px; padding: 6px 10px; margin-bottom: 6px;
 }
 .media-item.media-item-default {
@@ -230,25 +283,25 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 
 .table-thumb {
   width: 32px; height: 32px; object-fit: cover; border-radius: 6px;
-  vertical-align: middle; background: #f0f2f9;
+  vertical-align: middle; background: var(--hgai-bg);
 }
 .media-item .media-item-text {
   flex: 1; min-width: 0; display: flex; flex-direction: column;
 }
 .media-item .media-item-name {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 0.85rem; color: #374151;
+  font-size: 0.85rem; color: var(--hgai-text-subtle);
 }
 .media-item .media-item-subname {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 0.72rem; color: #9ca3af;
+  font-size: 0.72rem; color: var(--hgai-text-faint);
 }
-.media-item-empty { color: #9ca3af; font-size: 0.85rem; padding: 4px 2px; }
+.media-item-empty { color: var(--hgai-text-faint); font-size: 0.85rem; padding: 4px 2px; }
 
 .media-preview-body { min-height: 120px; display: flex; align-items: center; justify-content: center; }
 .media-preview-body img, .media-preview-body video { max-width: 100%; max-height: 70vh; border-radius: 6px; }
 .media-preview-body audio { width: 100%; }
-.media-preview-inline { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; text-align: center; }
+.media-preview-inline { background: var(--hgai-surface-alt); border: 1px solid var(--hgai-border); border-radius: 8px; padding: 10px; text-align: center; }
 .media-preview-inline:empty { display: none; }
 .media-preview-inline img, .media-preview-inline video { max-width: 100%; max-height: 260px; border-radius: 6px; }
 .media-preview-inline audio { width: 100%; }
@@ -264,21 +317,20 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 
 /* ── Query Examples ────────────────────────────────────────────────────────── */
 .query-example-card {
-  background: #f9fafb; border: 1px solid #e5e7eb;
+  background: var(--hgai-surface-alt); border: 1px solid var(--hgai-border);
   border-radius: 8px; padding: 12px; margin-bottom: 12px; cursor: pointer;
   transition: border-color 0.15s;
 }
-.query-example-card:hover { border-color: var(--hgai-primary); background: #f0f4ff; }
+.query-example-card:hover { border-color: var(--hgai-primary); background: rgba(var(--hgai-primary-rgb), 0.08); }
 .query-example-card .example-title { font-weight: 600; font-size: 0.85rem; margin-bottom: 4px; }
-.query-example-card pre { font-size: 0.75rem; margin: 0; background: transparent; padding: 0; color: #374151; }
+.query-example-card pre { font-size: 0.75rem; margin: 0; background: transparent; padding: 0; color: var(--hgai-text-subtle); }
 
 /* ── JSON syntax highlighting (result panes) ───────────────────────────────── */
-/* Dracula-inspired palette to match the CodeMirror theme */
-.json-key     { color: #f1fa8c; }   /* yellow  — object keys   */
-.json-string  { color: #50fa7b; }   /* green   — string values */
-.json-number  { color: #bd93f9; }   /* purple  — numbers       */
-.json-bool    { color: #ff79c6; }   /* pink    — true / false  */
-.json-null    { color: #ff79c6; }   /* pink    — null          */
+.json-key     { color: var(--hgai-json-key); }
+.json-string  { color: var(--hgai-json-string); }
+.json-number  { color: var(--hgai-json-number); }
+.json-bool    { color: var(--hgai-json-bool); }
+.json-null    { color: var(--hgai-json-bool); }
 
 /* ── Clickable ID cells in list tables ─────────────────────────────────────── */
 .table-id-link { cursor: pointer; }
@@ -327,8 +379,8 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 /* ── Hypernode Editor Modal ────────────────────────────────────────────────── */
 .node-modal-header {
   padding: 18px 24px;
-  background: linear-gradient(160deg, #f0fdf4 0%, #ffffff 65%);
-  border-bottom: 1px solid #d1fae5;
+  background: linear-gradient(160deg, var(--hgai-modal-accent-node) 0%, var(--hgai-surface) 65%);
+  border-bottom: 1px solid var(--hgai-modal-border-node);
 }
 
 .modal-entity-badge {
@@ -346,7 +398,7 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 
 .modal-entity-subtitle {
   font-size: 0.76rem;
-  color: #6b7280;
+  color: var(--hgai-text-muted);
   margin-top: 2px;
 }
 
@@ -355,7 +407,7 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 /* Form sections */
 .node-form-section {
   padding: 18px 24px;
-  border-bottom: 1px solid #f0f2f9;
+  border-bottom: 1px solid var(--hgai-bg);
 }
 .node-form-section-last {
   border-bottom: none;
@@ -369,7 +421,7 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: #374151;
+  color: var(--hgai-text-subtle);
   margin-bottom: 14px;
 }
 .node-form-section-hint {
@@ -377,23 +429,24 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
   text-transform: none;
   letter-spacing: 0;
   font-size: 0.76rem;
-  color: #b0b7c3;
+  color: var(--hgai-text-faint);
 }
 
 /* Bold field labels inside the node modal */
 #modal-node .form-label {
   font-weight: 600;
-  color: #111827;
+  color: var(--hgai-text);
 }
 
 /* Graph display field (edit mode) */
 .node-graph-display-field {
-  background: #f9fafb;
-  color: #6b7280;
+  background: var(--hgai-surface-alt);
+  color: var(--hgai-text-muted);
   font-size: 0.845rem;
 }
 
-/* Attributes JSON editor — dark code theme */
+/* Attributes JSON editor — dark code theme, always (see JSON syntax
+   highlighting comment above for why these panes stay theme-independent). */
 .node-attributes-editor {
   background: #1a1b2e;
   color: #f8f8f2;
@@ -409,7 +462,7 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
   background: #1a1b2e;
   color: #f8f8f2;
   border-color: var(--hgai-primary);
-  box-shadow: 0 0 0 3px rgba(79,70,229,0.15);
+  box-shadow: 0 0 0 3px rgba(var(--hgai-primary-rgb), 0.15);
   outline: none;
 }
 
@@ -418,8 +471,8 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 .graph-modal-footer,
 .edge-modal-footer {
   padding: 14px 24px;
-  background: #f9fafb;
-  border-top: 1px solid #e5e7eb;
+  background: var(--hgai-surface-alt);
+  border-top: 1px solid var(--hgai-border);
   display: flex;
   gap: 10px;
   justify-content: flex-end;
@@ -428,8 +481,8 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 /* ── Hypergraph Modal ──────────────────────────────────────────────────────── */
 .graph-modal-header {
   padding: 18px 24px;
-  background: linear-gradient(160deg, #eff6ff 0%, #ffffff 65%);
-  border-bottom: 1px solid #bfdbfe;
+  background: linear-gradient(160deg, var(--hgai-modal-accent-graph) 0%, var(--hgai-surface) 65%);
+  border-bottom: 1px solid var(--hgai-modal-border-graph);
 }
 .modal-entity-badge-graph {
   background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
@@ -437,7 +490,7 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
   box-shadow: 0 4px 12px rgba(79,70,229,0.28);
 }
 #modal-graph .modal-body { padding: 0; }
-#modal-graph .form-label { font-weight: 600; color: #111827; }
+#modal-graph .form-label { font-weight: 600; color: var(--hgai-text); }
 
 /* ── Visualize ─────────────────────────────────────────────────────────────── */
 /* Without this, the flex item's "automatic minimum size" defaults to its
@@ -454,6 +507,10 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
   width: 48px !important;
 }
 #viz-details-col.viz-details-collapsed .card-header { justify-content: center; padding: 8px 4px; }
+/* The 3D canvas itself is deliberately always-dark regardless of app theme
+   (same reasoning as the JSON/code panes above) — it maximizes contrast for
+   node/edge/label rendering the way most graph-visualization tools do, and
+   the labels/legend styles immediately below are calibrated against it. */
 #viz-cy-wrapper { background: #0f0f1a; overflow: hidden; min-height: 300px; }
 #viz-canvas { width: 100%; height: 100%; }
 #viz-canvas canvas { display: block; }
@@ -506,9 +563,11 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 }
 .viz-empty-state i { font-size: 2.5rem; }
 .viz-empty-state p { max-width: 280px; margin: 0; font-size: 0.85rem; }
+/* The legend sits below the (always-dark) canvas, in ordinary app chrome —
+   unlike the canvas overlays above, it does track the active theme. */
 .viz-legend {
   display: flex; flex-wrap: wrap; gap: 6px 14px;
-  padding: 10px 4px 0; font-size: 0.75rem; color: #374151;
+  padding: 10px 4px 0; font-size: 0.75rem; color: var(--hgai-text-subtle);
 }
 .viz-legend-item {
   display: flex; align-items: center; gap: 5px; cursor: pointer;
@@ -524,8 +583,8 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 /* ── Hyperedge Modal ───────────────────────────────────────────────────────── */
 .edge-modal-header {
   padding: 18px 24px;
-  background: linear-gradient(160deg, #ecfeff 0%, #ffffff 65%);
-  border-bottom: 1px solid #a5f3fc;
+  background: linear-gradient(160deg, var(--hgai-modal-accent-edge) 0%, var(--hgai-surface) 65%);
+  border-bottom: 1px solid var(--hgai-modal-border-edge);
 }
 .modal-entity-badge-edge {
   background: linear-gradient(135deg, #0891b2 0%, #06b6d4 100%);
@@ -533,7 +592,7 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
   box-shadow: 0 4px 12px rgba(8,145,178,0.28);
 }
 #modal-edge .modal-body { padding: 0; }
-#modal-edge .form-label { font-weight: 600; color: #111827; }
+#modal-edge .form-label { font-weight: 600; color: var(--hgai-text); }
 
 /* ── Note Editor: resizable modal window ─────────────────────────────────────
    Native CSS resize (not a custom drag handle) — a browser-rendered grip
@@ -562,8 +621,8 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 /* ── Note Editor: Browse/Edit/Preview mode bar ──────────────────────────────── */
 .note-mode-bar {
   padding: 10px 24px;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
+  background: var(--hgai-surface-alt);
+  border-bottom: 1px solid var(--hgai-border);
 }
 #note-browse-view { padding-top: 20px; }
 #note-browse-label { font-weight: 700; }
@@ -573,13 +632,13 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
   min-height: 280px;
   max-height: 480px;
   overflow-y: auto;
-  background: #fff;
-  border: 1px solid #d1d5db;
+  background: var(--hgai-surface);
+  border: 1px solid var(--hgai-border-strong);
   border-radius: 8px;
   padding: 16px 18px;
 }
 .note-preview-pane img { max-width: 100%; border-radius: 6px; }
-.note-preview-pane img.note-embed-loading { min-height: 40px; min-width: 60px; background: #f3f4f6; }
+.note-preview-pane img.note-embed-loading { min-height: 40px; min-width: 60px; background: var(--hgai-surface-alt); }
 .note-preview-pane pre { background: #1a1b2e; color: #f8f8f2; padding: 10px 12px; border-radius: 6px; overflow-x: auto; }
 .note-preview-pane :last-child { margin-bottom: 0; }
 /* GFM task list items (`- [ ] foo`): marked's default output is a bare
@@ -607,15 +666,15 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
   vertical-align: middle;
 }
 .note-link-broken {
-  color: #b91c1c;
+  color: var(--hgai-danger);
   text-decoration: underline dotted;
   cursor: help;
 }
 .note-embed-broken {
   display: inline-block;
-  color: #b91c1c;
-  background: #fef2f2;
-  border: 1px dashed #fca5a5;
+  color: var(--hgai-danger);
+  background: var(--hgai-danger-bg);
+  border: 1px dashed var(--hgai-danger-border);
   border-radius: 6px;
   padding: 2px 8px;
   font-size: 0.85em;
@@ -625,7 +684,7 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 .note-share-row {
   display: flex; align-items: center; gap: 8px;
   padding: 6px 10px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--hgai-border);
   border-radius: 6px;
   margin-bottom: 6px;
 }
@@ -643,8 +702,8 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 .notes-folder-sidebar {
   flex: 0 0 var(--notes-sidebar-width);
   width: var(--notes-sidebar-width);
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--hgai-surface);
+  border: 1px solid var(--hgai-border);
   border-radius: 8px 0 0 8px;
   padding: 12px;
   max-height: calc(100vh - 200px);
@@ -667,7 +726,7 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
   flex-shrink: 0;
   width: 6px;
   align-self: stretch;
-  background: #e5e7eb;
+  background: var(--hgai-border);
   cursor: col-resize;
   position: sticky;
   top: 0;
@@ -702,7 +761,7 @@ body.notes-sidebar-resizing {
   list-style: none;
 }
 .notes-folder-node > details > summary.notes-folder-label::-webkit-details-marker { display: none; }
-.notes-folder-node > details > summary.notes-folder-label:hover { background: #f3f4f6; }
+.notes-folder-node > details > summary.notes-folder-label:hover { background: var(--hgai-surface-alt); }
 
 /* Icon swap is pure CSS, keyed off <details>'s native [open] attribute —
    no JS listener needed just to flip which icon shows. */
@@ -718,12 +777,12 @@ details[open] > summary.notes-folder-label > .notes-folder-icon-open { display: 
   white-space: nowrap;
 }
 .notes-folder-note-item a {
-  color: #374151;
+  color: var(--hgai-text-subtle);
   font-size: 0.82rem;
   text-decoration: none;
   cursor: pointer;
 }
 .notes-folder-note-item a:hover { color: var(--hgai-primary, #4f46e5); text-decoration: underline; }
-.notes-folder-note-meta { color: #9ca3af; font-size: 0.72rem; }
+.notes-folder-note-meta { color: var(--hgai-text-faint); font-size: 0.72rem; }
 
-.notes-folder-empty { color: #9ca3af; font-size: 0.85rem; padding: 4px 2px; }
+.notes-folder-empty { color: var(--hgai-text-faint); font-size: 0.85rem; padding: 4px 2px; }

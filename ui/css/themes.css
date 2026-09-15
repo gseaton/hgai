@@ -1,0 +1,320 @@
+/* HypergraphAI color themes
+ * ==========================
+ *
+ * Mechanism: Bootstrap 5.3's own color-mode feature — a `data-bs-theme="…"`
+ * attribute on <html>, which CSS attribute-selectors below key off. Light
+ * and Dark are Bootstrap's own two built-in modes (bootstrap.min.css already
+ * ships a full `[data-bs-theme=dark]` override block for its own `--bs-*`
+ * variables — nothing below duplicates that; the [data-bs-theme="dark"]
+ * block here only adds this app's OWN `--hgai-*` custom-chrome tokens).
+ * High Contrast and Bumble are added the exact way Bootstrap's own docs
+ * describe for any custom mode beyond light/dark: define the block of
+ * `--bs-*` variables Bootstrap's dark mode itself overrides (see the
+ * shape below — it mirrors that block one-for-one), so every native
+ * Bootstrap component (buttons, cards, tables, modals, dropdowns, forms)
+ * reskins for free, plus this app's own `--hgai-*` tokens for its custom
+ * chrome (sidebar, topbar, query editor, viz legend, etc — see hgai.css).
+ *
+ * ── Adding a new theme ──────────────────────────────────────────────────
+ * 1. Copy the [data-bs-theme="bumble"] block below (it's the fullest
+ *    example, custom accent color included) and change the id + values.
+ * 2. If the theme needs its own CodeMirror syntax colors (i.e. an existing
+ *    community CodeMirror theme — https://codemirror.net/5/demo/theme.html
+ *    — doesn't already fit), add a `.cm-s-<id>` block following the
+ *    `.cm-s-hgai-contrast` example at the bottom of this file — that's
+ *    CodeMirror's own standard theming convention, just authored in-house.
+ * 3. Add one entry to HGAI_THEMES in js/app.js (id, label, icon, cmTheme).
+ * That's it — the theme switcher menu, persistence, and the SHQL editor
+ * are all driven off that one registry; nothing else needs to change.
+ */
+
+/* ── Light ─────────────────────────────────────────────────────────────────
+   The default — see the plain :root block in hgai.css. Bootstrap needs no
+   [data-bs-theme="light"] override block at all (its own :root already IS
+   the light palette); this empty rule exists only so `light` is a real,
+   matchable attribute value once the switcher sets it explicitly. */
+[data-bs-theme="light"] {}
+
+/* ── Dark ──────────────────────────────────────────────────────────────────
+   Bootstrap's native dark mode handles every --bs-* variable already (all
+   of buttons/cards/tables/modals/dropdowns/forms). Only this app's own
+   custom-chrome tokens need a value here. */
+[data-bs-theme="dark"] {
+  --hgai-bg: var(--bs-body-bg);
+  --hgai-surface: #262a33;
+  --hgai-surface-alt: #2b2f36;
+  --hgai-border: var(--bs-border-color);
+  --hgai-border-strong: #5a6169;
+  --hgai-text: #f3f4f6;
+  --hgai-text-muted: #9aa1ac;
+  --hgai-text-subtle: #c9ced6;
+  --hgai-text-faint: #7d8590;
+  /* Sidebar stays the same near-black it always is — it's already dark in
+     every theme, so Dark mode needs no change there; --hgai-primary (the
+     indigo accent) is likewise left alone, matching Bootstrap's own choice
+     not to vary --bs-primary between its light/dark modes. */
+  --hgai-modal-accent-node: #0b2e22;
+  --hgai-modal-border-node: #164e3a;
+  --hgai-modal-accent-graph: #101a33;
+  --hgai-modal-border-graph: #1e3a6b;
+  --hgai-modal-accent-edge: #082a30;
+  --hgai-modal-border-edge: #0e4a55;
+}
+
+/* ── High Contrast ─────────────────────────────────────────────────────────
+   Pure black/white with a single bold yellow accent — the same convention
+   OS-level "high contrast" modes use (e.g. Windows' own black high-contrast
+   theme). Every pastel/subtle combination elsewhere in this app (badges,
+   the outline-secondary button's mid-grey) is explicitly overridden below
+   too, since low-contrast pairings are exactly what this theme exists to
+   eliminate — "looks like Dark but slightly bolder" would defeat the point. */
+[data-bs-theme="high-contrast"] {
+  color-scheme: dark;
+  --bs-body-color: #ffffff;
+  --bs-body-color-rgb: 255, 255, 255;
+  --bs-body-bg: #000000;
+  --bs-body-bg-rgb: 0, 0, 0;
+  --bs-emphasis-color: #ffffff;
+  --bs-emphasis-color-rgb: 255, 255, 255;
+  --bs-secondary-color: #ffffff;
+  --bs-secondary-color-rgb: 255, 255, 255;
+  --bs-secondary-bg: #000000;
+  --bs-secondary-bg-rgb: 0, 0, 0;
+  --bs-tertiary-color: #ffffff;
+  --bs-tertiary-color-rgb: 255, 255, 255;
+  --bs-tertiary-bg: #0d0d0d;
+  --bs-tertiary-bg-rgb: 13, 13, 13;
+  --bs-border-color: #ffffff;
+  --bs-border-color-translucent: rgba(255, 255, 255, 0.6);
+  --bs-link-color: #ffe600;
+  --bs-link-color-rgb: 255, 230, 0;
+  --bs-link-hover-color: #fff37a;
+  --bs-link-hover-color-rgb: 255, 243, 122;
+  --bs-code-color: #ffe600;
+  --bs-primary: #ffe600;
+  --bs-primary-rgb: 255, 230, 0;
+  --bs-primary-text-emphasis: #ffe600;
+  --bs-danger-text-emphasis: #ff6b6b;
+  --bs-danger-bg-subtle: #2a0000;
+  --bs-danger-border-subtle: #ff6b6b;
+
+  --hgai-primary: #ffe600;
+  --hgai-primary-dark: #ccb800;
+  --hgai-primary-rgb: 255, 230, 0;
+  --hgai-sidebar-bg: #000000;
+  --hgai-sidebar-text: #ffffff;
+  --hgai-sidebar-hover: rgba(255, 230, 0, 0.25);
+  --hgai-sidebar-active: rgba(255, 230, 0, 0.4);
+  --hgai-sidebar-border: #ffffff;
+  --hgai-bg: #000000;
+  --hgai-surface: #000000;
+  --hgai-surface-alt: #0d0d0d;
+  --hgai-border: #ffffff;
+  --hgai-border-strong: #ffffff;
+  --hgai-text: #ffffff;
+  --hgai-text-muted: #e6e6e6;
+  --hgai-text-subtle: #ffffff;
+  --hgai-text-faint: #cccccc;
+  --hgai-modal-accent-node: #000000;
+  --hgai-modal-border-node: #ffffff;
+  --hgai-modal-accent-graph: #000000;
+  --hgai-modal-border-graph: #ffffff;
+  --hgai-modal-accent-edge: #000000;
+  --hgai-modal-border-edge: #ffffff;
+}
+[data-bs-theme="high-contrast"] .btn-primary {
+  --bs-btn-color: #000000;
+  --bs-btn-bg: #ffe600;
+  --bs-btn-border-color: #ffe600;
+  --bs-btn-hover-color: #000000;
+  --bs-btn-hover-bg: #fff37a;
+  --bs-btn-hover-border-color: #fff37a;
+  --bs-btn-active-color: #000000;
+  --bs-btn-active-bg: #ccb800;
+  --bs-btn-active-border-color: #ccb800;
+  --bs-btn-disabled-color: #000000;
+  --bs-btn-disabled-bg: #ffe600;
+  --bs-btn-disabled-border-color: #ffe600;
+}
+[data-bs-theme="high-contrast"] .btn-outline-secondary {
+  --bs-btn-color: #ffffff;
+  --bs-btn-border-color: #ffffff;
+  --bs-btn-hover-color: #000000;
+  --bs-btn-hover-bg: #ffffff;
+  --bs-btn-hover-border-color: #ffffff;
+  --bs-btn-active-color: #000000;
+  --bs-btn-active-bg: #ffffff;
+  --bs-btn-active-border-color: #ffffff;
+}
+[data-bs-theme="high-contrast"] .dropdown-menu {
+  --bs-dropdown-link-active-bg: #ffe600;
+  --bs-dropdown-link-active-color: #000000;
+  border: 1px solid #ffffff;
+}
+[data-bs-theme="high-contrast"] .badge-status-active,
+[data-bs-theme="high-contrast"] .badge-status-draft,
+[data-bs-theme="high-contrast"] .badge-status-archived,
+[data-bs-theme="high-contrast"] .badge-flavor,
+[data-bs-theme="high-contrast"] .badge-tag,
+[data-bs-theme="high-contrast"] .badge-role {
+  background: #000000;
+  color: #ffffff;
+  border: 1px solid #ffffff;
+}
+
+/* ── Bumble ────────────────────────────────────────────────────────────────
+   Alternative dark theme: straight black ground, whites and greys for
+   text/chrome, orange as the primary accent, yellow as the secondary/
+   highlight accent — no blues, greens, or purples anywhere in this block. */
+[data-bs-theme="bumble"] {
+  color-scheme: dark;
+  --bs-body-color: #f5f5f0;
+  --bs-body-color-rgb: 245, 245, 240;
+  --bs-body-bg: #0a0a0a;
+  --bs-body-bg-rgb: 10, 10, 10;
+  --bs-emphasis-color: #ffffff;
+  --bs-emphasis-color-rgb: 255, 255, 255;
+  --bs-secondary-color: #b8b8ad;
+  --bs-secondary-color-rgb: 184, 184, 173;
+  --bs-secondary-bg: #1c1c1a;
+  --bs-secondary-bg-rgb: 28, 28, 26;
+  --bs-tertiary-color: #8a8a80;
+  --bs-tertiary-color-rgb: 138, 138, 128;
+  --bs-tertiary-bg: #141412;
+  --bs-tertiary-bg-rgb: 20, 20, 18;
+  --bs-border-color: #3a3a35;
+  --bs-border-color-translucent: rgba(255, 255, 255, 0.12);
+  --bs-link-color: #f5a623;
+  --bs-link-color-rgb: 245, 166, 35;
+  --bs-link-hover-color: #ffc857;
+  --bs-link-hover-color-rgb: 255, 200, 87;
+  --bs-code-color: #ffc857;
+  --bs-primary: #f5a623;
+  --bs-primary-rgb: 245, 166, 35;
+  --bs-primary-text-emphasis: #ffc857;
+  --bs-danger-text-emphasis: #ff8a65;
+  --bs-danger-bg-subtle: #2a1408;
+  --bs-danger-border-subtle: #7a3a1a;
+
+  --hgai-primary: #f5a623;
+  --hgai-primary-dark: #c9820f;
+  --hgai-primary-rgb: 245, 166, 35;
+  --hgai-sidebar-bg: #000000;
+  --hgai-sidebar-text: #d8d8cf;
+  --hgai-sidebar-hover: rgba(245, 166, 35, 0.18);
+  --hgai-sidebar-active: rgba(245, 166, 35, 0.32);
+  --hgai-sidebar-border: rgba(255, 255, 255, 0.1);
+  --hgai-bg: #0a0a0a;
+  --hgai-surface: #1a1a17;
+  --hgai-surface-alt: #211f19;
+  --hgai-border: #3a3a35;
+  --hgai-border-strong: #55534a;
+  --hgai-text: #f5f5f0;
+  --hgai-text-muted: #b8b8ad;
+  --hgai-text-subtle: #d8d8cf;
+  --hgai-text-faint: #8a8a80;
+  --hgai-json-key: #ffc857;
+  --hgai-json-string: #f5a623;
+  --hgai-json-number: #ffffff;
+  --hgai-json-bool: #d8d8cf;
+  --hgai-modal-accent-node: #1a1712;
+  --hgai-modal-border-node: #4a4020;
+  --hgai-modal-accent-graph: #17140f;
+  --hgai-modal-border-graph: #4a3a1f;
+  --hgai-modal-accent-edge: #1a1510;
+  --hgai-modal-border-edge: #4a3a1f;
+}
+[data-bs-theme="bumble"] .btn-primary {
+  --bs-btn-color: #111111;
+  --bs-btn-bg: #f5a623;
+  --bs-btn-border-color: #f5a623;
+  --bs-btn-hover-color: #111111;
+  --bs-btn-hover-bg: #ffc857;
+  --bs-btn-hover-border-color: #ffc857;
+  --bs-btn-active-color: #111111;
+  --bs-btn-active-bg: #c9820f;
+  --bs-btn-active-border-color: #c9820f;
+  --bs-btn-disabled-color: #111111;
+  --bs-btn-disabled-bg: #f5a623;
+  --bs-btn-disabled-border-color: #f5a623;
+}
+[data-bs-theme="bumble"] .btn-outline-secondary {
+  --bs-btn-color: #d8d8cf;
+  --bs-btn-border-color: #55534a;
+  --bs-btn-hover-color: #111111;
+  --bs-btn-hover-bg: #d8d8cf;
+  --bs-btn-hover-border-color: #d8d8cf;
+  --bs-btn-active-color: #111111;
+  --bs-btn-active-bg: #d8d8cf;
+  --bs-btn-active-border-color: #d8d8cf;
+}
+[data-bs-theme="bumble"] .dropdown-menu {
+  --bs-dropdown-link-active-bg: #f5a623;
+  --bs-dropdown-link-active-color: #111111;
+}
+
+/* ── CodeMirror themes for the SHQL editor ────────────────────────────────
+   Following CodeMirror's own standard theming convention — a stylesheet
+   defining `.cm-s-<name>` rules (see https://codemirror.net/5/demo/theme.html)
+   — the same mechanism the community 'eclipse'/'dracula' packages already
+   loaded in index.html use. Authored in-house for these two app themes
+   because a published package close to "black/white/grey/orange/yellow"
+   or "pure black/white/yellow" invariably also carries hues (blues, greens,
+   purples) that don't belong in either palette. */
+.cm-s-hgai-contrast.CodeMirror, .cm-s-hgai-contrast .CodeMirror-gutters {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+  border: none;
+}
+.cm-s-hgai-contrast .CodeMirror-gutters { color: #ffffff; border-right: 1px solid #ffffff; }
+.cm-s-hgai-contrast .CodeMirror-cursor { border-left: solid 2px #ffe600; }
+.cm-s-hgai-contrast .CodeMirror-linenumber { color: #ffffff; }
+.cm-s-hgai-contrast .CodeMirror-selected { background: rgba(255, 230, 0, 0.35); }
+.cm-s-hgai-contrast .CodeMirror-line::selection, .cm-s-hgai-contrast .CodeMirror-line > span::selection, .cm-s-hgai-contrast .CodeMirror-line > span > span::selection { background: rgba(255, 230, 0, 0.35); }
+.cm-s-hgai-contrast span.cm-comment { color: #cccccc; font-style: italic; }
+.cm-s-hgai-contrast span.cm-string, .cm-s-hgai-contrast span.cm-string-2 { color: #ffe600; }
+.cm-s-hgai-contrast span.cm-number { color: #ffffff; font-weight: bold; }
+.cm-s-hgai-contrast span.cm-variable { color: #ffffff; }
+.cm-s-hgai-contrast span.cm-variable-2 { color: #ffe600; }
+.cm-s-hgai-contrast span.cm-def { color: #ffffff; }
+.cm-s-hgai-contrast span.cm-operator { color: #ffe600; }
+.cm-s-hgai-contrast span.cm-keyword { color: #ffe600; font-weight: bold; }
+.cm-s-hgai-contrast span.cm-atom { color: #ffffff; }
+.cm-s-hgai-contrast span.cm-meta { color: #ffffff; }
+.cm-s-hgai-contrast span.cm-tag { color: #ffe600; }
+.cm-s-hgai-contrast span.cm-attribute { color: #ffffff; }
+.cm-s-hgai-contrast span.cm-qualifier { color: #ffffff; }
+.cm-s-hgai-contrast span.cm-property { color: #ffffff; }
+.cm-s-hgai-contrast span.cm-builtin { color: #ffffff; }
+.cm-s-hgai-contrast span.cm-variable-3, .cm-s-hgai-contrast span.cm-type { color: #ffe600; }
+.cm-s-hgai-contrast .CodeMirror-activeline-background { background: rgba(255, 230, 0, 0.1); }
+.cm-s-hgai-contrast .CodeMirror-matchingbracket { text-decoration: underline; color: #ffe600 !important; }
+
+.cm-s-bumble.CodeMirror, .cm-s-bumble .CodeMirror-gutters {
+  background-color: #0d0d0a !important;
+  color: #f5f5f0 !important;
+  border: none;
+}
+.cm-s-bumble .CodeMirror-gutters { color: #0d0d0a; }
+.cm-s-bumble .CodeMirror-cursor { border-left: solid thin #f5a623; }
+.cm-s-bumble .CodeMirror-linenumber { color: #8a8a80; }
+.cm-s-bumble .CodeMirror-selected { background: rgba(245, 166, 35, 0.25); }
+.cm-s-bumble .CodeMirror-line::selection, .cm-s-bumble .CodeMirror-line > span::selection, .cm-s-bumble .CodeMirror-line > span > span::selection { background: rgba(245, 166, 35, 0.25); }
+.cm-s-bumble span.cm-comment { color: #8a8a80; font-style: italic; }
+.cm-s-bumble span.cm-string, .cm-s-bumble span.cm-string-2 { color: #ffc857; }
+.cm-s-bumble span.cm-number { color: #f5a623; }
+.cm-s-bumble span.cm-variable { color: #f5f5f0; }
+.cm-s-bumble span.cm-variable-2 { color: #ffc857; }
+.cm-s-bumble span.cm-def { color: #f5f5f0; }
+.cm-s-bumble span.cm-operator { color: #f5a623; }
+.cm-s-bumble span.cm-keyword { color: #f5a623; }
+.cm-s-bumble span.cm-atom { color: #ffc857; }
+.cm-s-bumble span.cm-meta { color: #b8b8ad; }
+.cm-s-bumble span.cm-tag { color: #f5a623; }
+.cm-s-bumble span.cm-attribute { color: #f5f5f0; }
+.cm-s-bumble span.cm-qualifier { color: #ffc857; }
+.cm-s-bumble span.cm-property { color: #ffc857; }
+.cm-s-bumble span.cm-builtin { color: #f5f5f0; }
+.cm-s-bumble span.cm-variable-3, .cm-s-bumble span.cm-type { color: #f5a623; }
+.cm-s-bumble .CodeMirror-activeline-background { background: rgba(245, 166, 35, 0.08); }
+.cm-s-bumble .CodeMirror-matchingbracket { text-decoration: underline; color: #ffc857 !important; }

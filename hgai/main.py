@@ -19,6 +19,28 @@ logger = logging.getLogger(__name__)
 _mcp_module = None  # set by create_app(), consumed by lifespan
 
 
+class NoCacheStaticFiles(StaticFiles):
+    """StaticFiles that forces browsers to revalidate on every load.
+
+    This project ships plain, non-hashed filenames for ui/js/*.js and
+    ui/css/*.css (no build step, no cache-busted asset names), so a browser
+    left to its own heuristic freshness (the default when no Cache-Control
+    header is sent at all) can silently keep serving a stale copy after a
+    deploy until the user does a hard refresh — confusing during
+    development and equally confusing for an end user who "isn't seeing"
+    a shipped fix. `no-cache` (not `no-store`) is the right header for
+    this: it still allows the browser to cache the file and revalidate
+    with a cheap conditional request (StaticFiles already sets ETag/
+    Last-Modified, so an unchanged file gets a 304 with no body), it just
+    forbids serving that cached copy without checking first.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -139,7 +161,7 @@ def create_app() -> FastAPI:
     # Serve Web UI static files
     ui_dir = Path(__file__).parent.parent / "ui"
     if ui_dir.exists():
-        app.mount("/ui", StaticFiles(directory=str(ui_dir), html=True), name="ui")
+        app.mount("/ui", NoCacheStaticFiles(directory=str(ui_dir), html=True), name="ui")
 
     # Health check
     @app.get("/health", tags=["system"])
