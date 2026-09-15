@@ -596,6 +596,9 @@
             <button class="btn btn-outline-secondary btn-sm" id="btn-shql-examples">
               <i class="bi bi-code-slash me-1"></i>Examples
             </button>
+            <button class="btn btn-outline-secondary btn-sm" id="btn-shql-history">
+              <i class="bi bi-clock-history me-1"></i>History
+            </button>
             <button class="btn btn-outline-secondary btn-sm" id="btn-shql-validate">
               <i class="bi bi-check-circle me-1"></i>Validate
             </button>
@@ -1891,6 +1894,21 @@
   </div>
   <div class="offcanvas-body">
     <div id="shql-examples-list"></div>
+  </div>
+</div>
+
+<!-- SHQL History Offcanvas -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="offcanvas-shql-history" style="width:500px">
+  <div class="offcanvas-header">
+    <h5 class="offcanvas-title">SHQL Query History</h5>
+    <button type="button" class="btn btn-outline-secondary btn-sm ms-auto me-2" id="btn-shql-history-clear">
+      <i class="bi bi-trash me-1"></i>Clear
+    </button>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div class="offcanvas-body">
+    <div id="shql-history-empty" class="text-muted small d-none">No queries submitted yet in this browser.</div>
+    <div id="shql-history-list"></div>
   </div>
 </div>
 

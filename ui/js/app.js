@@ -3719,6 +3719,50 @@ const SHQL_EXAMPLES = [
   },
 ];
 
+// Client-side-only history of submitted queries — never sent to the
+// server, just a convenience for revisiting/reusing what was run in THIS
+// browser (localStorage, same pattern as NOTES_SIDEBAR_WIDTH_KEY /
+// NOTE_MODAL_SIZE_KEY elsewhere in this file). Capped at the 50 most
+// recent submissions; re-submitting a query already in the history moves
+// it back to the top instead of creating a duplicate entry.
+const SHQL_HISTORY_KEY = 'hgai-shql-history';
+const SHQL_HISTORY_MAX = 50;
+
+function loadShqlHistory() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SHQL_HISTORY_KEY) || '[]');
+    return Array.isArray(raw) ? raw : [];
+  } catch { return []; }
+}
+
+function addToShqlHistory(shqlText) {
+  const trimmed = (shqlText || '').trim();
+  if (!trimmed) return;
+  try {
+    const history = loadShqlHistory().filter(entry => entry.shql !== trimmed);
+    history.unshift({ shql: trimmed, ts: Date.now() });
+    localStorage.setItem(SHQL_HISTORY_KEY, JSON.stringify(history.slice(0, SHQL_HISTORY_MAX)));
+  } catch { /* localStorage unavailable — history just won't persist */ }
+}
+
+function renderShqlHistory() {
+  const list = document.getElementById('shql-history-list');
+  const empty = document.getElementById('shql-history-empty');
+  const history = loadShqlHistory();
+  list.innerHTML = '';
+  empty.classList.toggle('d-none', history.length > 0);
+  history.forEach(entry => {
+    const card = document.createElement('div');
+    card.className = 'query-example-card';
+    card.innerHTML = `<div class="example-title">${fmtDate(entry.ts)}</div><pre>${escapeHtml(entry.shql)}</pre>`;
+    card.addEventListener('click', () => {
+      _shqlEditorCM.setValue(entry.shql);
+      bootstrap.Offcanvas.getInstance(document.getElementById('offcanvas-shql-history'))?.hide();
+    });
+    list.appendChild(card);
+  });
+}
+
 let _shqlEditorCM = null;
 
 function initShqlEditor() {
@@ -3756,6 +3800,7 @@ async function runShqlQuery() {
   const useCache = document.getElementById('shql-use-cache').checked;
   const resultArea = document.getElementById('shql-result-area');
   const countEl = document.getElementById('shql-result-count');
+  addToShqlHistory(shql);
   resultArea.innerHTML = '<span class="text-muted"><div class="spinner-border spinner-border-sm me-2"></div>Executing...</span>';
   try {
     const result = await HGAI_API.runShqlQuery(shql, useCache);
@@ -3785,6 +3830,16 @@ document.getElementById('btn-shql-validate').addEventListener('click', async () 
 
 document.getElementById('btn-shql-examples').addEventListener('click', () => {
   new bootstrap.Offcanvas(document.getElementById('offcanvas-shql-examples')).show();
+});
+
+document.getElementById('btn-shql-history').addEventListener('click', () => {
+  renderShqlHistory();
+  new bootstrap.Offcanvas(document.getElementById('offcanvas-shql-history')).show();
+});
+
+document.getElementById('btn-shql-history-clear').addEventListener('click', () => {
+  try { localStorage.removeItem(SHQL_HISTORY_KEY); } catch { /* localStorage unavailable */ }
+  renderShqlHistory();
 });
 
 document.getElementById('btn-shql-copy').addEventListener('click', () => {
