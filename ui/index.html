@@ -78,6 +78,7 @@
     <a class="sidebar-link" data-screen="notes" href="#"><i class="bi bi-journal-richtext"></i> Notes</a>
     <a class="sidebar-link" data-screen="viz" href="#"><i class="bi bi-bezier2"></i> Visualize</a>
     <a class="sidebar-link" data-screen="shql" href="#"><i class="bi bi-braces"></i> Query (SHQL)</a>
+    <a class="sidebar-link" data-screen="pq" href="#"><i class="bi bi-list-columns-reverse"></i> Parameterized Queries</a>
     <a class="sidebar-link" data-screen="project-inference" href="#"><i class="bi bi-diagram-2-fill"></i> Project Inference</a>
 
     <div class="sidebar-section-label admin-only">Administration</div>
@@ -633,6 +634,9 @@
             <button class="btn btn-outline-secondary btn-sm" id="btn-shql-history">
               <i class="bi bi-clock-history me-1"></i>History
             </button>
+            <button class="btn btn-outline-secondary btn-sm" id="btn-shql-parameterized">
+              <i class="bi bi-list-columns-reverse me-1"></i>Parameterized
+            </button>
             <button class="btn btn-outline-secondary btn-sm" id="btn-shql-validate">
               <i class="bi bi-check-circle me-1"></i>Validate
             </button>
@@ -667,6 +671,55 @@
             <div id="shql-result-area" class="flex-grow-1 border rounded bg-dark text-light p-3 overflow-auto font-monospace" style="font-size:0.8rem; white-space: pre-wrap;">
               <span class="text-muted">Run a query to see results...</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── PARAMETERIZED QUERIES ───────────────────────────────────── -->
+      <div id="screen-pq" class="screen d-none">
+        <div class="screen-header">
+          <h4><i class="bi bi-list-columns-reverse text-warning me-2"></i>Parameterized Queries</h4>
+          <button class="btn btn-primary btn-sm" id="btn-create-pq">
+            <i class="bi bi-plus-lg me-1"></i>New Parameterized Query
+          </button>
+        </div>
+        <div class="card mb-2">
+          <div class="card-body py-2">
+            <div class="row g-2 align-items-center">
+              <div class="col-auto">
+                <input type="text" id="pq-search" class="form-control form-control-sm" placeholder="Search name/label/description..." style="width:240px"/>
+              </div>
+              <div class="col-auto">
+                <input type="text" id="pq-tags-filter" class="form-control form-control-sm" placeholder="Filter by tag..." style="width:160px"/>
+              </div>
+              <div class="col-auto">
+                <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-pq">
+                  <i class="bi bi-arrow-clockwise"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body p-0">
+            <table class="table table-hover mb-0" id="table-pq">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Label</th>
+                  <th>Description</th>
+                  <th>Parameters</th>
+                  <th>Tags</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="tbody-pq"></tbody>
+            </table>
+          </div>
+          <div class="card-footer d-flex justify-content-between align-items-center">
+            <span id="pq-pagination-info" class="text-muted small"></span>
+            <div class="btn-group btn-group-sm" id="pq-pagination"></div>
           </div>
         </div>
       </div>
@@ -1943,6 +1996,130 @@
   <div class="offcanvas-body">
     <div id="shql-history-empty" class="text-muted small d-none">No queries submitted yet in this browser.</div>
     <div id="shql-history-list"></div>
+  </div>
+</div>
+
+<!-- SHQL Parameterized-Query Picker Offcanvas -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="offcanvas-shql-parameterized" style="width:500px">
+  <div class="offcanvas-header">
+    <h5 class="offcanvas-title">Parameterized Queries</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div class="offcanvas-body">
+    <div class="d-flex gap-2 mb-2">
+      <input type="text" id="shql-pq-picker-search" class="form-control form-control-sm" placeholder="Search..."/>
+      <input type="text" id="shql-pq-picker-tags" class="form-control form-control-sm" placeholder="Tag..." style="max-width:120px"/>
+    </div>
+    <div id="shql-pq-picker-empty" class="text-muted small d-none">No parameterized queries match.</div>
+    <div id="shql-pq-picker-list"></div>
+  </div>
+</div>
+
+<!-- Parameterized Query Create/Edit Modal -->
+<div class="modal fade" id="modal-pq" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="pq-modal-header d-flex align-items-center gap-3">
+        <div class="modal-entity-badge modal-entity-badge-pq"><i class="bi bi-list-columns-reverse"></i></div>
+        <div>
+          <h5 class="modal-title mb-0" id="pq-modal-title">New Parameterized Query</h5>
+          <div class="modal-entity-subtitle">Reusable SHQL template with /$name$/-style placeholders</div>
+        </div>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="form-pq">
+          <div class="node-form-section">
+            <div class="row g-3">
+              <div class="col-md-3">
+                <label class="form-label small mb-1">ID</label>
+                <input type="text" id="pq-id" class="form-control form-control-sm node-graph-display-field" readonly/>
+                <div class="form-text">Assigned automatically</div>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Name <span class="text-danger">*</span></label>
+                <input type="text" id="pq-name" class="form-control" required/>
+              </div>
+              <div class="col-md-5">
+                <label class="form-label">Label <span class="text-danger">*</span></label>
+                <input type="text" id="pq-label" class="form-control" required/>
+              </div>
+            </div>
+            <div class="row g-3 mt-1">
+              <div class="col-md-8">
+                <label class="form-label">Description</label>
+                <input type="text" id="pq-description" class="form-control" placeholder="What this query does..."/>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Tags</label>
+                <input type="text" id="pq-tags" class="form-control" placeholder="tag1, tag2"/>
+              </div>
+            </div>
+          </div>
+          <div class="node-form-section node-form-section-last">
+            <div class="row g-3">
+              <div class="col-md-7 d-flex flex-column">
+                <label class="form-label small mb-1">SHQL Template</label>
+                <div class="border rounded overflow-hidden" style="height:340px">
+                  <textarea id="pq-editor"></textarea>
+                </div>
+                <div id="pq-parse-error" class="text-danger small mt-1 d-none"></div>
+              </div>
+              <div class="col-md-5 d-flex flex-column">
+                <label class="form-label small mb-1">Detected Parameters</label>
+                <div id="pq-detected-params" class="border rounded p-2 flex-grow-1 overflow-auto" style="height:340px; font-size:0.82rem;">
+                  <span class="text-muted">No /$...$/ placeholders detected.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="node-modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btn-save-pq">
+          <i class="bi bi-check-lg me-1"></i>Save Parameterized Query
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Parameterized Query Execution Wizard Modal -->
+<div class="modal fade" id="modal-pq-wizard" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="pq-modal-header d-flex align-items-center gap-3">
+        <div class="modal-entity-badge modal-entity-badge-pq"><i class="bi bi-magic"></i></div>
+        <div>
+          <h5 class="modal-title mb-0" id="pq-wizard-title">Run Parameterized Query</h5>
+          <div class="modal-entity-subtitle" id="pq-wizard-subtitle"></div>
+        </div>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="pq-wizard-empty" class="text-muted small d-none">This query has no parameters — click Run.</div>
+        <form id="form-pq-wizard"></form>
+        <div id="pq-wizard-error" class="alert alert-danger py-2 d-none mt-2"></div>
+        <div id="pq-wizard-rendered-wrap" class="mt-3 d-none">
+          <label class="form-label small mb-1 text-muted">Rendered SHQL</label>
+          <pre id="pq-wizard-rendered" class="border rounded p-2 small mb-0" style="max-height:160px; overflow:auto;"></pre>
+        </div>
+        <div id="pq-wizard-result-wrap" class="mt-3 d-none">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <label class="form-label small mb-0 text-muted">Result</label>
+            <span id="pq-wizard-result-count" class="badge bg-secondary"></span>
+          </div>
+          <div id="pq-wizard-result" class="border rounded bg-dark text-light p-3 overflow-auto font-monospace" style="max-height:320px; font-size:0.78rem; white-space:pre-wrap;"></div>
+        </div>
+      </div>
+      <div class="node-modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-primary" id="btn-pq-wizard-run">
+          <i class="bi bi-play-fill me-1"></i>Run
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 

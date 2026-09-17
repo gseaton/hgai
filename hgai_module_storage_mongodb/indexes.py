@@ -137,6 +137,13 @@ async def ensure_indexes() -> None:
         IndexModel([("tags", ASCENDING)], name="tags"),
     ])
 
+    # ── parameterized_queries ────────────────────────────────────────────────
+    await db["parameterized_queries"].create_indexes([
+        IndexModel([("id", ASCENDING)], unique=True, name="id_unique"),
+        IndexModel([("tags", ASCENDING)], name="tags"),
+        IndexModel([("name", ASCENDING)], name="name"),
+    ])
+
     # ── shql_query_history ───────────────────────────────────────────────────
     # See hgai_module_shql/history.py — module-owned collection (not part of
     # the pluggable storage-backend abstraction), same pattern as query_cache.

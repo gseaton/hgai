@@ -22,6 +22,8 @@ from .filters import (
     MeshPatch,
     NoteFilters,
     NotePatch,
+    ParameterizedQueryFilters,
+    ParameterizedQueryPatch,
     TransitiveSearchFilter,
 )
 
@@ -518,6 +520,41 @@ class NoteStore(ABC):
         """Delete a note. Returns True if deleted."""
 
 
+# ─── Parameterized Query Store ─────────────────────────────────────────────────
+
+class ParameterizedQueryStore(ABC):
+    """CRUD operations for parameterized queries (prepared statements).
+
+    Same globally-unique-id shape as NoteStore — not graph-nested, no ACL —
+    see hgai.core.parameterized_queries.
+    """
+
+    @abstractmethod
+    async def create(self, doc: Dict[str, Any]) -> Any:
+        """Insert a parameterized-query document and return ParameterizedQueryInDB."""
+
+    @abstractmethod
+    async def get(self, query_id: str) -> Optional[Any]:
+        """Return ParameterizedQueryInDB or None."""
+
+    @abstractmethod
+    async def list(
+        self,
+        filters: ParameterizedQueryFilters,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> Tuple[int, List[Any]]:
+        """Return (total_count, [ParameterizedQueryInDB, ...]) matching filters."""
+
+    @abstractmethod
+    async def update(self, query_id: str, patch: ParameterizedQueryPatch) -> Optional[Any]:
+        """Apply patch and bump version. Returns updated ParameterizedQueryInDB or None."""
+
+    @abstractmethod
+    async def delete(self, query_id: str) -> bool:
+        """Delete a parameterized query. Returns True if deleted."""
+
+
 # ─── Cache Store ──────────────────────────────────────────────────────────────
 
 class CacheStore(ABC):
@@ -613,3 +650,8 @@ class StorageBackend(ABC):
     @abstractmethod
     def notes(self) -> NoteStore:
         """Note store."""
+
+    @property
+    @abstractmethod
+    def parameterized_queries(self) -> ParameterizedQueryStore:
+        """Parameterized query store."""

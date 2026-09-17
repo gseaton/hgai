@@ -59,6 +59,8 @@
   --hgai-modal-border-graph: #1e3a6b;
   --hgai-modal-accent-edge: #082a30;
   --hgai-modal-border-edge: #0e4a55;
+  --hgai-modal-accent-pq: #332701;
+  --hgai-modal-border-pq: #664d03;
 }
 
 /* ── High Contrast ─────────────────────────────────────────────────────────
@@ -121,6 +123,8 @@
   --hgai-modal-border-graph: #ffffff;
   --hgai-modal-accent-edge: #000000;
   --hgai-modal-border-edge: #ffffff;
+  --hgai-modal-accent-pq: #000000;
+  --hgai-modal-border-pq: #ffffff;
 }
 [data-bs-theme="high-contrast"] .btn-primary {
   --bs-btn-color: #000000;
@@ -223,6 +227,8 @@
   --hgai-modal-border-graph: #4a3a1f;
   --hgai-modal-accent-edge: #1a1510;
   --hgai-modal-border-edge: #4a3a1f;
+  --hgai-modal-accent-pq: #1a1712;
+  --hgai-modal-border-pq: #4a4020;
 }
 [data-bs-theme="bumble"] .btn-primary {
   --bs-btn-color: #111111;

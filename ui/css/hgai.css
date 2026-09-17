@@ -52,6 +52,8 @@
   --hgai-modal-border-graph: #bfdbfe;
   --hgai-modal-accent-edge: #ecfeff;
   --hgai-modal-border-edge: #a5f3fc;
+  --hgai-modal-accent-pq: #fffbeb;
+  --hgai-modal-border-pq: #fde68a;
 }
 
 /* ── Global ────────────────────────────────────────────────────────────────── */
@@ -660,6 +662,27 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 }
 #modal-edge .modal-body { padding: 0; }
 #modal-edge .form-label { font-weight: 600; color: var(--hgai-text); }
+
+/* ── Parameterized Query Modals ────────────────────────────────────────────── */
+.pq-modal-header {
+  padding: 18px 24px;
+  background: linear-gradient(160deg, var(--hgai-modal-accent-pq) 0%, var(--hgai-surface) 65%);
+  border-bottom: 1px solid var(--hgai-modal-border-pq);
+}
+.modal-entity-badge-pq {
+  background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(217,119,6,0.28);
+}
+#modal-pq .form-label { font-weight: 600; color: var(--hgai-text); }
+#form-pq-wizard .form-label { font-weight: 600; color: var(--hgai-text); font-size: 0.85rem; }
+#pq-wizard-rendered, #pq-detected-params { background: var(--hgai-surface-alt); }
+.pq-param-card {
+  background: var(--hgai-surface-alt); border: 1px solid var(--hgai-border);
+  border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; font-size: 0.8rem;
+}
+.pq-param-card .pq-param-name { font-weight: 600; }
+.pq-param-card .pq-param-meta { color: var(--hgai-text-muted); }
 
 /* ── Note Editor: resizable modal window ─────────────────────────────────────
    Native CSS resize (not a custom drag handle) — a browser-rendered grip

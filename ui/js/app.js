@@ -12,15 +12,18 @@ const State = {
   mediaPickerPage: 0,
   notesPage: 0,
   graphsPage: 0,
+  pqPage: 0,
   nodePageSize: 50,
   edgePageSize: 50,
   mediaPageSize: 50,
   mediaPickerPageSize: 10,
   notesPageSize: 50,
   graphsPageSize: 50,
+  pqPageSize: 20,
   confirmCallback: null,
   graphsCache: {},       // id -> graph object (includes space_id)
   mediaCache: {},        // id -> media object, from the last list load
+  pqCache: {},           // id -> parameterized query object, from the last list load
   activeSpaceDetailId: null,
   nodesSort: [{ field: 'label', dir: 'asc' }],  // [{field, dir: 'asc'|'desc'}, ...] — priority order, first = primary sort key
   edgesSort: [{ field: 'label', dir: 'asc' }],  // default until the user clicks a column header, then their choice persists for the session
@@ -163,6 +166,7 @@ function showScreen(name) {
   const titles = {
     dashboard: 'Dashboard', graphs: 'Hypergraphs', nodes: 'Hypernodes',
     edges: 'Hyperedges', media: 'Media', notes: 'Notes', viz: 'Visualize', shql: 'SHQL Query',
+    pq: 'Parameterized Queries',
     'project-inference': 'Project Inference',
     spaces: 'Spaces', accounts: 'Accounts', meshes: 'Meshes', system: 'System',
   };
@@ -179,6 +183,7 @@ function showScreen(name) {
     notes: () => { State.notesPage = 0; loadNotes(); loadNotesFolderTree(); },
     viz: loadVizScreen,
     shql: initShqlEditor,
+    pq: () => { State.pqPage = 0; loadPQ(); },
     'project-inference': loadProjectInferenceScreen,
     spaces: loadSpaces,
     accounts: loadAccounts,
@@ -249,6 +254,7 @@ function applyTheme(id) {
   document.documentElement.setAttribute('data-bs-theme', theme.id);
   try { localStorage.setItem(THEME_STORAGE_KEY, theme.id); } catch { /* localStorage unavailable — choice just won't persist */ }
   if (_shqlEditorCM) _shqlEditorCM.setOption('theme', theme.cmTheme);
+  if (_pqEditorCM) _pqEditorCM.setOption('theme', theme.cmTheme);
   document.querySelectorAll('#theme-switcher-menu [data-theme-id]').forEach(item => {
     item.classList.toggle('active', item.dataset.themeId === theme.id);
   });
@@ -774,7 +780,7 @@ async function loadNodes() {
   }
 }
 
-const PAGINATION_LOADERS = { nodes: () => loadNodes(), edges: () => loadEdges(), media: () => loadMedia(), mediaPicker: () => loadMediaPicker(), notes: () => loadNotes(), graphs: () => loadGraphs() };
+const PAGINATION_LOADERS = { nodes: () => loadNodes(), edges: () => loadEdges(), media: () => loadMedia(), mediaPicker: () => loadMediaPicker(), notes: () => loadNotes(), graphs: () => loadGraphs(), pq: () => loadPQ() };
 
 // ── Default-media thumbnails (Nodes/Edges list tables) ────────────────────────
 let _nodeThumbUrls = [];
@@ -4780,6 +4786,366 @@ document.getElementById('btn-flush-cache').addEventListener('click', async () =>
     const result = await HGAI_API.flushCache();
     toast(`Cache flushed (${result.invalidated} entries removed)`);
   } catch (err) { toast(err.message, 'danger'); }
+});
+
+// ── Parameterized Queries ────────────────────────────────────────────────────
+// A ParameterizedQuery is a reusable SHQL template stored server-side
+// (hgai/core/parameterized_queries.py) — persists across server restarts
+// and browser sessions, unlike SHQL history (localStorage-free now too,
+// see that section above) or the hardcoded Examples list. Placeholder
+// syntax: /$name$/, /$name:type$/, /$name:type:default$/, or
+// /$name:type:choice1|choice2$/ — see hgai/core/query_templates.py.
+
+// Mirrors that module's own regex exactly, so the editor's "Detected
+// Parameters" panel updates live as the template is typed, with no
+// round-trip to POST /parameterized-queries/parse on every keystroke (the
+// server re-parses on save/execute regardless — that's the actual source
+// of truth; this is purely an authoring aid).
+const PQ_TOKEN_RE = /\/\$([A-Za-z_][A-Za-z0-9_-]*)(?::([A-Za-z]+))?(?::([^$]*))?\$\//g;
+const PQ_SUPPORTED_TYPES = ['str', 'int', 'float', 'bool'];
+
+function pqParseParameters(template) {
+  const specs = new Map();
+  PQ_TOKEN_RE.lastIndex = 0;
+  let m;
+  while ((m = PQ_TOKEN_RE.exec(template || '')) !== null) {
+    const [, name, typeRaw, rest] = m;
+    // A bare /$name$/ re-reference never conflicts — see
+    // query_templates.parse_parameters' identical reasoning.
+    if (typeRaw === undefined && rest === undefined && specs.has(name)) continue;
+    const type = (typeRaw || 'str').toLowerCase();
+    let enumValues = null, defaultValue = null;
+    if (rest) {
+      if (rest.includes('|')) enumValues = rest.split('|');
+      else defaultValue = rest;
+    }
+    specs.set(name, {
+      name, type, default: defaultValue, enum: enumValues,
+      validType: PQ_SUPPORTED_TYPES.includes(type),
+    });
+  }
+  return Array.from(specs.values());
+}
+
+function pqRenderDetectedParams(specs) {
+  const container = document.getElementById('pq-detected-params');
+  if (!specs.length) {
+    container.innerHTML = '<span class="text-muted">No /$...$/ placeholders detected.</span>';
+    return;
+  }
+  container.innerHTML = specs.map(s => {
+    const bits = [s.validType ? s.type : `${s.type} (unsupported type!)`];
+    if (s.enum) bits.push(`enum: ${s.enum.join(', ')}`);
+    else if (s.default !== null) bits.push(`default: ${s.default}`);
+    else bits.push('required');
+    return `<div class="pq-param-card"><div class="pq-param-name">${escapeHtml(s.name)}</div><div class="pq-param-meta">${escapeHtml(bits.join(' · '))}</div></div>`;
+  }).join('');
+}
+
+let _pqEditorCM = null;
+function initPQEditor() {
+  if (_pqEditorCM) return;
+  const ta = document.getElementById('pq-editor');
+  const activeTheme = HGAI_THEMES.find(t => t.id === getSavedTheme()) || HGAI_THEMES[0];
+  _pqEditorCM = CodeMirror.fromTextArea(ta, {
+    mode: 'yaml',
+    theme: activeTheme.cmTheme,
+    lineNumbers: true,
+    lineWrapping: true,
+    indentUnit: 2,
+    tabSize: 2,
+  });
+  _pqEditorCM.on('change', () => {
+    pqRenderDetectedParams(pqParseParameters(_pqEditorCM.getValue()));
+  });
+}
+document.getElementById('modal-pq').addEventListener('shown.bs.modal', () => _pqEditorCM?.refresh());
+
+const PQ_DEFAULT_TEMPLATE = 'shql:\n  from: /$graph:str$/\n  where:\n    - node: ?n\n  select:\n    - ?n\n';
+
+async function openPQModal(id = null) {
+  initPQEditor();
+  const form = document.getElementById('form-pq');
+  form.dataset.mode = id ? 'edit' : 'create';
+  form.dataset.id = id || '';
+  document.getElementById('pq-modal-title').textContent = id ? 'Edit Parameterized Query' : 'New Parameterized Query';
+  document.getElementById('pq-parse-error').classList.add('d-none');
+
+  let shql = PQ_DEFAULT_TEMPLATE;
+  if (id) {
+    try {
+      const q = await HGAI_API.getParameterizedQuery(id);
+      document.getElementById('pq-id').value = q.id;
+      document.getElementById('pq-name').value = q.name || '';
+      document.getElementById('pq-label').value = q.label || '';
+      document.getElementById('pq-description').value = q.description || '';
+      document.getElementById('pq-tags').value = (q.tags || []).join(', ');
+      shql = q.shql || '';
+    } catch (err) { toast(err.message, 'danger'); return; }
+  } else {
+    form.reset();
+    document.getElementById('pq-id').value = '';
+  }
+  _pqEditorCM.setValue(shql);
+  pqRenderDetectedParams(pqParseParameters(shql));
+  new bootstrap.Modal(document.getElementById('modal-pq')).show();
+}
+window.openPQModal = openPQModal;
+
+document.getElementById('btn-save-pq').addEventListener('click', async () => {
+  const form = document.getElementById('form-pq');
+  const mode = form.dataset.mode;
+  const id = form.dataset.id;
+  const data = {
+    name: document.getElementById('pq-name').value.trim(),
+    label: document.getElementById('pq-label').value.trim(),
+    description: document.getElementById('pq-description').value.trim(),
+    shql: _pqEditorCM.getValue(),
+    tags: parseTags(document.getElementById('pq-tags').value),
+  };
+  if (!data.name || !data.label) { toast('Name and Label are required', 'danger'); return; }
+
+  const errEl = document.getElementById('pq-parse-error');
+  errEl.classList.add('d-none');
+  try {
+    if (mode === 'edit') {
+      await HGAI_API.updateParameterizedQuery(id, data);
+      toast('Parameterized query updated');
+    } else {
+      await HGAI_API.createParameterizedQuery(data);
+      toast('Parameterized query created');
+    }
+    bootstrap.Modal.getInstance(document.getElementById('modal-pq'))?.hide();
+    loadPQ();
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.classList.remove('d-none');
+  }
+});
+
+window.deletePQ = (id) => {
+  const q = State.pqCache[id] || {};
+  confirmDelete(`Delete parameterized query "${q.label || id}"?`, async () => {
+    try {
+      await HGAI_API.deleteParameterizedQuery(id);
+      toast('Parameterized query deleted');
+      loadPQ();
+    } catch (err) { toast(err.message, 'danger'); }
+  });
+};
+
+async function loadPQ() {
+  const tbody = document.getElementById('tbody-pq');
+  tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  const tagFilter = document.getElementById('pq-tags-filter').value.trim();
+  const params = {
+    skip: State.pqPage * State.pqPageSize,
+    limit: State.pqPageSize,
+    search: document.getElementById('pq-search').value.trim() || undefined,
+    tags: tagFilter ? [tagFilter] : undefined,
+  };
+  try {
+    const resp = await HGAI_API.listParameterizedQueries(params);
+    tbody.innerHTML = '';
+    if (!resp.items || !resp.items.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No parameterized queries found</td></tr>';
+    } else {
+      resp.items.forEach(q => {
+        State.pqCache[q.id] = q;
+        const tr = document.createElement('tr');
+        const paramCount = (q.parameters || []).length;
+        tr.innerHTML = `
+          <td class="table-id-link" onclick="openPQModal('${q.id}')"><code>${escapeHtml(q.name)}</code></td>
+          <td>${escapeHtml(q.label)}</td>
+          <td class="text-truncate-150" title="${escapeHtml(q.description||'')}">${escapeHtml(q.description||'')}</td>
+          <td><span class="badge bg-light text-dark">${paramCount}</span></td>
+          <td>${tagBadges(q.tags)}</td>
+          <td>${statusBadge(q.status)}</td>
+          <td class="text-end">
+            <button class="btn btn-xs btn-outline-success me-1" onclick="openPQWizard('${q.id}', 'standalone')" title="Run"><i class="bi bi-play-fill"></i></button>
+            <button class="btn btn-xs btn-outline-primary me-1" onclick="openPQModal('${q.id}')" title="Edit"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-xs btn-outline-danger" onclick="deletePQ('${q.id}')" title="Delete"><i class="bi bi-trash"></i></button>
+          </td>`;
+        tbody.appendChild(tr);
+      });
+    }
+    renderPagination('pq', resp.total, State.pqPage, State.pqPageSize);
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-danger text-center">${err.message}</td></tr>`;
+  }
+}
+
+document.getElementById('btn-create-pq').addEventListener('click', () => openPQModal());
+document.getElementById('btn-refresh-pq').addEventListener('click', () => loadPQ());
+['pq-search', 'pq-tags-filter'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') { State.pqPage = 0; loadPQ(); }
+  });
+});
+
+// ── Parameterized Query execution wizard ─────────────────────────────────────
+// Shared by both the dedicated Parameterized Queries screen ('standalone'
+// context — results shown in-place, modal stays open for another run) and
+// the Query (SHQL) screen's picker ('shql' context — on success, the
+// rendered SHQL and result land in the SHQL screen's own editor/results
+// pane instead, and the wizard closes, so the SHQL screen's own toolbar
+// — Run again, History, Copy — then works on it like any other query).
+let _pqWizardQuery = null;
+let _pqWizardContext = 'standalone';
+
+async function openPQWizard(id, context = 'standalone') {
+  _pqWizardContext = context;
+  try {
+    _pqWizardQuery = await HGAI_API.getParameterizedQuery(id);
+  } catch (err) { toast(err.message, 'danger'); return; }
+
+  document.getElementById('pq-wizard-title').textContent = _pqWizardQuery.label;
+  document.getElementById('pq-wizard-subtitle').textContent = _pqWizardQuery.description || _pqWizardQuery.name;
+  document.getElementById('pq-wizard-error').classList.add('d-none');
+  document.getElementById('pq-wizard-rendered-wrap').classList.add('d-none');
+  document.getElementById('pq-wizard-result-wrap').classList.add('d-none');
+
+  const form = document.getElementById('form-pq-wizard');
+  form.innerHTML = '';
+  const params = _pqWizardQuery.parameters || [];
+  document.getElementById('pq-wizard-empty').classList.toggle('d-none', params.length > 0);
+
+  params.forEach(p => {
+    const wrap = document.createElement('div');
+    const hint = p.enum
+      ? ''
+      : (p.default !== null ? `, default: ${escapeHtml(String(p.default))}` : ', required');
+    let input;
+    if (p.enum) {
+      input = document.createElement('select');
+      input.className = 'form-select form-select-sm';
+      p.enum.forEach(choice => {
+        const opt = document.createElement('option');
+        opt.value = choice; opt.textContent = choice;
+        input.appendChild(opt);
+      });
+    } else if (p.type === 'bool') {
+      input = document.createElement('input');
+      input.type = 'checkbox';
+      input.className = 'form-check-input';
+      if (p.default === true) input.checked = true;
+    } else {
+      input = document.createElement('input');
+      input.type = (p.type === 'int' || p.type === 'float') ? 'number' : 'text';
+      if (p.type === 'float') input.step = 'any';
+      input.className = 'form-control form-control-sm';
+      if (p.default !== null) input.value = p.default;
+    }
+    input.id = `pq-wizard-param-${p.name}`;
+    input.dataset.paramName = p.name;
+    input.dataset.paramType = p.type;
+
+    if (p.type === 'bool' && !p.enum) {
+      wrap.className = 'mb-3 form-check form-switch';
+      wrap.appendChild(input);
+      const label = document.createElement('label');
+      label.className = 'form-check-label';
+      label.htmlFor = input.id;
+      label.innerHTML = `${escapeHtml(p.name)}<span class="text-muted fw-normal">${hint}</span>`;
+      wrap.appendChild(label);
+    } else {
+      wrap.className = 'mb-3';
+      const label = document.createElement('label');
+      label.className = 'form-label';
+      label.htmlFor = input.id;
+      label.innerHTML = `${escapeHtml(p.name)} <span class="text-muted fw-normal">(${escapeHtml(p.type)}${hint})</span>`;
+      wrap.appendChild(label);
+      wrap.appendChild(input);
+    }
+    form.appendChild(wrap);
+  });
+
+  new bootstrap.Modal(document.getElementById('modal-pq-wizard')).show();
+}
+window.openPQWizard = openPQWizard;
+
+document.getElementById('btn-pq-wizard-run').addEventListener('click', async () => {
+  if (!_pqWizardQuery) return;
+  const values = {};
+  document.querySelectorAll('#form-pq-wizard [data-param-name]').forEach(el => {
+    values[el.dataset.paramName] = el.type === 'checkbox' ? el.checked : el.value;
+  });
+
+  const errEl = document.getElementById('pq-wizard-error');
+  const renderedWrap = document.getElementById('pq-wizard-rendered-wrap');
+  const resultWrap = document.getElementById('pq-wizard-result-wrap');
+  errEl.classList.add('d-none');
+  renderedWrap.classList.add('d-none');
+  resultWrap.classList.add('d-none');
+
+  const runBtn = document.getElementById('btn-pq-wizard-run');
+  runBtn.disabled = true;
+  try {
+    const resp = await HGAI_API.executeParameterizedQuery(_pqWizardQuery.id, values);
+    document.getElementById('pq-wizard-rendered').textContent = resp.rendered_shql;
+    renderedWrap.classList.remove('d-none');
+
+    if (_pqWizardContext === 'shql') {
+      if (!_shqlEditorCM) initShqlEditor();
+      _shqlEditorCM.setValue(resp.rendered_shql);
+      addToShqlHistory(resp.rendered_shql);
+      const countEl = document.getElementById('shql-result-count');
+      countEl.textContent = `${resp.result.count || 0} results`;
+      countEl.className = 'badge bg-success';
+      document.getElementById('shql-result-area').innerHTML = syntaxHighlightJson(resp.result);
+      bootstrap.Modal.getInstance(document.getElementById('modal-pq-wizard'))?.hide();
+    } else {
+      const countEl = document.getElementById('pq-wizard-result-count');
+      countEl.textContent = `${resp.result.count || 0} results`;
+      countEl.className = 'badge bg-success';
+      document.getElementById('pq-wizard-result').innerHTML = syntaxHighlightJson(resp.result);
+      resultWrap.classList.remove('d-none');
+    }
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.classList.remove('d-none');
+  } finally {
+    runBtn.disabled = false;
+  }
+});
+
+// ── Query (SHQL) screen: pick + run a saved parameterized query ────────────
+async function loadSHQLPQPicker() {
+  const list = document.getElementById('shql-pq-picker-list');
+  const empty = document.getElementById('shql-pq-picker-empty');
+  list.innerHTML = '<span class="text-muted small">Loading...</span>';
+  const search = document.getElementById('shql-pq-picker-search').value.trim();
+  const tag = document.getElementById('shql-pq-picker-tags').value.trim();
+  try {
+    const resp = await HGAI_API.listParameterizedQueries({
+      search: search || undefined, tags: tag ? [tag] : undefined, limit: 100,
+    });
+    list.innerHTML = '';
+    const items = resp.items || [];
+    empty.classList.toggle('d-none', items.length > 0);
+    items.forEach(q => {
+      const card = document.createElement('div');
+      card.className = 'query-example-card';
+      card.innerHTML = `<div class="example-title">${escapeHtml(q.label)}</div><pre>${escapeHtml(q.description || q.name)}</pre>`;
+      card.addEventListener('click', () => {
+        bootstrap.Offcanvas.getInstance(document.getElementById('offcanvas-shql-parameterized'))?.hide();
+        openPQWizard(q.id, 'shql');
+      });
+      list.appendChild(card);
+    });
+  } catch (err) {
+    list.innerHTML = `<span class="text-danger small">${escapeHtml(err.message)}</span>`;
+  }
+}
+
+document.getElementById('btn-shql-parameterized').addEventListener('click', () => {
+  loadSHQLPQPicker();
+  new bootstrap.Offcanvas(document.getElementById('offcanvas-shql-parameterized')).show();
+});
+['shql-pq-picker-search', 'shql-pq-picker-tags'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') loadSHQLPQPicker();
+  });
 });
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────

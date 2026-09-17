@@ -217,6 +217,27 @@ class NotePatch:
 
 
 @dataclass
+class ParameterizedQueryFilters:
+    tags: Optional[List[str]] = None
+    search: Optional[str] = None  # substring match against name, label, or description
+    status: Optional[str] = None
+    sort: Optional[List[Tuple[str, int]]] = None  # [(field, 1|-1), ...], priority order
+
+
+@dataclass
+class ParameterizedQueryPatch:
+    name: Optional[str] = None
+    label: Optional[str] = None
+    description: Optional[str] = None
+    shql: Optional[str] = None
+    parameters: Optional[List[Dict[str, Any]]] = None
+    tags: Optional[List[str]] = None
+    attributes: Optional[Dict[str, Any]] = None
+    status: Optional[str] = None
+    mutations: Optional[List[Dict[str, Any]]] = None
+
+
+@dataclass
 class CacheStats:
     total_entries: int
     expired_entries: int

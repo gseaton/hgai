@@ -133,6 +133,19 @@ const HGAI_API = (() => {
   async function shareNote(id, data) { return request('POST', `/notes/${id}/share`, data); }
   async function unshareNote(id, username) { return request('DELETE', `/notes/${id}/share/${username}`); }
 
+  // ── Parameterized Queries ────────────────────────────────────────────────
+  async function listParameterizedQueries(params = {}) { return request('GET', '/parameterized-queries', null, params); }
+  async function getParameterizedQuery(id) { return request('GET', `/parameterized-queries/${id}`); }
+  async function createParameterizedQuery(data) { return request('POST', '/parameterized-queries', data); }
+  async function updateParameterizedQuery(id, data) { return request('PUT', `/parameterized-queries/${id}`, data); }
+  async function deleteParameterizedQuery(id) { return request('DELETE', `/parameterized-queries/${id}`); }
+  async function executeParameterizedQuery(id, values, useCache = true) {
+    return request('POST', `/parameterized-queries/${id}/execute`, { values, use_cache: useCache });
+  }
+  async function parseParameterizedQueryTemplate(shql) {
+    return request('POST', '/parameterized-queries/parse', { shql });
+  }
+
   // ── Media ─────────────────────────────────────────────────────────────────
   async function uploadMedia(file) {
     const url = new URL(BASE + '/media', window.location.origin);
@@ -247,6 +260,9 @@ const HGAI_API = (() => {
     projectInference,
     // notes
     listNotes, getNote, createNote, updateNote, deleteNote, listNoteShares, shareNote, unshareNote,
+    // parameterized queries
+    listParameterizedQueries, getParameterizedQuery, createParameterizedQuery, updateParameterizedQuery,
+    deleteParameterizedQuery, executeParameterizedQuery, parseParameterizedQueryTemplate,
     // media
     uploadMedia, downloadMedia, deleteMedia, listMedia, updateMedia,
     // query (SHQL)

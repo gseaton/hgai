@@ -14,6 +14,7 @@ from .stores.hypernodes import MongoHypernodeStore
 from .stores.media import MongoMediaStore
 from .stores.meshes import MongoMeshStore
 from .stores.notes import MongoNoteStore
+from .stores.parameterized_queries import MongoParameterizedQueryStore
 from .stores.spaces import MongoSpaceStore
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ class MongoStorageBackend(StorageBackend):
         self._meshes = MongoMeshStore()
         self._cache = MongoCacheStore()
         self._notes = MongoNoteStore()
+        self._parameterized_queries = MongoParameterizedQueryStore()
 
         # Media blob backend is independently config-toggled (HGAI_MEDIA_BACKEND)
         # from the primary storage_backend — metadata always stays in this same
@@ -89,3 +91,7 @@ class MongoStorageBackend(StorageBackend):
     @property
     def notes(self) -> MongoNoteStore:
         return self._notes
+
+    @property
+    def parameterized_queries(self) -> MongoParameterizedQueryStore:
+        return self._parameterized_queries
