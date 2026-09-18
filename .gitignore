@@ -22,6 +22,12 @@ pip-delete-this-directory.txt
 .env.local
 .env.*.local
 
+# MCP client config — holds a literal Bearer token for the local hgai MCP
+# server (see .claude/mcp-hgai-headers.sh's header comment for why: the
+# .mcp.json `headersHelper` field doesn't currently execute), so it must
+# never be committed. Never re-track this file.
+.mcp.json
+
 # IDE
 .vscode/
 .idea/
