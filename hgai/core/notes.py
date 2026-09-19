@@ -35,12 +35,12 @@ def can_edit_note(note: NoteInDB, username: str) -> bool:
     return any(grant.username == username and grant.role == NoteRole.editor for grant in note.acl)
 
 
-async def create_note(data: NoteCreate, owner_username: str) -> NoteInDB:
+async def create_note(data: NoteCreate, owner_username: str, id: Optional[str] = None) -> NoteInDB:
     now = now_utc()
     doc = data.model_dump()
     create_delta = _create_delta(doc, NOTE_TRACKED_FIELDS)
     doc.update(
-        id=uuid.uuid4().hex,
+        id=id or uuid.uuid4().hex,
         owner_username=owner_username,
         acl=[],
         system_created=now,

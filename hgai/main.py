@@ -71,6 +71,16 @@ async def lifespan(app: FastAPI):
     except ImportError:
         stop_scheduler = None
 
+    # Seed the default AI Agent vendor/model catalog on first run
+    if settings.agent_chat_enabled:
+        try:
+            from hgai_module_agentchat.store import seed_defaults
+            await seed_defaults()
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.warning(f"AI Agent catalog seeding failed (continuing without it): {type(e).__name__}: {e}")
+
     async with AsyncExitStack() as stack:
         if _mcp_module is not None:
             await stack.enter_async_context(_mcp_module.lifespan())
@@ -158,6 +168,16 @@ def create_app() -> FastAPI:
         logger.info("MCP module mounted at /mcp")
     except BaseException as e:
         logger.warning(f"MCP module not available (continuing without it): {type(e).__name__}: {e}")
+
+    # AI Agent Chat module — mounted conditionally; failures are non-fatal
+    if settings.agent_chat_enabled:
+        try:
+            from hgai_module_agentchat import AgentChatModule
+            agentchat_module = AgentChatModule()
+            app.include_router(agentchat_module.get_router(), prefix=prefix)
+            logger.info("AI Agent Chat module mounted at /api/v1/agent")
+        except BaseException as e:
+            logger.warning(f"AI Agent Chat module not available (continuing without it): {type(e).__name__}: {e}")
 
     # Serve Web UI static files
     ui_dir = Path(__file__).parent.parent / "ui"

@@ -241,6 +241,80 @@ const HGAI_API = (() => {
   async function updateSpaceGraph(spaceId, graphId, data) { return request('PUT', `/spaces/${spaceId}/graphs/${graphId}`, data); }
   async function deleteSpaceGraph(spaceId, graphId) { return request('DELETE', `/spaces/${spaceId}/graphs/${graphId}`); }
 
+  // ── AI Agent (vendors/models/chat sessions/messages) ─────────────────────
+  async function listAgentVendors(params = {}) { return request('GET', '/agent/vendors', null, params); }
+  async function getAgentVendor(id) { return request('GET', `/agent/vendors/${id}`); }
+  async function createAgentVendor(data) { return request('POST', '/agent/vendors', data); }
+  async function updateAgentVendor(id, data) { return request('PUT', `/agent/vendors/${id}`, data); }
+  async function deleteAgentVendor(id) { return request('DELETE', `/agent/vendors/${id}`); }
+
+  async function listAgentModels(params = {}) { return request('GET', '/agent/models', null, params); }
+  async function getAgentModel(id) { return request('GET', `/agent/models/${id}`); }
+  async function createAgentModel(data) { return request('POST', '/agent/models', data); }
+  async function updateAgentModel(id, data) { return request('PUT', `/agent/models/${id}`, data); }
+  async function deleteAgentModel(id) { return request('DELETE', `/agent/models/${id}`); }
+
+  async function listAgentSessions(params = {}) { return request('GET', '/agent/sessions', null, params); }
+  async function getAgentSession(id) { return request('GET', `/agent/sessions/${id}`); }
+  async function createAgentSession(data) { return request('POST', '/agent/sessions', data); }
+  async function updateAgentSession(id, data) { return request('PUT', `/agent/sessions/${id}`, data); }
+  async function deleteAgentSession(id) { return request('DELETE', `/agent/sessions/${id}`); }
+  async function listAgentMessages(sessionId) { return request('GET', `/agent/sessions/${sessionId}/messages`); }
+  async function sendAgentMessage(sessionId, prompt) { return request('POST', `/agent/sessions/${sessionId}/messages`, { prompt }); }
+  async function saveAgentMessageAsNote(sessionId, messageId) {
+    return request('POST', `/agent/sessions/${sessionId}/messages/${messageId}/save-note`);
+  }
+
+  async function listAgentPromptHistory() { return request('GET', '/agent/prompt-history'); }
+  async function addAgentPromptHistoryEntry(prompt) { return request('POST', '/agent/prompt-history', { prompt }); }
+  async function clearAgentPromptHistory() { return request('DELETE', '/agent/prompt-history'); }
+
+  // SSE streaming needs a manual fetch — request() always awaits resp.json().
+  // Frames are `\n\n`-delimited; a frame may span multiple `read()` chunks,
+  // so a trailing partial frame is held in `buffer` until it completes.
+  async function streamAgentMessage(sessionId, prompt, { onDelta, onDone, onError } = {}) {
+    const url = new URL(`${BASE}/agent/sessions/${sessionId}/messages/stream`, window.location.origin);
+    const headers = { 'Content-Type': 'application/json' };
+    const token = getToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const resp = await fetch(url.toString(), { method: 'POST', headers, body: JSON.stringify({ prompt }) });
+    if (resp.status === 401) {
+      clearSession();
+      window.dispatchEvent(new Event('hgai:unauthorized'));
+      throw new Error('Unauthorized');
+    }
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      throw new Error(data.detail || `HTTP ${resp.status}`);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const frames = buffer.split('\n\n');
+      buffer = frames.pop();
+      for (const frame of frames) {
+        if (!frame.trim()) continue;
+        let eventName = 'message';
+        let dataLine = '';
+        frame.split('\n').forEach(line => {
+          if (line.startsWith('event:')) eventName = line.slice(6).trim();
+          else if (line.startsWith('data:')) dataLine = line.slice(5).trim();
+        });
+        if (!dataLine) continue;
+        const parsed = JSON.parse(dataLine);
+        if (eventName === 'done') onDone && onDone(parsed);
+        else if (eventName === 'error') onError && onError(parsed);
+        else if (parsed.delta !== undefined) onDelta && onDelta(parsed.delta);
+      }
+    }
+  }
+
   return {
     // session
     getToken, getUsername, getRoles, isAdmin, setSession, clearSession,
@@ -277,5 +351,11 @@ const HGAI_API = (() => {
     listSpaces, getSpace, createSpace, updateSpace, deleteSpace,
     listSpaceMembers, addSpaceMember, updateSpaceMemberRole, removeSpaceMember,
     listSpaceGraphs, getSpaceGraph, createSpaceGraph, updateSpaceGraph, deleteSpaceGraph,
+    // AI agent
+    listAgentVendors, getAgentVendor, createAgentVendor, updateAgentVendor, deleteAgentVendor,
+    listAgentModels, getAgentModel, createAgentModel, updateAgentModel, deleteAgentModel,
+    listAgentSessions, getAgentSession, createAgentSession, updateAgentSession, deleteAgentSession,
+    listAgentMessages, sendAgentMessage, saveAgentMessageAsNote, streamAgentMessage,
+    listAgentPromptHistory, addAgentPromptHistoryEntry, clearAgentPromptHistory,
   };
 })();

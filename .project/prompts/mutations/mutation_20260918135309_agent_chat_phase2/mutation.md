@@ -1,0 +1,13 @@
+# Mutation Log
+
+## Created
+- **hgai_module_agentchat/mcp_toolkit.py** — `HgaiMcpClient` (raw httpx-based MCP streamable-HTTP JSON-RPC client: `initialize`/`notifications/initialized`/`tools/list`/`tools/call`) and `HgaiMcpToolkit(agno.tools.Toolkit)`, which dynamically wraps whatever the resident hgai MCP server's `tools/list` currently returns as Agno `Function` objects (via `parameters=<tool's own inputSchema>, skip_entrypoint_processing=True` — no hand-written per-tool wrappers).
+- **hgai_module_agentchat/engine.py** — `build_agent()` (constructs a fresh per-turn Agno `Agent`: the session's vendor/model via `_build_model()`, a Mongo-backed `db` for multi-turn history via `_get_agno_db()`, and an `HgaiMcpToolkit` connected with a JWT freshly minted for the requesting account), `run_turn()` (non-streaming: runs one turn, persists the user+assistant `AgentChatMessage` pair with timing/token metrics), `run_turn_stream()` (SSE-yielding streaming variant, persists from the run's own `RunCompletedEvent`, not from re-assembled deltas).
+
+## Modified
+- **hgai_module_agentchat/models.py** — Added `AgentChatSessionCreate/Update/InDB/Response`, `AgentChatMessageInDB/Response`, `AgentChatSendRequest`.
+- **hgai_module_agentchat/store.py** — Added session CRUD (`create_session`, `get_session`, `list_sessions` scoped per owner, `update_session_title`, `touch_session`, `delete_session` — cascades to its messages) and message persistence (`create_message`, `get_message`, `list_messages`).
+- **hgai_module_agentchat/api_router.py** — Added owner-scoped chat endpoints: `GET/POST /agent/sessions`, `GET/PUT/DELETE /agent/sessions/{id}`, `GET /agent/sessions/{id}/messages`, `POST /agent/sessions/{id}/messages` (non-streaming JSON), `POST /agent/sessions/{id}/messages/stream` (SSE). `_get_owned_session()`/`_resolve_usable_model()` helpers gate access and check the session's model/vendor are enabled before running a turn.
+- **tests/test_agent_chat.py** — Extended the fake Mongo collection with `delete_many` (needed for cascading session deletes); added 9 new tests: session/message CRUD, and 4 engine tests using a `_FakeAgent` that mirrors Agno's real dual-dispatch `arun()` calling convention (coroutine when not streaming, async generator directly when `stream=True` — confirmed against Agno's actual source and cookbook examples, not assumed) — covering persisted metrics, streaming delta/final-content handling, error-frame behavior, and the no-API-key failure path.
+
+No files were deleted. Three scratch spike scripts (`spike_mcp_toolkit.py` from Phase 0, `spike_engine.py`, `spike_sse.py`) were written to and then removed from the session scratchpad directory (outside the repo) after validating the design; they were never part of the repo.

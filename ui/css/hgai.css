@@ -876,3 +876,165 @@ details[open] > summary.notes-folder-label > .notes-folder-icon-open { display: 
 .notes-folder-note-meta { color: var(--hgai-text-faint); font-size: 0.72rem; }
 
 .notes-folder-empty { color: var(--hgai-text-faint); font-size: 0.85rem; padding: 4px 2px; }
+
+/* ── AI Agent Chat Panel ───────────────────────────────────────────────────
+   A persistent sibling of #main-content inside #app-shell's flex row (see
+   index.html) — not scoped to any one screen, so it survives every
+   showScreen() switch, the same way Cursor/Claude Code's own side panel
+   stays open across files/tabs. Toggled via plain .d-none (the same idiom
+   every screen/column in this app already uses for show/hide), not a
+   width-animated collapse — simpler and consistent with the rest of the UI. */
+:root { --agent-chat-panel-width: 380px; }
+
+#agent-chat-panel-wrap {
+  display: flex;
+  height: 100%;
+  flex-shrink: 0;
+}
+
+/* Draggable strip between the main content and the chat panel — resizes
+   #agent-chat-panel horizontally via --agent-chat-panel-width (see
+   agentChatInitPanelResize in app.js). Mirrors the Notes folder sidebar's
+   own resize handle almost exactly, just anchored to the opposite edge
+   (the panel it resizes is on the right, not the left, so dragging the
+   handle is inverted — see the JS). */
+.agent-chat-resize-handle {
+  flex-shrink: 0;
+  width: 6px;
+  align-self: stretch;
+  background: var(--hgai-border);
+  cursor: col-resize;
+}
+.agent-chat-resize-handle:hover,
+.agent-chat-resize-handle.is-dragging {
+  background: var(--hgai-primary, #4f46e5);
+  opacity: 0.5;
+}
+body.agent-chat-panel-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+#agent-chat-panel {
+  flex: 0 0 var(--agent-chat-panel-width);
+  width: var(--agent-chat-panel-width);
+  min-width: 300px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--hgai-surface);
+  border-left: 1px solid var(--hgai-border);
+  overflow: hidden;
+}
+
+.agent-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--hgai-border);
+  flex-shrink: 0;
+}
+.agent-chat-header #agent-chat-model-select { flex: 1; min-width: 0; }
+
+.agent-chat-sessions-list {
+  flex-shrink: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--hgai-border);
+  background: var(--hgai-surface-alt);
+}
+.agent-chat-session-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--hgai-border);
+  color: var(--hgai-text-subtle);
+}
+.agent-chat-session-item:hover { background: var(--hgai-sidebar-hover, rgba(79,70,229,0.08)); }
+.agent-chat-session-item.active { background: var(--hgai-sidebar-hover, rgba(79,70,229,0.12)); font-weight: 600; color: var(--hgai-text); }
+.agent-chat-session-item .agent-chat-session-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-chat-session-item .agent-chat-session-delete { opacity: 0; }
+.agent-chat-session-item:hover .agent-chat-session-delete { opacity: 1; }
+
+.agent-chat-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--hgai-text-faint);
+  padding: 24px;
+}
+.agent-chat-empty i { font-size: 2rem; color: var(--hgai-text-faint); }
+
+.agent-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agent-chat-message { max-width: 92%; }
+.agent-chat-message-user { align-self: flex-end; }
+.agent-chat-message-assistant { align-self: flex-start; }
+
+.agent-chat-message-bubble {
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+.agent-chat-message-user .agent-chat-message-bubble {
+  background: var(--hgai-primary);
+  color: #fff;
+}
+.agent-chat-message-assistant .agent-chat-message-bubble {
+  background: var(--hgai-surface-alt);
+  border: 1px solid var(--hgai-border);
+  color: var(--hgai-text);
+}
+.agent-chat-message-bubble p:last-child { margin-bottom: 0; }
+.agent-chat-message-bubble pre { font-size: 0.78rem; padding: 6px; overflow-x: auto; }
+.agent-chat-message-bubble code { font-size: 0.85em; }
+
+.agent-chat-message-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+  font-size: 0.7rem;
+  color: var(--hgai-text-faint);
+}
+.agent-chat-message-assistant .agent-chat-message-meta { justify-content: space-between; }
+.agent-chat-message-user .agent-chat-message-meta { justify-content: flex-end; }
+.agent-chat-save-note-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--hgai-text-faint);
+  font-size: 0.72rem;
+}
+.agent-chat-save-note-btn:hover { color: var(--hgai-primary); }
+.agent-chat-save-note-btn:disabled { color: var(--hgai-text-faint); opacity: 0.6; cursor: default; }
+
+.agent-chat-composer {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  padding: 8px;
+  border-top: 1px solid var(--hgai-border);
+  flex-shrink: 0;
+}
+.agent-chat-composer textarea { flex: 1; resize: none; }
+
+@media (max-width: 991.98px) {
+  #agent-chat-panel { position: fixed; top: 0; right: 0; z-index: 250; width: 100%; max-width: 100%; }
+  .agent-chat-resize-handle { display: none; }
+}

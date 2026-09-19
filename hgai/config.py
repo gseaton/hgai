@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     # Mesh
     mesh_sync_interval_seconds: int = Field(default=300, description="Background mesh graph-list sync interval (0 = disabled)")
 
+    # AI Agent Chat
+    agent_chat_enabled: bool = Field(
+        default=True, description="Master on/off switch for the AI Agent Chat module. Env: HGAI_AGENT_CHAT_ENABLED"
+    )
+
     # Media
     max_media_size_mb: int = Field(default=100, description="Maximum upload size for a single media file, in MB")
     media_backend: str = Field(

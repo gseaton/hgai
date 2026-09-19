@@ -24,6 +24,12 @@ const State = {
   graphsCache: {},       // id -> graph object (includes space_id)
   mediaCache: {},        // id -> media object, from the last list load
   pqCache: {},           // id -> parameterized query object, from the last list load
+  agentVendorsCache: {}, // id -> agent vendor object, from the last list load
+  agentModelsCache: {},  // id -> agent model object, from the last list load
+  agentSessionsCache: {},// id -> chat session object, from the last list load
+  agentActiveSessionId: null,
+  agentChatOpen: false,
+  agentChatStreaming: false,
   activeSpaceDetailId: null,
   nodesSort: [{ field: 'label', dir: 'asc' }],  // [{field, dir: 'asc'|'desc'}, ...] — priority order, first = primary sort key
   edgesSort: [{ field: 'label', dir: 'asc' }],  // default until the user clicks a column header, then their choice persists for the session
@@ -168,6 +174,7 @@ function showScreen(name) {
     edges: 'Hyperedges', media: 'Media', notes: 'Notes', viz: 'Visualize', shql: 'SHQL Query',
     pq: 'Parameterized Queries',
     'project-inference': 'Project Inference',
+    'agent-admin': 'AI Agent',
     spaces: 'Spaces', accounts: 'Accounts', meshes: 'Meshes', system: 'System',
   };
   document.getElementById('topbar-screen-title').textContent = titles[name] || name;
@@ -185,6 +192,7 @@ function showScreen(name) {
     shql: initShqlEditor,
     pq: () => { State.pqPage = 0; loadPQ(); },
     'project-inference': loadProjectInferenceScreen,
+    'agent-admin': loadAgentAdmin,
     spaces: loadSpaces,
     accounts: loadAccounts,
     meshes: loadMeshes,
@@ -418,6 +426,7 @@ function initApp() {
   });
 
   populateGraphSelector();
+  loadAgentChatModelOptions();
   showScreen('dashboard');
 }
 
@@ -5148,6 +5157,650 @@ document.getElementById('btn-shql-parameterized').addEventListener('click', () =
   });
 });
 
+// ── AI Agent: Vendors/Models admin CRUD ──────────────────────────────────────
+// Small admin-managed lists (same scale as Meshes/Spaces) — no pagination,
+// just a capped limit, matching loadMeshes()'s own pattern.
+
+const AGENT_VENDOR_LABELS = { anthropic: 'Anthropic', openai: 'OpenAI', xai: 'xAI', custom: 'Custom' };
+
+function boolBadge(v) {
+  return v ? '<span class="badge bg-success">Yes</span>' : '<span class="badge bg-secondary">No</span>';
+}
+
+async function loadAgentAdmin() {
+  await Promise.all([loadAgentVendors(), loadAgentModels()]);
+}
+
+async function loadAgentVendors() {
+  const tbody = document.getElementById('tbody-agent-vendors');
+  tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  try {
+    const resp = await HGAI_API.listAgentVendors({ limit: 200 });
+    tbody.innerHTML = '';
+    State.agentVendorsCache = {};
+    if (!resp.items || !resp.items.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No vendors configured</td></tr>';
+    } else {
+      resp.items.forEach(v => {
+        State.agentVendorsCache[v.id] = v;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="table-id-link" onclick="openAgentVendorModal('${v.id}')">${escapeHtml(v.label)}</td>
+          <td>${escapeHtml(AGENT_VENDOR_LABELS[v.name] || v.name)}</td>
+          <td class="text-muted small">${escapeHtml(v.base_url || '—')}</td>
+          <td>${v.api_key_last4 ? `<code>•••• ${escapeHtml(v.api_key_last4)}</code>` : '<span class="text-muted">not set</span>'}</td>
+          <td>${boolBadge(v.enabled)}</td>
+          <td>${statusBadge(v.status)}</td>
+          <td class="text-end">
+            <button class="btn btn-xs btn-outline-primary me-1" onclick="openAgentVendorModal('${v.id}')" title="Edit"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-xs btn-outline-danger" onclick="deleteAgentVendor('${v.id}')" title="Delete"><i class="bi bi-trash"></i></button>
+          </td>`;
+        tbody.appendChild(tr);
+      });
+    }
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-danger text-center">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+async function openAgentVendorModal(id = null) {
+  const form = document.getElementById('agent-vendor-form-mode');
+  form.value = id ? 'edit' : 'create';
+  document.getElementById('agent-vendor-id').value = id || '';
+  document.getElementById('agent-vendor-modal-title').textContent = id ? 'Edit Vendor' : 'New Vendor';
+  document.getElementById('agent-vendor-api-key').value = '';
+
+  if (id) {
+    const v = State.agentVendorsCache[id];
+    if (!v) return;
+    document.getElementById('agent-vendor-name').value = v.name;
+    document.getElementById('agent-vendor-label').value = v.label || '';
+    document.getElementById('agent-vendor-base-url').value = v.base_url || '';
+    document.getElementById('agent-vendor-enabled').checked = !!v.enabled;
+    document.getElementById('agent-vendor-tags').value = (v.tags || []).join(', ');
+    document.getElementById('agent-vendor-api-key-hint').textContent = v.api_key_last4
+      ? `Current key ends in •••• ${v.api_key_last4}. Leave blank to keep it unchanged.`
+      : 'No key configured yet.';
+  } else {
+    document.getElementById('agent-vendor-name').value = 'anthropic';
+    document.getElementById('agent-vendor-label').value = '';
+    document.getElementById('agent-vendor-base-url').value = '';
+    document.getElementById('agent-vendor-enabled').checked = true;
+    document.getElementById('agent-vendor-tags').value = '';
+    document.getElementById('agent-vendor-api-key-hint').textContent = '';
+  }
+  new bootstrap.Modal(document.getElementById('modal-agent-vendor')).show();
+}
+window.openAgentVendorModal = openAgentVendorModal;
+
+document.getElementById('btn-save-agent-vendor').addEventListener('click', async () => {
+  const mode = document.getElementById('agent-vendor-form-mode').value;
+  const id = document.getElementById('agent-vendor-id').value;
+  const apiKey = document.getElementById('agent-vendor-api-key').value;
+  const data = {
+    name: document.getElementById('agent-vendor-name').value,
+    label: document.getElementById('agent-vendor-label').value.trim(),
+    base_url: document.getElementById('agent-vendor-base-url').value.trim() || null,
+    enabled: document.getElementById('agent-vendor-enabled').checked,
+    tags: parseTags(document.getElementById('agent-vendor-tags').value),
+  };
+  if (!data.label) { toast('Label is required', 'danger'); return; }
+  if (apiKey) data.api_key = apiKey;
+
+  try {
+    if (mode === 'edit') {
+      await HGAI_API.updateAgentVendor(id, data);
+      toast('Vendor updated');
+    } else {
+      await HGAI_API.createAgentVendor(data);
+      toast('Vendor created');
+    }
+    bootstrap.Modal.getInstance(document.getElementById('modal-agent-vendor'))?.hide();
+    loadAgentVendors();
+  } catch (err) { toast(err.message, 'danger'); }
+});
+
+window.deleteAgentVendor = (id) => {
+  const v = State.agentVendorsCache[id] || {};
+  confirmDelete(`Delete vendor "${v.label || id}"? Models using it will stop working.`, async () => {
+    try {
+      await HGAI_API.deleteAgentVendor(id);
+      toast('Vendor deleted');
+      loadAgentVendors();
+    } catch (err) { toast(err.message, 'danger'); }
+  });
+};
+
+document.getElementById('btn-create-agent-vendor').addEventListener('click', () => openAgentVendorModal());
+
+async function loadAgentModels() {
+  const tbody = document.getElementById('tbody-agent-models');
+  tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  try {
+    const resp = await HGAI_API.listAgentModels({ limit: 200 });
+    tbody.innerHTML = '';
+    State.agentModelsCache = {};
+    if (!resp.items || !resp.items.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No models configured</td></tr>';
+    } else {
+      resp.items.forEach(m => {
+        State.agentModelsCache[m.id] = m;
+        const vendor = State.agentVendorsCache[m.vendor_id];
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="table-id-link" onclick="openAgentModelModal('${m.id}')">${escapeHtml(m.label)}</td>
+          <td>${escapeHtml(vendor ? vendor.label : m.vendor_id)}</td>
+          <td><code>${escapeHtml(m.model_id)}</code></td>
+          <td class="text-muted small text-truncate-150" title="${escapeHtml(m.description||'')}">${escapeHtml(m.description||'')}</td>
+          <td>${boolBadge(m.enabled)}</td>
+          <td>${statusBadge(m.status)}</td>
+          <td class="text-end">
+            <button class="btn btn-xs btn-outline-primary me-1" onclick="openAgentModelModal('${m.id}')" title="Edit"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-xs btn-outline-danger" onclick="deleteAgentModel('${m.id}')" title="Delete"><i class="bi bi-trash"></i></button>
+          </td>`;
+        tbody.appendChild(tr);
+      });
+    }
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-danger text-center">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+async function populateAgentModelVendorSelect(selectedId) {
+  const sel = document.getElementById('agent-model-vendor-id');
+  sel.innerHTML = '';
+  Object.values(State.agentVendorsCache).forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v.id;
+    opt.textContent = v.label;
+    if (v.id === selectedId) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+async function openAgentModelModal(id = null) {
+  await populateAgentModelVendorSelect();
+  const form = document.getElementById('agent-model-form-mode');
+  form.value = id ? 'edit' : 'create';
+  document.getElementById('agent-model-id').value = id || '';
+  document.getElementById('agent-model-modal-title').textContent = id ? 'Edit Model' : 'New Model';
+
+  if (id) {
+    const m = State.agentModelsCache[id];
+    if (!m) return;
+    document.getElementById('agent-model-vendor-id').value = m.vendor_id;
+    document.getElementById('agent-model-model-id').value = m.model_id || '';
+    document.getElementById('agent-model-label').value = m.label || '';
+    document.getElementById('agent-model-description').value = m.description || '';
+    document.getElementById('agent-model-enabled').checked = !!m.enabled;
+    document.getElementById('agent-model-temperature').value = m.default_temperature ?? '';
+    document.getElementById('agent-model-max-tokens').value = m.default_max_tokens ?? '';
+    document.getElementById('agent-model-tags').value = (m.tags || []).join(', ');
+  } else {
+    document.getElementById('agent-model-model-id').value = '';
+    document.getElementById('agent-model-label').value = '';
+    document.getElementById('agent-model-description').value = '';
+    document.getElementById('agent-model-enabled').checked = true;
+    document.getElementById('agent-model-temperature').value = '';
+    document.getElementById('agent-model-max-tokens').value = '';
+    document.getElementById('agent-model-tags').value = '';
+  }
+  new bootstrap.Modal(document.getElementById('modal-agent-model')).show();
+}
+window.openAgentModelModal = openAgentModelModal;
+
+document.getElementById('btn-save-agent-model').addEventListener('click', async () => {
+  const mode = document.getElementById('agent-model-form-mode').value;
+  const id = document.getElementById('agent-model-id').value;
+  const temp = document.getElementById('agent-model-temperature').value;
+  const maxTok = document.getElementById('agent-model-max-tokens').value;
+  const data = {
+    vendor_id: document.getElementById('agent-model-vendor-id').value,
+    model_id: document.getElementById('agent-model-model-id').value.trim(),
+    label: document.getElementById('agent-model-label').value.trim(),
+    description: document.getElementById('agent-model-description').value.trim(),
+    enabled: document.getElementById('agent-model-enabled').checked,
+    default_temperature: temp === '' ? null : parseFloat(temp),
+    default_max_tokens: maxTok === '' ? null : parseInt(maxTok, 10),
+    tags: parseTags(document.getElementById('agent-model-tags').value),
+  };
+  if (!data.vendor_id || !data.model_id || !data.label) {
+    toast('Vendor, Model ID, and Label are required', 'danger'); return;
+  }
+
+  try {
+    if (mode === 'edit') {
+      await HGAI_API.updateAgentModel(id, data);
+      toast('Model updated');
+    } else {
+      await HGAI_API.createAgentModel(data);
+      toast('Model created');
+    }
+    bootstrap.Modal.getInstance(document.getElementById('modal-agent-model'))?.hide();
+    loadAgentModels();
+    loadAgentChatModelOptions();
+  } catch (err) { toast(err.message, 'danger'); }
+});
+
+window.deleteAgentModel = (id) => {
+  const m = State.agentModelsCache[id] || {};
+  confirmDelete(`Delete model "${m.label || id}"?`, async () => {
+    try {
+      await HGAI_API.deleteAgentModel(id);
+      toast('Model deleted');
+      loadAgentModels();
+      loadAgentChatModelOptions();
+    } catch (err) { toast(err.message, 'danger'); }
+  });
+};
+
+document.getElementById('btn-create-agent-model').addEventListener('click', () => openAgentModelModal());
+
+// ── AI Agent: Chat panel ──────────────────────────────────────────────────────
+// A persistent, docked panel (see #agent-chat-panel in index.html) — global
+// across every screen, not scoped to one. Multi-turn memory and "session
+// restart" both come for free from the backend (see
+// hgai_module_agentchat.engine): reusing a session's id on every send is
+// the entire mechanism, so this file never reconstructs message history —
+// it just displays whatever the server already persisted.
+
+function renderChatMarkdown(text) {
+  try { return DOMPurify.sanitize(marked.parse(text || '')); }
+  catch { return escapeHtml(text || ''); }
+}
+
+function initAgentChatPanel() {
+  document.getElementById('btn-agent-chat-toggle').addEventListener('click', toggleAgentChatPanel);
+  document.getElementById('btn-agent-chat-collapse').addEventListener('click', () => setAgentChatPanelOpen(false));
+  agentChatInitPanelResize();
+
+  document.getElementById('btn-agent-chat-sessions-toggle').addEventListener('click', () => {
+    const list = document.getElementById('agent-chat-sessions-list');
+    const willShow = list.classList.contains('d-none');
+    document.getElementById('agent-chat-prompt-history-list').classList.add('d-none');
+    list.classList.toggle('d-none', !willShow);
+    if (willShow) loadAgentChatSessions();
+  });
+
+  document.getElementById('btn-agent-chat-history-toggle').addEventListener('click', () => {
+    const list = document.getElementById('agent-chat-prompt-history-list');
+    const willShow = list.classList.contains('d-none');
+    document.getElementById('agent-chat-sessions-list').classList.add('d-none');
+    list.classList.toggle('d-none', !willShow);
+    if (willShow) loadAgentChatPromptHistory();
+  });
+
+  document.getElementById('btn-agent-chat-new-session').addEventListener('click', () => {
+    State.agentActiveSessionId = null;
+    document.getElementById('agent-chat-sessions-list').classList.add('d-none');
+    document.getElementById('agent-chat-prompt-history-list').classList.add('d-none');
+    showAgentChatEmptyState();
+  });
+
+  document.getElementById('btn-agent-chat-send').addEventListener('click', sendAgentChatMessage);
+  document.getElementById('agent-chat-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendAgentChatMessage();
+    }
+  });
+
+  try {
+    if (localStorage.getItem('hgai-agent-chat-open') === '1') setAgentChatPanelOpen(true);
+  } catch { /* localStorage unavailable — panel just starts closed */ }
+}
+
+function setAgentChatPanelOpen(open) {
+  State.agentChatOpen = open;
+  document.getElementById('agent-chat-panel-wrap').classList.toggle('d-none', !open);
+  try { localStorage.setItem('hgai-agent-chat-open', open ? '1' : '0'); } catch { /* not persisted this session */ }
+}
+
+function toggleAgentChatPanel() { setAgentChatPanelOpen(!State.agentChatOpen); }
+
+// Horizontally resizable by dragging the handle between the panel and the
+// main content — width persists to localStorage (a deliberately-chosen
+// panel width is a lasting preference, like the theme choice, not per-tab
+// transient state) and is applied via the --agent-chat-panel-width CSS
+// variable. Mirrors the Notes folder sidebar's own resize handle
+// (notesInitSidebarResize) almost exactly — the one difference is this
+// panel is anchored to the *right* edge of the screen, not the left, so
+// the drag delta's effect on width is inverted: dragging the handle
+// leftward (away from the panel) grows it; dragging it rightward shrinks it.
+const AGENT_CHAT_PANEL_WIDTH_KEY = 'hgai_agent_chat_panel_width';
+const AGENT_CHAT_PANEL_MIN_WIDTH = 300;
+const AGENT_CHAT_PANEL_MAX_WIDTH = 900;
+
+function agentChatApplyPanelWidth(width) {
+  document.documentElement.style.setProperty('--agent-chat-panel-width', `${width}px`);
+}
+
+function agentChatRestorePanelWidth() {
+  try {
+    const saved = parseInt(localStorage.getItem(AGENT_CHAT_PANEL_WIDTH_KEY), 10);
+    if (!isNaN(saved)) {
+      agentChatApplyPanelWidth(Math.min(AGENT_CHAT_PANEL_MAX_WIDTH, Math.max(AGENT_CHAT_PANEL_MIN_WIDTH, saved)));
+    }
+  } catch { /* localStorage unavailable — default width from CSS applies */ }
+}
+agentChatRestorePanelWidth();
+
+function agentChatInitPanelResize() {
+  const handle = document.getElementById('agent-chat-resize-handle');
+  const panel = document.getElementById('agent-chat-panel');
+  if (!handle || !panel) return;
+
+  let startX = 0;
+  let startWidth = 0;
+
+  function onPointerMove(e) {
+    const delta = e.clientX - startX;
+    const width = Math.min(AGENT_CHAT_PANEL_MAX_WIDTH, Math.max(AGENT_CHAT_PANEL_MIN_WIDTH, startWidth - delta));
+    agentChatApplyPanelWidth(width);
+  }
+  function onPointerUp(e) {
+    handle.releasePointerCapture(e.pointerId);
+    handle.removeEventListener('pointermove', onPointerMove);
+    handle.removeEventListener('pointerup', onPointerUp);
+    handle.classList.remove('is-dragging');
+    document.body.classList.remove('agent-chat-panel-resizing');
+    try {
+      const finalWidth = panel.getBoundingClientRect().width;
+      localStorage.setItem(AGENT_CHAT_PANEL_WIDTH_KEY, String(Math.round(finalWidth)));
+    } catch { /* unavailable — resized width just won't persist */ }
+  }
+  handle.addEventListener('pointerdown', e => {
+    startX = e.clientX;
+    startWidth = panel.getBoundingClientRect().width;
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add('is-dragging');
+    document.body.classList.add('agent-chat-panel-resizing');
+    handle.addEventListener('pointermove', onPointerMove);
+    handle.addEventListener('pointerup', onPointerUp);
+  });
+  handle.addEventListener('keydown', e => {
+    const step = 20;
+    let delta = 0;
+    if (e.key === 'ArrowLeft') delta = step;
+    else if (e.key === 'ArrowRight') delta = -step;
+    else return;
+    e.preventDefault();
+    const width = Math.min(AGENT_CHAT_PANEL_MAX_WIDTH, Math.max(AGENT_CHAT_PANEL_MIN_WIDTH, panel.getBoundingClientRect().width + delta));
+    agentChatApplyPanelWidth(width);
+    try { localStorage.setItem(AGENT_CHAT_PANEL_WIDTH_KEY, String(Math.round(width))); } catch { /* unavailable */ }
+  });
+}
+
+async function loadAgentChatModelOptions() {
+  const sel = document.getElementById('agent-chat-model-select');
+  if (!sel) return;
+  try {
+    const [modelsResp, vendorsResp] = await Promise.all([
+      HGAI_API.listAgentModels({ enabled_only: true, limit: 200 }),
+      HGAI_API.isAdmin() ? HGAI_API.listAgentVendors({ limit: 200 }) : Promise.resolve({ items: [] }),
+    ]);
+    const vendorLabels = {};
+    (vendorsResp.items || []).forEach(v => { vendorLabels[v.id] = v.label; });
+
+    const previouslySelected = sel.value;
+    sel.innerHTML = '';
+    const items = modelsResp.items || [];
+    if (!items.length) {
+      sel.innerHTML = '<option value="">No models available</option>';
+      sel.disabled = true;
+      return;
+    }
+    sel.disabled = false;
+    items.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      const vendorLabel = vendorLabels[m.vendor_id];
+      opt.textContent = vendorLabel ? `${vendorLabel} — ${m.label}` : m.label;
+      sel.appendChild(opt);
+    });
+    if (items.some(m => m.id === previouslySelected)) sel.value = previouslySelected;
+  } catch {
+    sel.innerHTML = '<option value="">Failed to load models</option>';
+  }
+}
+
+async function loadAgentChatSessions() {
+  const list = document.getElementById('agent-chat-sessions-list');
+  list.innerHTML = '<div class="text-muted small p-2">Loading...</div>';
+  try {
+    const resp = await HGAI_API.listAgentSessions({ limit: 100 });
+    list.innerHTML = '';
+    State.agentSessionsCache = {};
+    if (!resp.items || !resp.items.length) {
+      list.innerHTML = '<div class="text-muted small p-2">No sessions yet</div>';
+      return;
+    }
+    resp.items.forEach(s => {
+      State.agentSessionsCache[s.id] = s;
+      const div = document.createElement('div');
+      div.className = 'agent-chat-session-item' + (s.id === State.agentActiveSessionId ? ' active' : '');
+      div.innerHTML = `
+        <i class="bi bi-chat-left-text"></i>
+        <span class="agent-chat-session-title">${escapeHtml(s.title || 'Untitled session')}</span>
+        <button class="btn btn-xs btn-link text-danger agent-chat-session-delete p-0" title="Delete">
+          <i class="bi bi-trash"></i>
+        </button>`;
+      div.addEventListener('click', (e) => {
+        if (e.target.closest('.agent-chat-session-delete')) return;
+        selectAgentChatSession(s.id);
+        list.classList.add('d-none');
+      });
+      div.querySelector('.agent-chat-session-delete').addEventListener('click', (e) => {
+        e.stopPropagation();
+        confirmDelete(`Delete chat session "${s.title || 'Untitled session'}"?`, async () => {
+          try {
+            await HGAI_API.deleteAgentSession(s.id);
+            if (State.agentActiveSessionId === s.id) {
+              State.agentActiveSessionId = null;
+              showAgentChatEmptyState();
+            }
+            loadAgentChatSessions();
+          } catch (err) { toast(err.message, 'danger'); }
+        });
+      });
+      list.appendChild(div);
+    });
+  } catch (err) {
+    list.innerHTML = `<div class="text-danger small p-2">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+// The caller's own last 50 submitted prompts (see addToAgentChatHistory) —
+// distinct from the sessions list above: this is a flat list of what was
+// *typed*, spanning every session, for quickly recalling/reusing a past
+// prompt — not a conversation to resume. Clicking an entry only fills the
+// composer; it does not send it, mirroring the SHQL screen's own
+// "copy from history into the query box" behavior.
+async function loadAgentChatPromptHistory() {
+  const list = document.getElementById('agent-chat-prompt-history-list');
+  list.innerHTML = '<div class="text-muted small p-2">Loading...</div>';
+  try {
+    const resp = await HGAI_API.listAgentPromptHistory();
+    const items = resp.items || [];
+    list.innerHTML = '';
+    if (!items.length) {
+      list.innerHTML = '<div class="text-muted small p-2">No prompt history yet</div>';
+      return;
+    }
+    items.forEach(entry => {
+      const div = document.createElement('div');
+      div.className = 'agent-chat-session-item';
+      div.title = entry.prompt;
+      div.innerHTML = `
+        <i class="bi bi-arrow-return-left"></i>
+        <span class="agent-chat-session-title">${escapeHtml(entry.prompt)}</span>`;
+      div.addEventListener('click', () => {
+        const input = document.getElementById('agent-chat-input');
+        input.value = entry.prompt;
+        input.focus();
+        list.classList.add('d-none');
+      });
+      list.appendChild(div);
+    });
+  } catch (err) {
+    list.innerHTML = `<div class="text-danger small p-2">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function showAgentChatEmptyState() {
+  document.getElementById('agent-chat-empty').classList.remove('d-none');
+  document.getElementById('agent-chat-messages').classList.add('d-none');
+  document.getElementById('agent-chat-messages').innerHTML = '';
+}
+
+async function selectAgentChatSession(id) {
+  State.agentActiveSessionId = id;
+  const session = State.agentSessionsCache[id];
+  if (session) document.getElementById('agent-chat-model-select').value = session.model_id;
+
+  const emptyEl = document.getElementById('agent-chat-empty');
+  const messagesEl = document.getElementById('agent-chat-messages');
+  emptyEl.classList.add('d-none');
+  messagesEl.classList.remove('d-none');
+  messagesEl.innerHTML = '<div class="text-muted small p-2">Loading...</div>';
+  try {
+    const messages = await HGAI_API.listAgentMessages(id);
+    messagesEl.innerHTML = '';
+    messages.forEach(m => appendAgentChatMessageEl(m.role, m.content, m));
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  } catch (err) {
+    messagesEl.innerHTML = `<div class="text-danger small p-2">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+// Renders one message bubble and returns its DOM element, so the streaming
+// send flow can keep appending text into the same element as deltas arrive.
+function appendAgentChatMessageEl(role, content, meta = {}) {
+  const messagesEl = document.getElementById('agent-chat-messages');
+  document.getElementById('agent-chat-empty').classList.add('d-none');
+  messagesEl.classList.remove('d-none');
+
+  const wrap = document.createElement('div');
+  wrap.className = `agent-chat-message agent-chat-message-${role}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'agent-chat-message-bubble';
+  bubble.innerHTML = renderChatMarkdown(content);
+  wrap.appendChild(bubble);
+
+  const metaEl = document.createElement('div');
+  metaEl.className = 'agent-chat-message-meta';
+  if (role === 'assistant') {
+    const tokenText = meta.tokens_total ? `${meta.tokens_total} tokens` : '';
+    metaEl.innerHTML = `
+      <span>${escapeHtml(tokenText)}</span>
+      <button class="agent-chat-save-note-btn" title="Save as Note"><i class="bi bi-journal-plus"></i> Save as Note</button>`;
+    const saveBtn = metaEl.querySelector('.agent-chat-save-note-btn');
+    if (meta.id) {
+      saveBtn.addEventListener('click', () => saveAgentChatMessageAsNote(meta.id, saveBtn));
+    } else {
+      saveBtn.disabled = true;
+    }
+    wrap._saveNoteBtn = saveBtn;
+  }
+  wrap.appendChild(metaEl);
+
+  messagesEl.appendChild(wrap);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return { wrap, bubble };
+}
+
+async function saveAgentChatMessageAsNote(messageId, btnEl) {
+  if (!State.agentActiveSessionId) return;
+  btnEl.disabled = true;
+  try {
+    const note = await HGAI_API.saveAgentMessageAsNote(State.agentActiveSessionId, messageId);
+    btnEl.innerHTML = '<i class="bi bi-check-lg"></i> Saved';
+    toast(`Saved as note "${note.label}"`);
+  } catch (err) {
+    btnEl.disabled = false;
+    toast(err.message, 'danger');
+  }
+}
+
+async function ensureAgentChatSession() {
+  if (State.agentActiveSessionId) return State.agentActiveSessionId;
+  const modelId = document.getElementById('agent-chat-model-select').value;
+  if (!modelId) { toast('No AI model available — an admin needs to configure one', 'danger'); return null; }
+  const session = await HGAI_API.createAgentSession({ model_id: modelId });
+  State.agentActiveSessionId = session.id;
+  State.agentSessionsCache[session.id] = session;
+  return session.id;
+}
+
+// Server-side, per-account history of submitted chat prompts
+// (hgai_module_agentchat/prompt_history.py, "agent_chat_prompt_history"
+// collection) — follows the account across browsers/devices/machines and
+// survives a server restart, same pattern as the SHQL screen's
+// addToShqlHistory(). Capped at the 50 most recent per account;
+// resubmitting a prompt already in the history moves it back to the top
+// instead of creating a duplicate (enforced server-side).
+async function addToAgentChatHistory(prompt) {
+  const trimmed = (prompt || '').trim();
+  if (!trimmed) return;
+  try {
+    await HGAI_API.addAgentPromptHistoryEntry(trimmed);
+  } catch { /* recording is best-effort — a failure here must not block sending the message */ }
+}
+
+async function sendAgentChatMessage() {
+  if (State.agentChatStreaming) return;
+  const input = document.getElementById('agent-chat-input');
+  const prompt = input.value.trim();
+  if (!prompt) return;
+  addToAgentChatHistory(prompt);
+
+  const sessionId = await ensureAgentChatSession().catch(err => { toast(err.message, 'danger'); return null; });
+  if (!sessionId) return;
+
+  input.value = '';
+  appendAgentChatMessageEl('user', prompt);
+  const { bubble } = appendAgentChatMessageEl('assistant', '');
+  const sendBtn = document.getElementById('btn-agent-chat-send');
+
+  State.agentChatStreaming = true;
+  sendBtn.disabled = true;
+  let accumulated = '';
+  try {
+    await HGAI_API.streamAgentMessage(sessionId, prompt, {
+      onDelta: (delta) => {
+        accumulated += delta;
+        bubble.innerHTML = renderChatMarkdown(accumulated);
+        document.getElementById('agent-chat-messages').scrollTop = 1e9;
+      },
+      onDone: (payload) => {
+        const wrap = bubble.closest('.agent-chat-message');
+        const saveBtn = wrap && wrap._saveNoteBtn;
+        if (saveBtn && payload.message_id) {
+          saveBtn.disabled = false;
+          saveBtn.addEventListener('click', () => saveAgentChatMessageAsNote(payload.message_id, saveBtn));
+        }
+      },
+      onError: (payload) => {
+        bubble.innerHTML = renderChatMarkdown(`*Error: ${payload.error || 'agent run failed'}*`);
+      },
+    });
+    // Title the session from its first prompt, and refresh the list's title
+    // once — first turn only, so a user's own later rename is never clobbered.
+    const session = State.agentSessionsCache[sessionId];
+    if (session && !session.title) {
+      const title = prompt.length > 60 ? prompt.slice(0, 57) + '...' : prompt;
+      await HGAI_API.updateAgentSession(sessionId, { title }).catch(() => {});
+      session.title = title;
+    }
+  } catch (err) {
+    bubble.innerHTML = renderChatMarkdown(`*Error: ${err.message}*`);
+  } finally {
+    State.agentChatStreaming = false;
+    sendBtn.disabled = false;
+  }
+}
+
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 initThemeSwitcher();
+initAgentChatPanel();
 initApp();

@@ -42,3 +42,19 @@ python-dateutil==2.9.0
 
 # Shell
 prompt_toolkit==3.0.48
+
+# AI Agent chat (vendor-agnostic agent framework + model SDKs).
+# Deliberately NOT agno[mcp] — that extra pins mcp>=2.1.0, which conflicts
+# with this project's own mcp==1.30.0 (see hgai_module_mcp). The agent chat
+# module talks to the resident MCP server via a small custom httpx-based
+# client instead (hgai_module_agentchat/mcp_toolkit.py).
+agno==3.0.10
+anthropic==1.7.0
+openai==3.16.0
+cryptography>=3.4.0
+
+# Web access tool for the chat agent (hgai_module_agentchat/web_toolkit.py) —
+# HTML parsing for a single-page fetch/read tool. Deliberately a small
+# custom toolkit over agno.tools.website.WebsiteTools, whose read_url()
+# defaults to crawling up to 3 levels / 10 links per call.
+beautifulsoup4==4.15.0
