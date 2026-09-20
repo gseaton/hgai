@@ -156,6 +156,40 @@ class HgaiClient:
     def export_graph(self, gid): return self._request("POST", f"/graphs/{gid}/export")
     def import_graph(self, gid, data): return self._request("POST", f"/graphs/{gid}/import", body=data)
 
+    def export_graph_file(self, gid):
+        """-> (yaml_text, server_suggested_filename) for hgai-hypergraph-<id>-<timestamp>.export.yml"""
+        resp = self._client.get(
+            f"{self.base_url}/api/v1/graphs/{gid}/export", params={"format": "yaml"}, headers=self._headers(),
+        )
+        self._raise_for_export_status(resp)
+        disposition = resp.headers.get("content-disposition", "")
+        marker = 'filename="'
+        filename = disposition.split(marker, 1)[1].split('"', 1)[0] if marker in disposition else f"hgai-hypergraph-{gid}.export.yml"
+        return resp.text, filename
+
+    def import_graph_file(self, text, graph_id=None, mode="create"):
+        """POST raw export-file text; the hypergraph is created from the file's own definition."""
+        headers = dict(self._headers(), **{"Content-Type": "application/x-yaml"})
+        resp = self._client.post(
+            f"{self.base_url}/api/v1/graphs/import",
+            params={k: v for k, v in {"graph_id": graph_id, "mode": mode}.items() if v},
+            content=text.encode("utf-8"), headers=headers,
+        )
+        self._raise_for_export_status(resp)
+        return resp.json()
+
+    @staticmethod
+    def _raise_for_export_status(resp):
+        if resp.status_code == 401:
+            raise PermissionError("Authentication required or session expired")
+        if resp.status_code == 403:
+            raise PermissionError(f"Forbidden: {resp.json().get('detail', 'no permission')}")
+        if resp.status_code == 404:
+            raise KeyError(resp.json().get('detail', 'Not found'))
+        if resp.status_code in (400, 409, 413):
+            raise ValueError(resp.json().get('detail', 'Rejected'))
+        resp.raise_for_status()
+
     # Nodes
     def list_nodes(self, gid, **kw): return self._request("GET", f"/graphs/{gid}/nodes", params=kw)
     def get_node(self, gid, nid): return self._request("GET", f"/graphs/{gid}/nodes/{nid}")
@@ -257,8 +291,8 @@ HELP_TEXT = {
         shql-validate          Validate an SHQL query (same input as 'shql')
         shql-validate -f <file>  Validate an SHQL query from a file
         Alias: sv"""),
-    "import": "import -f <file> [-g <graph-id>]  —  Import nodes/edges from YAML file",
-    "export": "export [-o <file>] [-g <graph-id>]  —  Export active graph to YAML",
+    "import": "import -f <file> [-g <graph-id>] [--merge]  —  Import a hypergraph from an export file (creates it; --merge loads into an existing one)",
+    "export": "export [-o <file>] [-g <graph-id>]  —  Export a hypergraph to hgai-hypergraph-<id>-<timestamp>.export.yml (or -o <file>)",
     "help": "help [command]  —  Show help for a command or list all commands",
     "exit": "exit  —  Exit the shell",
 }
@@ -801,26 +835,26 @@ class HgaiShell:
     def cmd_import(self, args):
         self._require_connection()
         filepath = None; graph_id = None
+        merge = "--merge" in args
 
         for i, a in enumerate(args):
             if a == "-f" and i+1 < len(args): filepath = args[i+1]
             if a == "-g" and i+1 < len(args): graph_id = args[i+1]
 
         if not filepath:
-            error("Usage: import -f <file> [-g <graph-id>]"); return
+            error("Usage: import -f <file> [-g <graph-id>] [--merge]"); return
 
-        gid = graph_id or self.active_graph
-        if not gid:
-            error("Specify graph with -g or use 'use <graph-id>'"); return
+        with open(filepath, encoding="utf-8") as f:
+            text = f.read()
 
-        with open(filepath) as f:
-            if HAS_YAML:
-                data = yaml.safe_load(f)
-            else:
-                data = json.load(f)
-
-        result = self.client.import_graph(gid, data)
-        success(f"Import complete: {result.get('nodes',0)} nodes, {result.get('edges',0)} edges imported ({result.get('errors',0)} errors)")
+        result = self.client.import_graph_file(text, graph_id=graph_id, mode="merge" if merge else "create")
+        verb = "Merged into" if not result.get("graph_created") else "Created"
+        success(f"{verb} hypergraph '{result.get('graph_id')}': {result.get('nodes',0)} nodes, {result.get('edges',0)} edges imported "
+                f"({result.get('skipped_nodes',0)} nodes / {result.get('skipped_edges',0)} edges already present, {result.get('errors',0)} errors)")
+        for detail in result.get("error_details", []):
+            print(f"    - {detail}")
+        if result.get("media_references_dropped"):
+            print(f"    (media attachments are not part of an export: {result['media_references_dropped']} reference(s) not imported)")
 
     def cmd_export(self, args):
         self._require_connection()
@@ -834,16 +868,11 @@ class HgaiShell:
         if not gid:
             error("Specify graph with -g or use 'use <graph-id>'"); return
 
-        data = self.client.export_graph(gid)
-        if outfile:
-            with open(outfile, "w") as f:
-                if HAS_YAML:
-                    yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
-                else:
-                    json.dump(data, f, indent=2, default=str)
-            success(f"Exported '{gid}' to: {outfile}")
-        else:
-            self._print_json(data)
+        text, suggested = self.client.export_graph_file(gid)
+        outfile = outfile or suggested          # default: hgai-hypergraph-<id>-<timestamp>.export.yml
+        with open(outfile, "w", encoding="utf-8") as f:
+            f.write(text)
+        success(f"Exported '{gid}' to: {outfile}")
 
     def cmd_ping(self, args):
         self._require_connection()

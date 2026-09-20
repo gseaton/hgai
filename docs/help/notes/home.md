@@ -40,6 +40,7 @@ Because every hyperedge is timestamped and versioned, you can also ask questions
 **Use the Web UI**
 - [Web UI tour](help:help-web-ui) — every screen in one page
 - [Notes](help:help-notes), [Media](help:help-media), [Visualize](help:help-visualize)
+- [Export and import a hypergraph](help:help-export-import) — move a graph between servers
 - [Run an SHQL query](help:help-query-screen) and save reusable [Parameterized Queries](help:help-parameterized-queries)
 - [Ask the AI Chat agent](help:help-ai-chat) about your data, or about HypergraphAI itself
 

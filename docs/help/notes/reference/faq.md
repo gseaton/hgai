@@ -60,6 +60,8 @@ Create an `owl:inverse-of` axiom hyperedge between the two relation types and qu
 
 **How do I back up?** Use `mongodump` ([Backup](help:help-backup)).
 
+**How do I copy a hypergraph to another server?** Export it to an `hgai-hypergraph-<id>-<timestamp>.export.yml` file (Hypergraphs screen → ⬇) and import that file on the other instance ([Exporting and importing hypergraphs](help:help-export-import)).
+
 **Can I add my own help pages?** Yes — files or `system:help` notes ([Adding your own help topics](help:help-authoring-help)).
 
 Still stuck? Browse the [Glossary](help:help-glossary) or return [Home](help:help-home).

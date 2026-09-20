@@ -547,6 +547,7 @@ async function loadGraphs() {
           <td class="text-end">
             <button class="btn btn-xs btn-outline-secondary me-1" onclick="viewGraph('${g.id}', ${sid})"><i class="bi bi-eye"></i></button>
             <button class="btn btn-xs btn-outline-primary me-1" onclick="editGraph('${g.id}', ${sid})"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-xs btn-outline-secondary me-1" onclick="exportGraphFile('${g.id}', ${sid})" title="Export to a file"><i class="bi bi-download"></i></button>
             <button class="btn btn-xs btn-outline-danger" onclick="deleteGraph('${g.id}', ${sid})"><i class="bi bi-trash"></i></button>
           </td>`;
         tbody.appendChild(tr);
@@ -566,8 +567,8 @@ document.getElementById('btn-refresh-graphs').addEventListener('click', () => lo
   });
 });
 
-async function _populateSpaceSelect(selectedSpaceId = null, locked = false) {
-  const sel = document.getElementById('graph-space-id');
+async function _populateSpaceSelect(selectedSpaceId = null, locked = false, selectId = 'graph-space-id') {
+  const sel = document.getElementById(selectId);
   sel.innerHTML = '<option value="">— None (global) —</option>';
   sel.disabled = locked;
   try {
@@ -610,6 +611,110 @@ async function openGraphModal(graphId = null, spaceId = null) {
   }
   modal.show();
 }
+
+// ── Hypergraph export / import (hgai-hypergraph-<id>-<timestamp>.export.yml) ──
+window.exportGraphFile = async (id, spaceId) => {
+  try {
+    const { blob, filename } = await HGAI_API.downloadGraphExport(id, spaceId || null);
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast(`Exported "${id}" to ${filename}`);
+  } catch (err) { toast(err.message, 'danger'); }
+};
+
+let graphImportText = null;
+
+function graphImportResetResult() {
+  document.getElementById('graph-import-result').innerHTML = '';
+}
+
+async function openGraphImportModal() {
+  graphImportText = null;
+  document.getElementById('graph-import-file').value = '';
+  document.getElementById('graph-import-file-info').textContent = '';
+  document.getElementById('graph-import-id').value = '';
+  document.getElementById('graph-import-id').placeholder = 'ID stored in the file';
+  document.getElementById('graph-import-mode-create').checked = true;
+  document.getElementById('btn-graph-import-run').disabled = true;
+  document.getElementById('btn-graph-import-close').textContent = 'Cancel';
+  graphImportResetResult();
+  await _populateSpaceSelect(null, false, 'graph-import-space');
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-graph-import')).show();
+}
+
+// The hypergraph's id/label are read out of the file only to show what it
+// contains; the server does the real parsing and validation on import.
+function graphImportPeek(text, filename) {
+  try {
+    if (filename.toLowerCase().endsWith('.json')) {
+      const g = JSON.parse(text).graph || {};
+      return { id: g.id, label: g.label };
+    }
+  } catch { return {}; }
+  const block = /^graph:\s*\n((?:[ \t]+.*\n?)+)/m.exec(text);
+  const field = name => {
+    const m = block && new RegExp(`^[ \\t]+${name}:[ \\t]*(.+)$`, 'm').exec(block[1]);
+    return m ? m[1].trim().replace(/^['"]|['"]$/g, '') : undefined;
+  };
+  return { id: field('id'), label: field('label') };
+}
+
+document.getElementById('btn-import-graph').addEventListener('click', openGraphImportModal);
+
+document.getElementById('graph-import-file').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  const info = document.getElementById('graph-import-file-info');
+  const run = document.getElementById('btn-graph-import-run');
+  graphImportResetResult();
+  graphImportText = null;
+  run.disabled = true;
+  if (!file) { info.textContent = ''; return; }
+  try {
+    graphImportText = await file.text();
+  } catch {
+    info.textContent = 'Could not read the file';
+    return;
+  }
+  const { id, label } = graphImportPeek(graphImportText, file.name);
+  info.textContent = `${file.name} — ${(file.size / 1024).toFixed(1)} KB` + (id ? ` — hypergraph "${id}"${label ? ` (${label})` : ''}` : '');
+  if (id) document.getElementById('graph-import-id').placeholder = id;
+  run.disabled = false;
+});
+
+document.getElementById('btn-graph-import-run').addEventListener('click', async () => {
+  const run = document.getElementById('btn-graph-import-run');
+  const out = document.getElementById('graph-import-result');
+  if (!graphImportText) return;
+  run.disabled = true;
+  out.innerHTML = '<div class="d-flex align-items-center gap-2"><div class="spinner-border spinner-border-sm"></div> Importing…</div>';
+  try {
+    const r = await HGAI_API.importGraphFile(graphImportText, {
+      spaceId: document.getElementById('graph-import-space').value || null,
+      graphId: document.getElementById('graph-import-id').value.trim() || null,
+      mode: document.querySelector('input[name="graph-import-mode"]:checked').value,
+    });
+    const skipped = (r.skipped_nodes || r.skipped_edges)
+      ? `, skipped ${r.skipped_nodes} existing node(s) and ${r.skipped_edges} existing edge(s)` : '';
+    const media = r.media_references_dropped
+      ? `<div class="small mt-1">${r.media_references_dropped} media attachment reference(s) were not imported (media files are not part of an export).</div>` : '';
+    const details = (r.error_details || []).length
+      ? `<ul class="small mb-0 mt-2">${r.error_details.map(d => `<li>${escapeHtml(d)}</li>`).join('')}</ul>` : '';
+    out.innerHTML = `<div class="alert ${r.errors ? 'alert-warning' : 'alert-success'} mb-0">
+      <strong>${r.graph_created ? 'Created' : 'Merged into'} hypergraph <code>${escapeHtml(r.graph_id)}</code></strong>${r.space_id ? ` in space <code>${escapeHtml(r.space_id)}</code>` : ''}:
+      imported ${r.nodes} node(s) and ${r.edges} edge(s)${skipped}${r.errors ? `; <strong>${r.errors} error(s)</strong>` : ''}.
+      ${media}${details}</div>`;
+    document.getElementById('btn-graph-import-close').textContent = 'Close';
+    loadGraphs();
+    populateGraphSelector();
+  } catch (err) {
+    out.innerHTML = `<div class="alert alert-danger mb-0">${escapeHtml(err.message)}</div>`;
+    run.disabled = false;
+  }
+});
 
 window.editGraph = (id, spaceId) => openGraphModal(id, spaceId || null);
 window.viewGraph = async (id, spaceId) => {
@@ -2078,7 +2183,9 @@ function helpFilterByTag(tag) {
 async function renderHelpMarkdown(text, containerId) {
   const embeds = [];
   const links = [];
-  let working = text || '';
+  // Front matter is never shown in Help. (File topics arrive with it already
+  // removed by the server; a `system:help` Note's text still carries its own.)
+  let working = splitFrontmatter(text).body;
 
   working = working.replace(/!\[([^\]]*)\]\((help-media|media):([^)\s]+)\)/g, (_, alt, kind, ref) => {
     const token = `zzHELPEMBEDzz${embeds.length}zz`;
@@ -2274,10 +2381,80 @@ document.getElementById('btn-refresh-help').addEventListener('click', () => {
 // discipline every other innerHTML template in this file already follows.
 let notePreviewObjectUrls = [];
 
+// ── YAML front matter (Notes only) ──────────────────────────────────────────
+// A Note may begin with a `---`-fenced YAML block (the AI Chat's "Save as Note"
+// writes one: source prompt, vendor/model, timing, tokens). Marked would render
+// that as a horizontal rule plus a heading, so Browse and Preview split it off
+// and show it as a structured, syntax-highlighted YAML block above the body.
+// Help never shows it (see renderHelpMarkdown). Edit mode always shows the raw text.
+const FRONTMATTER_RE = /^﻿?---[ \t]*\r?\n(?:([\s\S]*?)\r?\n)?---[ \t]*(?:\r?\n|$)/;
+const YAML_TOP_LEVEL_LINE_RE = /^(?:#.*|-(?:\s.*)?|(?:"[^"]*"|'[^']*'|[^\s:#'"-][^:]*?|-[^\s:][^:]*?):(?:\s.*)?|\.\.\.\s*)$/;
+
+// -> { yaml: string|null, body: string }. `yaml` is null when the text has no
+// front matter. A `---` ... `---` pair only counts if every unindented line
+// inside looks like YAML (key: value / - item / comment), so a note that merely
+// uses horizontal rules isn't misread as front matter.
+function splitFrontmatter(text) {
+  const raw = text || '';
+  const m = FRONTMATTER_RE.exec(raw);
+  if (!m) return { yaml: null, body: raw };
+  const block = m[1] || '';
+  const plausible = block.split(/\r?\n/).every(line => !line.trim() || /^\s/.test(line) || YAML_TOP_LEVEL_LINE_RE.test(line));
+  if (!plausible) return { yaml: null, body: raw };
+  return { yaml: block, body: raw.slice(m[0].length) };
+}
+
+function highlightYamlScalar(value) {
+  const t = value.trim();
+  if (!t) return escapeHtml(value);
+  let cls = 'json-string'; // plain and quoted scalars
+  if (/^(true|false|yes|no|on|off)$/i.test(t)) cls = 'json-bool';
+  else if (/^(null|~)$/i.test(t)) cls = 'json-null';
+  else if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(t)) cls = 'json-number';
+  const lead = value.match(/^\s*/)[0];
+  return `${lead}<span class="${cls}">${escapeHtml(value.slice(lead.length))}</span>`;
+}
+
+// Line-based YAML colorizer: keys, scalars by type, comments, and block scalars
+// (`key: |` / `key: >`) whose indented content is shown as one string, so a
+// prompt containing "word: something" isn't mistaken for more keys.
+function highlightYaml(yamlText) {
+  const KEY_RE = /^(\s*(?:-\s+)*)("[^"]*"|'[^']*'|[^\s:#'"][^:]*?):(\s+|$)(.*)$/;
+  let blockIndent = null;
+  return yamlText.split(/\r?\n/).map(line => {
+    const indent = line.match(/^\s*/)[0].length;
+    if (blockIndent !== null) {
+      if (!line.trim() || indent > blockIndent) return `<span class="json-string">${escapeHtml(line)}</span>`;
+      blockIndent = null;
+    }
+    if (/^\s*#/.test(line)) return `<span class="note-fm-comment">${escapeHtml(line)}</span>`;
+    const kv = KEY_RE.exec(line);
+    if (kv) {
+      const [, prefix, key, gap, rest] = kv;
+      if (/^[|>][+-]?\d*\s*$/.test(rest)) {
+        blockIndent = indent;
+        return `${escapeHtml(prefix)}<span class="json-key">${escapeHtml(key)}</span>:${gap}${escapeHtml(rest)}`;
+      }
+      return `${escapeHtml(prefix)}<span class="json-key">${escapeHtml(key)}</span>:${gap}${highlightYamlScalar(rest)}`;
+    }
+    const item = /^(\s*-\s+)(.*)$/.exec(line);
+    if (item) return `${escapeHtml(item[1])}${highlightYamlScalar(item[2])}`;
+    return escapeHtml(line);
+  }).join('\n');
+}
+
+function renderFrontmatterHtml(yamlText) {
+  return `<details class="note-frontmatter" open>
+    <summary><i class="bi bi-card-list me-1"></i>Front matter <span class="note-frontmatter-kind">YAML</span></summary>
+    <pre><code>${highlightYaml(yamlText)}</code></pre>
+  </details>`;
+}
+
 async function renderNoteMarkdown(text, containerId) {
   const mediaEmbeds = [];
   const noteLinks = [];
-  let working = text || '';
+  const { yaml: frontmatter, body } = splitFrontmatter(text);
+  let working = body;
 
   working = working.replace(/!\[([^\]]*)\]\(media:([^)\s]+)\)/g, (_, alt, id) => {
     const token = `zzMEDIAEMBEDzz${mediaEmbeds.length}zz`;
@@ -2342,6 +2519,9 @@ async function renderNoteMarkdown(text, containerId) {
     }
     html = html.split(`zzNOTELINKzz${i}zz`).join(built);
   });
+
+  // Built from escaped text after sanitization, like the placeholders above.
+  if (frontmatter !== null && frontmatter.trim()) html = renderFrontmatterHtml(frontmatter) + html;
 
   const el = document.getElementById(containerId);
   el.innerHTML = html || '<span class="text-muted">Nothing to preview</span>';

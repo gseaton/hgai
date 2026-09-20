@@ -743,6 +743,12 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 .note-preview-pane img.note-embed-loading { min-height: 40px; min-width: 60px; background: var(--hgai-surface-alt); }
 .note-preview-pane pre { background: #1a1b2e; color: #f8f8f2; padding: 10px 12px; border-radius: 6px; overflow-x: auto; }
 .note-preview-pane :last-child { margin-bottom: 0; }
+/* YAML front matter block shown above a Note's rendered body (Browse/Preview) */
+.note-frontmatter { margin: 0 0 16px; border: 1px solid var(--hgai-border-strong); border-radius: 8px; overflow: hidden; }
+.note-frontmatter > summary { cursor: pointer; padding: 6px 12px; font-size: 0.8rem; font-weight: 600; color: var(--hgai-text-muted); background: var(--hgai-surface-alt); user-select: none; }
+.note-frontmatter-kind { font-weight: 500; font-size: 0.7rem; padding: 1px 6px; margin-left: 4px; border-radius: 4px; background: rgba(127, 127, 127, 0.18); }
+.note-preview-pane .note-frontmatter pre { margin: 0; border-radius: 0; font-size: 0.8rem; line-height: 1.5; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.note-fm-comment { color: #6272a4; font-style: italic; }
 /* GFM task list items (`- [ ] foo`): marked's default output is a bare
    `<li><input type="checkbox" disabled> foo</li>` with no distinguishing
    class (unlike GitHub's own renderer, which adds task-list-item) — so

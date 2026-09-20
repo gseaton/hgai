@@ -2,11 +2,12 @@
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
+from hgai.api.transfer_http import export_response, read_export_body, run_import
 from hgai.api.deps import get_current_active_account, parse_sort_param, require_graph_access
 from hgai.core import engine
-from hgai.core.auth import require_admin
+from hgai.core.auth import can_access_graph, can_perform, require_admin
 from hgai.models.account import AccountInDB
 from hgai.models.common import PaginatedResponse
 from hgai.models.hypergraph import (
@@ -105,15 +106,36 @@ async def get_graph_stats(
     return stats
 
 
-@router.post("/{graph_id}/export")
+@router.api_route("/{graph_id}/export", methods=["GET", "POST"])
 async def export_graph(
     graph_id: str,
+    fmt: str = Query(default="json", alias="format", pattern="^(json|yaml)$",
+                     description="`yaml` downloads hgai-hypergraph-<id>-<timestamp>.export.yml"),
     account: AccountInDB = Depends(require_graph_access("read")),
 ):
+    """Export a hypergraph (definition + all nodes and edges) for import into another instance."""
     data = await engine.export_hypergraph(graph_id, space_id=None)
     if not data:
         raise HTTPException(status_code=404, detail=f"Hypergraph '{graph_id}' not found")
-    return data
+    return export_response(data, graph_id, fmt)
+
+
+@router.post("/import")
+async def import_new_graph(
+    request: Request,
+    graph_id: Optional[str] = Query(default=None, description="Target id; defaults to the id stored in the file"),
+    mode: str = Query(default="create", pattern="^(create|merge)$",
+                      description="create: fail if the hypergraph exists; merge: load into it (creating it if missing), skipping items already present"),
+    account: AccountInDB = Depends(get_current_active_account),
+):
+    """Import an export file (raw YAML/JSON request body) as an unowned hypergraph,
+    creating the hypergraph from the file's own definition."""
+    doc = await read_export_body(request)
+    target = graph_id or doc["graph"].get("id")
+    if target and mode == "merge" and await engine.get_hypergraph(target, space_id=None):
+        if not await can_access_graph(account, target) or not await can_perform(account, "write", graph_id=target):
+            raise HTTPException(status_code=403, detail=f"Write access to graph '{target}' not permitted")
+    return await run_import(doc, account.username, target, None, mode)
 
 
 @router.post("/{graph_id}/import")
@@ -122,5 +144,11 @@ async def import_graph(
     data: dict,
     account: AccountInDB = Depends(require_graph_access("write")),
 ):
-    result = await engine.import_hypergraph_data(graph_id, data, created_by=account.username)
-    return result
+    """Import an export document (JSON body) into an EXISTING hypergraph, skipping items already present."""
+    from hgai.core import transfer
+
+    try:
+        doc = transfer.validate_export(data)
+    except transfer.ExportFormatError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return await run_import(doc, account.username, graph_id, None, "merge", require_existing_graph=True)

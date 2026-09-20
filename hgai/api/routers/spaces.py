@@ -3,8 +3,9 @@
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
+from hgai.api.transfer_http import export_response, read_export_body, run_import
 from hgai.api.deps import get_current_active_account, parse_sort_param, require_graph_access, require_space_role
 from hgai.api.routers.hyperedges import EDGE_SORT_FIELDS
 from hgai.api.routers.hypernodes import NODE_SORT_FIELDS
@@ -215,16 +216,34 @@ async def get_space_graph_stats(
     return await engine.get_hypergraph_stats(graph_id, space_id=space_id)
 
 
-@router.post("/{space_id}/graphs/{graph_id}/export")
+@router.api_route("/{space_id}/graphs/{graph_id}/export", methods=["GET", "POST"])
 async def export_space_graph(
     space_id: str,
     graph_id: str,
+    fmt: str = Query(default="json", alias="format", pattern="^(json|yaml)$",
+                     description="`yaml` downloads hgai-hypergraph-<id>-<timestamp>.export.yml"),
     account: AccountInDB = Depends(require_graph_access("read")),
 ):
     data = await engine.export_hypergraph(graph_id, space_id=space_id)
     if not data:
         raise HTTPException(status_code=404, detail=f"Graph '{graph_id}' not found in space '{space_id}'")
-    return data
+    return export_response(data, graph_id, fmt)
+
+
+@router.post("/{space_id}/graphs/import")
+async def import_new_space_graph(
+    space_id: str,
+    request: Request,
+    graph_id: Optional[str] = Query(default=None, description="Target id; defaults to the id stored in the file"),
+    mode: str = Query(default="create", pattern="^(create|merge)$",
+                      description="create: fail if the graph exists in the space; merge: load into it (creating it if missing), skipping items already present"),
+    account: AccountInDB = Depends(require_space_role(SpaceRole.member)),
+):
+    """Import an export file (raw YAML/JSON request body) as a hypergraph owned by this space."""
+    if not await space_engine.get_space(space_id):
+        raise HTTPException(status_code=404, detail=f"Space '{space_id}' not found")
+    doc = await read_export_body(request)
+    return await run_import(doc, account.username, graph_id, space_id, mode)
 
 
 @router.post("/{space_id}/graphs/{graph_id}/import")
@@ -234,7 +253,14 @@ async def import_space_graph(
     data: dict,
     account: AccountInDB = Depends(require_graph_access("write")),
 ):
-    return await engine.import_hypergraph_data(graph_id, data, created_by=account.username, space_id=space_id)
+    """Import an export document (JSON body) into an EXISTING space graph, skipping items already present."""
+    from hgai.core import transfer
+
+    try:
+        doc = transfer.validate_export(data)
+    except transfer.ExportFormatError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return await run_import(doc, account.username, graph_id, space_id, "merge", require_existing_graph=True)
 
 
 # ─── Space-scoped nodes ───────────────────────────────────────────────────────

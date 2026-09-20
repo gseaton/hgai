@@ -28,6 +28,7 @@ A hypergraph is either **unowned** (referenced by its bare id, e.g. `my-graph`) 
 
 - **Web UI** — **Hypergraphs** screen: create, edit, delete, and view a graph's statistics.
 - **REST** — `/api/v1/graphs` (plus `/stats`, `/export`, `/import`) ([REST API](help:help-rest-api)).
+- **Move between servers** — export a graph to an `hgai-hypergraph-…export.yml` file and import it elsewhere ([Exporting and importing hypergraphs](help:help-export-import)).
 - **MCP** — `hgai_hypergraph_list`, `_get`, `_stats`, `_create` ([MCP tools](help:help-mcp-tools)).
 - **Across servers** — register servers in a [mesh](help:help-meshes) and query graphs on any of them.
 

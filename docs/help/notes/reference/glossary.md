@@ -33,6 +33,7 @@ status: active
 | **Note** | A Markdown document with tags, sharing and media ([more](help:help-notes)) |
 | **Virtual folder** | A `//Folder/Sub` tag shown as a folder in the Notes and Help trees |
 | **Parameterized query** | A saved SHQL template with `/$name$/` placeholders ([more](help:help-parameterized-queries)) |
+| **Export file** | `hgai-hypergraph-<id>-<timestamp>.export.yml` — a portable copy of one hypergraph ([more](help:help-export-import)) |
 | **Media** | An uploaded file attachable to nodes, edges and notes ([more](help:help-media)) |
 | **Help topic** | A markdown file (or `system:help` note) shown in this Help tab ([more](help:help-authoring-help)) |
 | **Module** | A pluggable `hgai_module_<name>` subsystem ([more](help:help-modules)) |

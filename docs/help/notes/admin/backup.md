@@ -25,4 +25,4 @@ docker-compose exec mongo mongorestore \
   --db hgai /backup/hgai
 ```
 
-Adjust credentials, database name (`HGAI_MONGO_DB`) and paths for your deployment, and keep backups somewhere that survives `docker-compose down -v` ([Docker](help:help-docker)). A single hypergraph can also be exported as YAML through the API (`POST /api/v1/graphs/{id}/export`) or the [shell](help:help-shell)'s `export` command.
+Adjust credentials, database name (`HGAI_MONGO_DB`) and paths for your deployment, and keep backups somewhere that survives `docker-compose down -v` ([Docker](help:help-docker)). A single hypergraph can also be saved to a portable file and imported into any instance — see [Exporting and importing hypergraphs](help:help-export-import).

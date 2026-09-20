@@ -91,7 +91,7 @@ async def seed(server: str, username: str, password: str):
 
         nodes = [
             {
-                "id": "three-stooges",
+                "id": "group:three-stooges",
                 "label": "Three Stooges",
                 "type": "Group",
                 "attributes": {
@@ -103,7 +103,7 @@ async def seed(server: str, username: str, password: str):
                 "status": "active"
             },
             {
-                "id": "moe-howard",
+                "id": "person:moe",
                 "label": "Moe Howard",
                 "type": "Person",
                 "attributes": {
@@ -121,7 +121,7 @@ async def seed(server: str, username: str, password: str):
                 "valid_to": "1975-05-04T23:59:59Z"
             },
             {
-                "id": "larry-fine",
+                "id": "person:larry",
                 "label": "Larry Fine",
                 "type": "Person",
                 "attributes": {
@@ -139,7 +139,7 @@ async def seed(server: str, username: str, password: str):
                 "valid_to": "1975-01-24T23:59:59Z"
             },
             {
-                "id": "curly-howard",
+                "id": "person:curly",
                 "label": "Curly Howard",
                 "type": "Person",
                 "attributes": {
@@ -157,7 +157,7 @@ async def seed(server: str, username: str, password: str):
                 "valid_to": "1952-01-18T23:59:59Z"
             },
             {
-                "id": "shemp-howard",
+                "id": "person:shemp",
                 "label": "Shemp Howard",
                 "type": "Person",
                 "attributes": {
@@ -175,7 +175,7 @@ async def seed(server: str, username: str, password: str):
                 "valid_to": "1955-11-22T23:59:59Z"
             },
             {
-                "id": "curly-joe-derita",
+                "id": "person:curly-joe",
                 "label": "Curly-Joe DeRita",
                 "type": "Person",
                 "attributes": {
@@ -190,7 +190,7 @@ async def seed(server: str, username: str, password: str):
                 "status": "active"
             },
             {
-                "id": "has-member",
+                "id": "rel:member",
                 "label": "Has Member",
                 "type": "RelationType",
                 "attributes": {
@@ -201,7 +201,7 @@ async def seed(server: str, username: str, password: str):
                 "status": "active"
             },
             {
-                "id": "sibling",
+                "id": "rel:sibling",
                 "label": "Sibling",
                 "type": "RelationType",
                 "attributes": {
@@ -223,15 +223,15 @@ async def seed(server: str, username: str, password: str):
         edges = [
             # Original lineup (1932–1946): Moe, Larry, Curly
             {
-                "id": "edge-stooges-original",
-                "relation": "has-member",
+                "id": "edge:stooges-original",
+                "relation": "rel:member",
                 "label": "Three Stooges Original Lineup",
                 "flavor": "hub",
                 "members": [
-                    {"node_id": "three-stooges", "seq": 0},
-                    {"node_id": "moe-howard",    "seq": 1},
-                    {"node_id": "larry-fine",    "seq": 2},
-                    {"node_id": "curly-howard",  "seq": 3},
+                    {"node_id": "group:three-stooges", "seq": 0},
+                    {"node_id": "person:moe",    "seq": 1},
+                    {"node_id": "person:larry",    "seq": 2},
+                    {"node_id": "person:curly",  "seq": 3},
                 ],
                 "attributes": {
                     "era": "classic",
@@ -244,15 +244,15 @@ async def seed(server: str, username: str, password: str):
             },
             # Shemp era (1947–1955): Moe, Larry, Shemp
             {
-                "id": "edge-stooges-shemp",
-                "relation": "has-member",
+                "id": "edge:stooges-shemp",
+                "relation": "rel:member",
                 "label": "Three Stooges Shemp Era",
                 "flavor": "hub",
                 "members": [
-                    {"node_id": "three-stooges", "seq": 0},
-                    {"node_id": "moe-howard",    "seq": 1},
-                    {"node_id": "larry-fine",    "seq": 2},
-                    {"node_id": "shemp-howard",  "seq": 3},
+                    {"node_id": "group:three-stooges", "seq": 0},
+                    {"node_id": "person:moe",    "seq": 1},
+                    {"node_id": "person:larry",    "seq": 2},
+                    {"node_id": "person:shemp",  "seq": 3},
                 ],
                 "attributes": {
                     "era": "shemp",
@@ -265,15 +265,15 @@ async def seed(server: str, username: str, password: str):
             },
             # Comeback era (1959–1970): Moe, Larry, Curly-Joe
             {
-                "id": "edge-stooges-comeback",
-                "relation": "has-member",
+                "id": "edge:stooges-comeback",
+                "relation": "rel:member",
                 "label": "Three Stooges Comeback Era",
                 "flavor": "hub",
                 "members": [
-                    {"node_id": "three-stooges",   "seq": 0},
-                    {"node_id": "moe-howard",       "seq": 1},
-                    {"node_id": "larry-fine",       "seq": 2},
-                    {"node_id": "curly-joe-derita", "seq": 3},
+                    {"node_id": "group:three-stooges",   "seq": 0},
+                    {"node_id": "person:moe",       "seq": 1},
+                    {"node_id": "person:larry",       "seq": 2},
+                    {"node_id": "person:curly-joe", "seq": 3},
                 ],
                 "attributes": {
                     "era": "comeback",
@@ -286,20 +286,20 @@ async def seed(server: str, username: str, password: str):
             },
             # Sibling: Moe, Shemp, and Curly are brothers (Horwitz family)
             {
-                "id": "edge-horwitz-siblings",
-                "relation": "sibling",
+                "id": "edge:horwitz-siblings",
+                "relation": "rel:sibling",
                 "label": "Horwitz Brothers",
                 "flavor": "symmetric",
                 "members": [
-                    {"node_id": "moe-howard",   "seq": 1},
-                    {"node_id": "shemp-howard", "seq": 2},
-                    {"node_id": "curly-howard", "seq": 3},
+                    {"node_id": "person:moe",   "seq": 1},
+                    {"node_id": "person:shemp", "seq": 2},
+                    {"node_id": "person:curly", "seq": 3},
                 ],
                 "attributes": {
                     "family": "Horwitz",
                     "stage_name_family": "Howard"
                 },
-                "tags": ["family", "siblings"],
+                "tags": ["family", "rel:sibling"],
                 "status": "active"
             },
         ]
@@ -317,9 +317,9 @@ async def seed(server: str, username: str, password: str):
     at: "1940-06-01T00:00:00Z"
     where:
       - edge: "?e"
-        relation: has-member
+        relation: rel:member
         members:
-          - id: three-stooges
+          - id: group:three-stooges
     select:
       - "?e.members"
       - "?e.attributes"
@@ -329,7 +329,7 @@ async def seed(server: str, username: str, password: str):
     from: hello-world
     where:
       - edge: "?e"
-        relation: sibling
+        relation: rel:sibling
     select:
       - "?e.members"
       - "?e.attributes"

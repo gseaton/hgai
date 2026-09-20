@@ -189,9 +189,14 @@
       <div id="screen-graphs" class="screen d-none">
         <div class="screen-header">
           <h4><i class="bi bi-diagram-3-fill text-primary me-2"></i>Hypergraphs</h4>
-          <button class="btn btn-primary btn-sm" id="btn-create-graph">
-            <i class="bi bi-plus-lg me-1"></i>New Hypergraph
-          </button>
+          <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary btn-sm" id="btn-import-graph" title="Import a hypergraph from an export file">
+              <i class="bi bi-upload me-1"></i>Import
+            </button>
+            <button class="btn btn-primary btn-sm" id="btn-create-graph">
+              <i class="bi bi-plus-lg me-1"></i>New Hypergraph
+            </button>
+          </div>
         </div>
         <div class="card mb-2">
           <div class="card-body py-2">
@@ -1276,6 +1281,59 @@
         </button>
       </div>
 
+    </div>
+  </div>
+</div>
+
+<!-- Graph Import Modal -->
+<div class="modal fade" id="modal-graph-import" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-upload me-2"></i>Import Hypergraph</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-3">
+          Load a <code>hgai-hypergraph-….export.yml</code> file exported from this or another HypergraphAI
+          instance. The hypergraph is created from the definition stored in the file.
+          Media files are not part of an export, so media attachments are not imported.
+        </p>
+        <div class="mb-3">
+          <label class="form-label">Export file <span class="text-danger">*</span></label>
+          <input type="file" id="graph-import-file" class="form-control" accept=".yml,.yaml,.json"/>
+          <div class="form-text" id="graph-import-file-info"></div>
+        </div>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label">Space <span class="text-muted fw-normal small">(optional)</span></label>
+            <select id="graph-import-space" class="form-select">
+              <option value="">— None (global) —</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Hypergraph ID <span class="text-muted fw-normal small">(optional)</span></label>
+            <input type="text" id="graph-import-id" class="form-control font-monospace" placeholder="ID stored in the file"/>
+          </div>
+        </div>
+        <div class="mb-1">
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="graph-import-mode" id="graph-import-mode-create" value="create" checked/>
+            <label class="form-check-label" for="graph-import-mode-create">Create a new hypergraph <span class="text-muted small">— fails if the ID already exists</span></label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="graph-import-mode" id="graph-import-mode-merge" value="merge"/>
+            <label class="form-check-label" for="graph-import-mode-merge">Merge into the hypergraph <span class="text-muted small">— adds what is missing, never overwrites (created if absent)</span></label>
+          </div>
+        </div>
+        <div id="graph-import-result" class="mt-3"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" id="btn-graph-import-close">Cancel</button>
+        <button type="button" class="btn btn-primary px-4" id="btn-graph-import-run" disabled>
+          <i class="bi bi-upload me-1"></i>Import
+        </button>
+      </div>
     </div>
   </div>
 </div>

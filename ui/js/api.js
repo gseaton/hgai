@@ -94,6 +94,45 @@ const HGAI_API = (() => {
   async function exportGraph(id) { return request('POST', `/graphs/${id}/export`); }
   async function importGraph(id, data) { return request('POST', `/graphs/${id}/import`, data); }
 
+  // Export/import as a file. These bypass request() because the export comes
+  // back as a YAML attachment and the import body is the raw file text.
+  async function _fileRequest(method, path, params, body, contentType) {
+    const url = new URL(BASE + path, window.location.origin);
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v !== null && v !== undefined && v !== '') url.searchParams.set(k, v);
+    });
+    const headers = {};
+    const token = getToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (contentType) headers['Content-Type'] = contentType;
+    const resp = await fetch(url.toString(), { method, headers, body });
+    if (resp.status === 401) {
+      clearSession();
+      window.dispatchEvent(new Event('hgai:unauthorized'));
+      throw new Error('Unauthorized');
+    }
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      const msg = data.detail || data.message || `HTTP ${resp.status}`;
+      throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    }
+    return resp;
+  }
+  // -> { blob, filename } — filename is the server's hgai-hypergraph-<id>-<timestamp>.export.yml
+  async function downloadGraphExport(id, spaceId = null) {
+    const path = spaceId ? `/spaces/${encodeURIComponent(spaceId)}/graphs/${encodeURIComponent(id)}/export`
+                         : `/graphs/${encodeURIComponent(id)}/export`;
+    const resp = await _fileRequest('GET', path, { format: 'yaml' });
+    const match = /filename="([^"]+)"/.exec(resp.headers.get('Content-Disposition') || '');
+    return { blob: await resp.blob(), filename: match ? match[1] : `hgai-hypergraph-${id}.export.yml` };
+  }
+  // text = the export file's contents. mode: 'create' (fail if it exists) | 'merge'.
+  async function importGraphFile(text, { spaceId = null, graphId = null, mode = 'create' } = {}) {
+    const path = spaceId ? `/spaces/${encodeURIComponent(spaceId)}/graphs/import` : '/graphs/import';
+    const resp = await _fileRequest('POST', path, { graph_id: graphId, mode }, text, 'application/x-yaml');
+    return resp.json();
+  }
+
   // ── Hypernodes ────────────────────────────────────────────────────────────
   async function listNodes(graphId, params = {}) { return request('GET', `/graphs/${graphId}/nodes`, null, params); }
   async function getNode(graphId, nodeId) { return request('GET', `/graphs/${graphId}/nodes/${nodeId}`); }
@@ -345,7 +384,7 @@ const HGAI_API = (() => {
     // server
     getServerInfo,
     // graphs
-    listGraphs, getGraph, createGraph, updateGraph, deleteGraph, getGraphStats, exportGraph, importGraph,
+    listGraphs, getGraph, createGraph, updateGraph, deleteGraph, getGraphStats, exportGraph, importGraph, downloadGraphExport, importGraphFile,
     // nodes
     listNodes, getNode, createNode, updateNode, deleteNode,
     listSpaceNodes, getSpaceNode, createSpaceNode, updateSpaceNode, deleteSpaceNode,

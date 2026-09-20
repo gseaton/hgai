@@ -520,6 +520,8 @@ POST   /api/v1/graphs                  # Create hypergraph
 GET    /api/v1/graphs/{id}             # Get hypergraph
 PUT    /api/v1/graphs/{id}             # Update hypergraph
 DELETE /api/v1/graphs/{id}             # Delete hypergraph
+GET    /api/v1/graphs/{id}/export?format=yaml   # Export to hgai-hypergraph-<id>-<timestamp>.export.yml
+POST   /api/v1/graphs/import?mode=create|merge  # Import an export file (raw body) as a new/merged hypergraph
 ```
 
 ### Hypernodes
@@ -1200,8 +1202,8 @@ delete edge <id>                Delete hyperedge
 shql                            Run SHQL query (paste YAML, end with EOF)
 shql -f <file>                  Run SHQL query from file
 
-import -f <file>                Import nodes/edges from YAML file
-export -o <file>                Export current graph to YAML file
+import -f <file> [-g id] [--merge]  Import a hypergraph from an export file
+export [-o <file>] [-g id]          Export a hypergraph to hgai-hypergraph-<id>-<timestamp>.export.yml
 
 help [command]                  Show help
 exit                            Exit shell
@@ -1215,7 +1217,7 @@ The web UI is served at `http://localhost:8357/ui/` (local dev) or `http://local
 
 - **Login** — secure authentication
 - **Dashboard** — graph overview with counts and activity
-- **Hypergraphs** — list and manage hypergraphs
+- **Hypergraphs** — list and manage hypergraphs; **Export** any hypergraph to a `hgai-hypergraph-<id>-<timestamp>.export.yml` file and **Import** such a file into this or another instance (optionally into a space, under a new id, or merged into an existing graph)
 - **Hypernodes** — full CRUD with attribute editing
 - **Hyperedges** — full CRUD with member management
 - **Query** — interactive SHQL query editor with results visualization

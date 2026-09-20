@@ -488,52 +488,67 @@ async def delete_hyperedge(graph_id: str, edge_id: str, space_id: Optional[str] 
 
 # ─── Import / Export ──────────────────────────────────────────────────────────
 
+EXPORT_FORMAT_VERSION = "1.0"
+EXPORT_PAGE_SIZE = 1000
+
+
+async def _fetch_all(lister, graph_id: str, space_id: Optional[str]) -> list:
+    """Page through *every* node/edge (all statuses) in a stable id order — no
+    silent truncation at some fixed row cap."""
+    items: list = []
+    skip = 0
+    while True:
+        total, page = await lister(
+            graph_id, status=None, skip=skip, limit=EXPORT_PAGE_SIZE,
+            space_id=space_id, sort=[("id", 1)],
+        )
+        items.extend(page)
+        skip += len(page)
+        if not page or skip >= total:
+            return items
+
+
+def _identity_first(doc: Dict[str, Any], keys: Tuple[str, ...]) -> Dict[str, Any]:
+    """Put the identifying keys first so an exported YAML file reads naturally."""
+    return {**{k: doc[k] for k in keys if k in doc}, **{k: v for k, v in doc.items() if k not in keys}}
+
+
 async def export_hypergraph(graph_id: str, space_id: Optional[str] = None) -> Dict[str, Any]:
-    """Export all nodes and edges of a hypergraph."""
+    """Export a hypergraph — its own definition plus ALL of its nodes and
+    edges (every status) — as a plain, serializable document that
+    hgai.core.transfer.import_document can load into another instance.
+    Returns {} if the graph doesn't exist. Media *files* are not included
+    (only the references on nodes/edges)."""
+    from hgai.config import get_settings
+
     graph = await get_hypergraph(graph_id, space_id=space_id)
     if not graph:
         return {}
 
-    _, nodes = await list_hypernodes(graph_id, status=None, limit=10000, space_id=space_id)
-    _, edges = await list_hyperedges(graph_id, status=None, limit=10000, space_id=space_id)
+    nodes = await _fetch_all(list_hypernodes, graph_id, space_id)
+    edges = await _fetch_all(list_hyperedges, graph_id, space_id)
+    settings = get_settings()
 
     return {
-        "hgai_export": "1.0",
-        "graph": graph.model_dump(),
-        "nodes": [n.model_dump() for n in nodes],
-        "edges": [e.model_dump() for e in edges],
+        "hgai_export": EXPORT_FORMAT_VERSION,
+        "exported_at": now_utc().isoformat(),
+        "source": {"server_id": settings.server_id, "server_name": settings.server_name},
+        "counts": {"nodes": len(nodes), "edges": len(edges)},
+        "graph": _identity_first(graph.model_dump(mode="json"), ("id", "label", "description", "type", "space_id")),
+        "nodes": [_identity_first(n.model_dump(mode="json"), ("id", "label", "type", "description")) for n in nodes],
+        "edges": [_identity_first(e.model_dump(mode="json"), ("id", "relation", "label", "flavor", "members")) for e in edges],
     }
 
 
 async def import_hypergraph_data(
     graph_id: str, data: Dict[str, Any], created_by: str, space_id: Optional[str] = None
-) -> Dict[str, int]:
-    """Import nodes and edges into a hypergraph. Returns counts."""
-    imported = {"nodes": 0, "edges": 0, "errors": 0}
+) -> Dict[str, Any]:
+    """Import nodes and edges into an EXISTING hypergraph (the legacy
+    POST /graphs/{id}/import behavior). Items already present are skipped.
+    See hgai.core.transfer.import_document for the full semantics."""
+    from hgai.core import transfer
 
-    for node_data in data.get("nodes", []):
-        try:
-            node_data.pop("hypergraph_id", None)
-            node_data.pop("system_created", None)
-            node_data.pop("system_updated", None)
-            node_data.pop("mutations", None)
-            node_create = HypernodeCreate(**node_data)
-            await create_hypernode(graph_id, node_create, created_by, space_id=space_id)
-            imported["nodes"] += 1
-        except Exception:
-            imported["errors"] += 1
-
-    for edge_data in data.get("edges", []):
-        try:
-            edge_data.pop("hypergraph_id", None)
-            edge_data.pop("system_created", None)
-            edge_data.pop("system_updated", None)
-            edge_data.pop("hyperkey", None)
-            edge_data.pop("mutations", None)
-            edge_create = HyperedgeCreate(**edge_data)
-            await create_hyperedge(graph_id, edge_create, created_by, space_id=space_id)
-            imported["edges"] += 1
-        except Exception:
-            imported["errors"] += 1
-
-    return imported
+    return await transfer.import_document(
+        transfer.validate_export(data), created_by=created_by, graph_id=graph_id,
+        space_id=space_id, mode="merge", require_existing_graph=True,
+    )

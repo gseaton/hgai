@@ -14,7 +14,7 @@ The Web UI is served at `/ui/` (for example `http://localhost:8357/ui/`). Sign i
 | Screen | What it's for | Learn more |
 |---|---|---|
 | **Dashboard** | Overview of your hypergraphs with counts and activity | — |
-| **Hypergraphs** | Create, edit and inspect hypergraphs | [Hypergraphs](help:help-hypergraphs) |
+| **Hypergraphs** | Create, edit, inspect, **export** to a file and **import** from one | [Hypergraphs](help:help-hypergraphs), [Export and import](help:help-export-import) |
 | **Hypernodes** | Full create/read/update/delete of nodes, with attribute editing, filtering, sorting and media | [Hypernodes](help:help-hypernodes) |
 | **Hyperedges** | Full CRUD of edges, with member management | [Hyperedges](help:help-hyperedges) |
 | **Media** | Upload, browse and manage files that can be attached to nodes, edges and notes | [Media](help:help-media) |

@@ -15,6 +15,7 @@ Base URL: `http://localhost:8357/api/v1` (port 8000 under Docker Compose). Inter
 |---|---|
 | **Auth** | `POST /auth/token`, `GET /auth/me` |
 | **Hypergraphs** | `GET/POST /graphs`; `GET/PUT/DELETE /graphs/{id}` |
+| **Export / import** | `GET /graphs/{id}/export?format=yaml`, `POST /graphs/import?mode=create\|merge` (raw file body) — [details](help:help-export-import) |
 | **Hypernodes** | `GET/POST /graphs/{g}/nodes`; `GET/PUT/DELETE /graphs/{g}/nodes/{id}` |
 | **Hyperedges** | `GET/POST /graphs/{g}/edges`; `GET/PUT/DELETE /graphs/{g}/edges/{id}` |
 | **Spaces** | `/spaces`, `/spaces/{s}/members`, `/spaces/{s}/graphs/{g}/nodes` and `/edges` |
