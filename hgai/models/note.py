@@ -28,6 +28,26 @@ class NoteRole(str, Enum):
     editor = "editor"
 
 
+class NoteScope(str, Enum):
+    """Who besides the owner can reach a note — the note's baseline audience.
+
+    private         owner only (any share-list entries are kept but inactive)
+    protected       accounts on the share list can view (a per-account `editor` grant still lets that account edit)
+    protected-edit  accounts on the share list can view AND edit
+    public          every account can view (share-list `editor` grants still let those accounts edit)
+    public-edit     every account can view AND edit
+
+    The owner (and any admin) always has full access; only they can change
+    the scope, manage the share list, or delete the note.
+    """
+
+    private = "private"
+    protected = "protected"
+    protected_edit = "protected-edit"
+    public = "public"
+    public_edit = "public-edit"
+
+
 class NoteGrant(BaseModel):
     """One entry in a note's `acl`: one other account's access level.
 
@@ -55,6 +75,11 @@ class NoteBase(TimestampedModel):
     name: str = Field(default="", max_length=200, description="Optional human-readable name/subtitle")
     text: str = Field(default="", description="Note body (Markdown)")
     media: List[MediaRef] = Field(default_factory=list, description="Embedded/attached media references")
+    scope: NoteScope = Field(
+        default=NoteScope.protected,
+        description="Baseline audience (see NoteScope). Notes stored before scopes existed have no value and read as "
+                    "'protected', which is exactly how they always behaved: owner plus the share list.",
+    )
 
     @field_validator("label")
     @classmethod
@@ -68,7 +93,10 @@ class NoteBase(TimestampedModel):
 
 
 class NoteCreate(NoteBase):
-    """Schema for creating a note. The creating account becomes its owner."""
+    """Schema for creating a note. The creating account becomes its owner.
+    New notes start `private`; the owner widens the scope deliberately."""
+
+    scope: NoteScope = Field(default=NoteScope.private, description="Baseline audience (see NoteScope)")
 
 
 class NoteUpdate(BaseModel):
@@ -99,8 +127,10 @@ class NoteInDB(NoteBase):
 
 
 class NoteResponse(NoteInDB):
-    """Note API response."""
-    pass
+    """Note API response. `my_access` is the calling account's effective access
+    to this note: owner | admin | editor | viewer (computed per request)."""
+
+    my_access: Optional[str] = None
 
 
 class ShareNoteRequest(BaseModel):
@@ -108,3 +138,9 @@ class ShareNoteRequest(BaseModel):
 
     username: str = Field(..., description="Account username to grant access to")
     role: NoteRole = Field(default=NoteRole.viewer)
+
+
+class SetNoteScopeRequest(BaseModel):
+    """Request body for changing a note's scope (owner/admin only)."""
+
+    scope: NoteScope

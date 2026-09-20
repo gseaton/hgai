@@ -23,12 +23,12 @@ See [Edge flavors](help:help-edge-flavors): in a hub edge the first member is re
 **Can I see what was true on a past date?**
 Yes — set `valid_from`/`valid_to` and query with `at:` ([Point-in-time](help:help-point-in-time)).
 
-**How do I make the system infer that "has-member" implies "member-of"?**
+**How do I make the system infer that "rel:member" implies "rel:member-of"?**
 Create an `owl:inverse-of` axiom hyperedge between the two relation types and query with `infer: true` ([Inferencing](help:help-inferencing)).
 
 ## Using it
 
-**How do I load sample data?** Run `python scripts/seed_data.py` (or the `docker-compose exec` form) — the `hello-world` graph appears ([Quick Start](help:help-quick-start)).
+**How do I load sample data?** Run `python scripts/seed_data.py` (or `docker-compose exec hgai python scripts/seed_data.py`) — the `hello-world` and `eden` hypergraphs from `scripts/seeds/` appear ([Quick Start](help:help-quick-start)). They are ordinary export files, so you can also import them from the Hypergraphs screen.
 
 **How do I query?** Open **Query (SHQL)** ([Query screen](help:help-query-screen)) and start with the [SHQL overview](help:help-shql-overview) and [worked examples](help:help-shql-examples).
 
@@ -41,6 +41,8 @@ Create an `owl:inverse-of` axiom hyperedge between the two relation types and qu
 **How do I ask the AI about my data?** Open the [AI Chat](help:help-ai-chat) panel (an admin must enable a vendor, key and model first).
 
 **Where do I write documents?** In [Notes](help:help-notes); tag with `//Folder/Name` to file them in a folder.
+
+**How do I let other accounts read or edit my note?** Set its scope — `protected` / `protected-edit` for the accounts you add to its share list, `public` / `public-edit` for everyone on the server ([Notes](help:help-notes)).
 
 ## Access and integration
 

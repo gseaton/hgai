@@ -75,6 +75,10 @@ curl -X POST "http://other-server:8357/api/v1/graphs/import?mode=create" \
 
 Add `graph_id=<id>` to rename, `mode=merge` to merge; space-scoped graphs use `/spaces/{space_id}/graphs/{id}/export` and `/spaces/{space_id}/graphs/import`. Details in [REST API](help:help-rest-api).
 
+## The example hypergraphs are export files too
+
+The seeds shipped in `scripts/seeds/` (`hello-world` and `eden`) are ordinary export files, loaded by `python scripts/seed_data.py`. Adding your own is as simple as dropping an `hgai-hypergraph-<id>.export.yml` file into that folder ([Quick Start](help:help-quick-start)).
+
 ## Good to know
 
 - One bad item doesn't abort an import: it is counted as an error (the first 25 messages are shown) and everything else loads.

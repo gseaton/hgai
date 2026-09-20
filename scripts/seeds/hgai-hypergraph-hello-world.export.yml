@@ -1,0 +1,930 @@
+# HypergraphAI seed hypergraph: hello-world
+# Three Stooges, Rat Pack and Beatles group lineups over time (has temporal member edges, an inverse-of axiom, and a broaderTransitive axiom).
+# A standard HypergraphAI hypergraph export file. Load it with:  python scripts/seed_data.py
+# or import it from the Web UI (Hypergraphs > Import) / hgsh (import -f <file>).
+# Media attachments and per-item audit history were removed so the file is portable.
+hgai_export: '1.0'
+exported_at: '2026-09-20T17:30:00.745167+00:00'
+source:
+  server_id: hgai-local
+  server_name: HypergraphAI Local
+counts:
+  nodes: 30
+  edges: 16
+graph:
+  id: hello-world
+  label: Hello, world hypergraph
+  description: null
+  type: instantiated
+  space_id: null
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-07T19:38:53.538000'
+  system_updated: '2026-08-07T19:38:53.538000'
+  created_by: admin
+  version: 1
+  composition: []
+  remote_refs: []
+  node_count: 30
+  edge_count: 16
+nodes:
+- id: a
+  label: is-a
+  type: Relation
+  description: Is a
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-25T02:12:45.895000'
+  system_updated: '2026-08-25T02:12:45.895000'
+  created_by: admin
+  version: 1
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: event:af-20100302-misn-123
+  label: 'Event : AFG : 4 Insurgents Destroyed'
+  type: Event
+  description: null
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-09-13T19:19:54.101000'
+  system_updated: '2026-09-13T19:19:54.101000'
+  created_by: admin
+  version: 1
+  valid_from: '2010-03-02T23:42:00'
+  valid_to: '2010-03-03T05:15:00'
+  hypergraph_id: hello-world
+- id: family:brother
+  label: Family - Brother
+  type: Relation
+  description: null
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-09-12T00:22:43.030000'
+  system_updated: '2026-09-12T00:22:43.030000'
+  created_by: admin
+  version: 1
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: family:sibling
+  label: Family - Sibling
+  type: Relation
+  description: null
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-09-12T00:23:07.565000'
+  system_updated: '2026-09-12T00:23:07.565000'
+  created_by: admin
+  version: 1
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: group:beatles
+  label: The Beatles
+  type: Group
+  description: The Beatles
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-26T17:44:01.505000'
+  system_updated: '2026-08-26T17:44:01.505000'
+  created_by: admin
+  version: 1
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: group:entertainment
+  label: Entertainment Groups
+  type: Group
+  description: Entertainment groups
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-07T20:48:48.610000'
+  system_updated: '2026-09-15T17:33:20.318000'
+  created_by: admin
+  version: 2
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: group:rat-pack
+  label: The Rat Pack
+  type: Group
+  description: The Rat Pack
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-07T19:46:39.896000'
+  system_updated: '2026-08-25T20:10:57.702000'
+  created_by: admin
+  version: 4
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: group:three-stooges
+  label: The Three Stooges
+  type: Group
+  description: The Three Stooges comedy trio
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-07T19:40:19.199000'
+  system_updated: '2026-08-26T04:35:14.476000'
+  created_by: admin
+  version: 17
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:curly
+  label: Curly
+  type: Person
+  description: Curly Howard
+  tags:
+  - stooge
+  - comedian
+  status: active
+  attributes: {}
+  system_created: '2026-08-07T19:39:54.156000'
+  system_updated: '2026-09-09T21:19:18.222000'
+  created_by: admin
+  version: 4
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:curly-joe
+  label: Curly Joe DeRita
+  type: Person
+  description: null
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-26T03:31:45.835000'
+  system_updated: '2026-08-26T03:31:45.835000'
+  created_by: admin
+  version: 1
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:dean
+  label: Dean
+  type: Person
+  description: Dean Martin
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-07T19:45:40.758000'
+  system_updated: '2026-08-25T20:09:08.427000'
+  created_by: admin
+  version: 3
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:frank
+  label: Frank
+  type: Person
+  description: Frank Sinatra
+  tags: []
+  status: active
+  attributes:
+    last_name: Sinatra
+    first_name: Francis
+    rat_pack_member: true
+  system_created: '2026-08-07T19:45:06.146000'
+  system_updated: '2026-09-16T20:01:42.665000'
+  created_by: admin
+  version: 6
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:george
+  label: George Harrison
+  type: Person
+  description: George Harrison
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-26T17:42:43.304000'
+  system_updated: '2026-08-26T17:42:43.304000'
+  created_by: admin
+  version: 1
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:joe-besser
+  label: Joe Besser
+  type: Person
+  description: Joe Besser
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-26T03:30:40.850000'
+  system_updated: '2026-08-26T03:30:40.850000'
+  created_by: admin
+  version: 1
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:joey
+  label: Joey Bishop
+  type: Person
+  description: Joey Bishop - comedian
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-25T19:43:27.461000'
+  system_updated: '2026-08-25T20:09:21.608000'
+  created_by: admin
+  version: 3
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:larry
+  label: Larry
+  type: Person
+  description: Larry Fine
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-07T19:39:34.221000'
+  system_updated: '2026-08-26T03:30:51.437000'
+  created_by: admin
+  version: 3
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:lawford
+  label: Peter Lawford
+  type: Person
+  description: Peter Lawford, Kennedy in-law
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-25T20:35:06.966000'
+  system_updated: '2026-08-25T20:35:12.918000'
+  created_by: admin
+  version: 2
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:lennon
+  label: John Lennon
+  type: Person
+  description: John Lennon
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-26T17:43:35.489000'
+  system_updated: '2026-08-26T17:43:35.489000'
+  created_by: admin
+  version: 1
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:mccartney
+  label: Paul McCartney
+  type: Person
+  description: null
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-26T17:43:10.280000'
+  system_updated: '2026-08-26T17:43:10.280000'
+  created_by: admin
+  version: 1
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:moe
+  label: Moe
+  type: Person
+  description: Moe Howard
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-07T19:39:16.476000'
+  system_updated: '2026-08-26T03:30:57.571000'
+  created_by: admin
+  version: 3
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:pete
+  label: Pete Best
+  type: Person
+  description: null
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-26T17:49:22.805000'
+  system_updated: '2026-08-26T17:49:22.805000'
+  created_by: admin
+  version: 1
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:ringo
+  label: Ringo Starr
+  type: Person
+  description: Ringo Starr
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-26T17:42:16.477000'
+  system_updated: '2026-08-26T17:42:16.477000'
+  created_by: admin
+  version: 1
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:sammy
+  label: Sammy
+  type: Person
+  description: Sammy Davis, Jr.
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-07T19:45:21.334000'
+  system_updated: '2026-08-25T20:09:29.759000'
+  created_by: admin
+  version: 3
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:shemp
+  label: Shemp
+  type: Person
+  description: Shemp Howard
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-07T19:50:51.824000'
+  system_updated: '2026-08-26T03:31:02.176000'
+  created_by: admin
+  version: 3
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:shemp2
+  label: Shemp
+  type: Person
+  description: Shemp Howard 2
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-25T02:06:00.270000'
+  system_updated: '2026-08-26T03:31:10.952000'
+  created_by: admin
+  version: 2
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: person:stuart
+  label: Stuart Sutcliffe
+  type: Person
+  description: null
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-27T16:24:39.706000'
+  system_updated: '2026-08-27T16:24:39.706000'
+  created_by: admin
+  version: 1
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: rel:associated
+  label: Associated
+  type: Relation
+  description: null
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-09-13T19:17:07.610000'
+  system_updated: '2026-09-13T19:17:07.610000'
+  created_by: admin
+  version: 1
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: rel:lineup
+  label: Lineup
+  type: Relation
+  description: Lineup or configuration
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-26T02:33:27.481000'
+  system_updated: '2026-08-26T02:33:27.481000'
+  created_by: admin
+  version: 1
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: rel:member
+  label: Member
+  type: Relation
+  description: Member of
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-07T19:40:46.799000'
+  system_updated: '2026-08-07T19:40:46.799000'
+  created_by: admin
+  version: 1
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+- id: rel:member-of
+  label: Member of
+  type: Relation
+  description: Member of a Group
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-09-11T05:23:39.024000'
+  system_updated: '2026-09-11T05:23:39.024000'
+  created_by: admin
+  version: 1
+  valid_from: null
+  valid_to: null
+  hypergraph_id: hello-world
+edges:
+- id: 491d8c7b99cf00a1df4acf27f9907243
+  relation: rel:member
+  label: The Beatles - Classic
+  flavor: hub
+  members:
+  - node_id: group:beatles
+    seq: 0
+  - node_id: person:lennon
+    seq: 1
+  - node_id: person:mccartney
+    seq: 2
+  - node_id: person:ringo
+    seq: 3
+  - node_id: person:george
+    seq: 4
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-26T17:45:49.897000'
+  system_updated: '2026-09-19T21:28:37.250000'
+  created_by: admin
+  version: 3
+  description: null
+  valid_from: '1962-08-17T00:00:00'
+  valid_to: '1969-09-20T13:59:00'
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  relation_node_id: null
+  hypergraph_id: hello-world
+  hyperkey: 8a50817421d9917109c6bf64aaab1e8d
+- id: ac8524af89e5b312103db3e0c90de1f3
+  relation: rel:member
+  label: The Beatles - Best
+  flavor: hub
+  members:
+  - node_id: group:beatles
+    seq: 0
+  - node_id: person:lennon
+    seq: 1
+  - node_id: person:mccartney
+    seq: 2
+  - node_id: person:george
+    seq: 3
+  - node_id: person:pete
+    seq: 4
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-26T17:48:01.539000'
+  system_updated: '2026-09-19T21:29:35.004000'
+  created_by: admin
+  version: 2
+  description: null
+  valid_from: '1961-05-01T07:01:00'
+  valid_to: '1962-08-16T06:59:00'
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  relation_node_id: null
+  hypergraph_id: hello-world
+  hyperkey: fbebeb564a23a9ab839b9993175f26d6
+- id: edge:beatles-first
+  relation: rel:member
+  label: The Beatles - First
+  flavor: hub
+  members:
+  - node_id: group:beatles
+    seq: 0
+  - node_id: person:lennon
+    seq: 1
+  - node_id: person:mccartney
+    seq: 2
+  - node_id: person:tommy-moore
+    seq: 3
+  - node_id: person:stuart
+    seq: 4
+  - node_id: person:george
+    seq: 5
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-26T21:10:45.500000'
+  system_updated: '2026-09-19T21:31:11.394000'
+  created_by: admin
+  version: 7
+  description: null
+  valid_from: '1960-05-01T14:00:00'
+  valid_to: '1960-06-12T13:59:00'
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  relation_node_id: null
+  hypergraph_id: hello-world
+  hyperkey: db5e10bec4cb51828f673a5a7c1601ab
+- id: edge:beatles-lineups
+  relation: rel:lineup
+  label: Beatles Lineups
+  flavor: hub
+  members:
+  - node_id: group:beatles
+    seq: 0
+  - node_id: 491d8c7b99cf00a1df4acf27f9907243
+    seq: 1
+  - node_id: ac8524af89e5b312103db3e0c90de1f3
+    seq: 2
+  - node_id: edge:beatles-first
+    seq: 3
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-09-08T22:14:59.440000'
+  system_updated: '2026-09-08T22:20:49.423000'
+  created_by: admin
+  version: 3
+  description: null
+  valid_from: null
+  valid_to: null
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  relation_node_id: null
+  hypergraph_id: hello-world
+  hyperkey: 5952c8f26ed694845379146da8ff9eb3
+- id: edge:brother-sibling
+  relation: skos:broaderTransitive
+  label: Brother / Sibling
+  flavor: hub
+  members:
+  - node_id: family:brother
+    seq: 0
+  - node_id: family:sibling
+    seq: 1
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-09-12T00:25:41.747000'
+  system_updated: '2026-09-12T00:27:46.704000'
+  created_by: admin
+  version: 2
+  description: null
+  valid_from: null
+  valid_to: null
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  relation_node_id: null
+  hypergraph_id: hello-world
+  hyperkey: 2b0a5779fd31db76ba162838532fef99
+- id: edge:classic-stooges
+  relation: rel:member
+  label: Classic Three Stooges Trio
+  flavor: hub
+  members:
+  - node_id: group:three-stooges
+    seq: 0
+  - node_id: person:moe
+    seq: 1
+  - node_id: person:larry
+    seq: 2
+  - node_id: person:curly
+    seq: 3
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-07T19:41:38.805000'
+  system_updated: '2026-08-26T03:49:26.134000'
+  created_by: admin
+  version: 8
+  description: null
+  valid_from: '1932-07-02T16:01:00'
+  valid_to: '1946-07-03T15:59:00'
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  relation_node_id: null
+  hypergraph_id: hello-world
+  hyperkey: c226e58ce48e62f4fb9de9f9e8b2bdb1
+- id: edge:entertain-groups
+  relation: rel:member
+  label: Entertainment Groups
+  flavor: hub
+  members:
+  - node_id: group:entertainment
+    seq: 0
+  - node_id: group:three-stooges
+    seq: 1
+  - node_id: group:rat-pack
+    seq: 2
+  - node_id: group:beatles
+    seq: 3
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-07T20:49:34.977000'
+  system_updated: '2026-08-26T17:46:04.926000'
+  created_by: admin
+  version: 7
+  description: null
+  valid_from: null
+  valid_to: null
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  relation_node_id: null
+  hypergraph_id: hello-world
+  hyperkey: 9816989a8f747fa2da67f6fce4201bc8
+- id: edge:inverse-member-of
+  relation: owl:inverse-of
+  label: Inverse-Of - Member / Member Of
+  flavor: hub
+  members:
+  - node_id: rel:member
+    seq: 0
+  - node_id: rel:member-of
+    seq: 1
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-09-11T05:23:07.307000'
+  system_updated: '2026-09-11T05:23:07.307000'
+  created_by: admin
+  version: 1
+  description: null
+  valid_from: null
+  valid_to: null
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  relation_node_id: null
+  hypergraph_id: hello-world
+  hyperkey: 91ab26b44941fe2b42d336546811e8ab
+- id: edge:original-three-stooges
+  relation: rel:member
+  label: Original Three Stooges
+  flavor: hub
+  members:
+  - node_id: group:three-stooges
+    seq: 0
+  - node_id: person:moe
+    seq: 1
+  - node_id: person:larry
+    seq: 2
+  - node_id: person:shemp
+    seq: 3
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-07T19:51:33.970000'
+  system_updated: '2026-08-26T03:50:06.462000'
+  created_by: admin
+  version: 4
+  description: null
+  valid_from: '1922-01-02T00:01:00'
+  valid_to: '1932-07-01T23:59:00'
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  relation_node_id: null
+  hypergraph_id: hello-world
+  hyperkey: b467fe1c7a78f45b0155bf85435385c5
+- id: edge:original-three-stooges-redux
+  relation: rel:member
+  label: Redux - Original Three Stooges
+  flavor: hub
+  members:
+  - node_id: group:three-stooges
+    seq: 0
+  - node_id: person:moe
+    seq: 1
+  - node_id: person:larry
+    seq: 2
+  - node_id: person:shemp
+    seq: 3
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-09-09T18:23:17.424000'
+  system_updated: '2026-09-13T16:58:47.826000'
+  created_by: admin
+  version: 3
+  description: null
+  valid_from: '1946-01-03T00:01:00'
+  valid_to: '1954-07-02T20:59:00'
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  relation_node_id: null
+  hypergraph_id: hello-world
+  hyperkey: 4e4f956b8c54dc981056d6b88842b525
+- id: edge:rat-pack
+  relation: rel:member
+  label: The Rack Pack
+  flavor: hub
+  members:
+  - node_id: group:rat-pack
+    seq: 0
+  - node_id: person:frank
+    seq: 1
+  - node_id: person:sammy
+    seq: 2
+  - node_id: person:dean
+    seq: 3
+  - node_id: person:joey
+    seq: 4
+  - node_id: person:lawford
+    seq: 5
+  tags:
+  - rat-pack
+  status: active
+  attributes:
+    meh: 42
+    enabled: true
+  system_created: '2026-08-25T20:37:16.982000'
+  system_updated: '2026-09-09T20:54:35.818000'
+  created_by: admin
+  version: 3
+  description: null
+  valid_from: null
+  valid_to: null
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  relation_node_id: null
+  hypergraph_id: hello-world
+  hyperkey: e1051a8a01586dc83f5b3524e1d80f23
+- id: edge:rat-pack-core
+  relation: rel:member
+  label: The Rat Pack Core
+  flavor: hub
+  members:
+  - node_id: group:rat-pack
+    seq: 0
+  - node_id: person:frank
+    seq: 1
+  - node_id: person:sammy
+    seq: 2
+  - node_id: person:dean
+    seq: 3
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-07T19:47:34.737000'
+  system_updated: '2026-08-26T03:57:29.473000'
+  created_by: admin
+  version: 4
+  description: null
+  valid_from: null
+  valid_to: null
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  relation_node_id: null
+  hypergraph_id: hello-world
+  hyperkey: ac4c3c6675bcf8031a70c8735bac5ffd
+- id: edge:stooges-besser
+  relation: rel:member
+  label: Three Stooges - Joe Besser
+  flavor: hub
+  members:
+  - node_id: group:three-stooges
+    seq: 0
+  - node_id: person:moe
+    seq: 1
+  - node_id: person:larry
+    seq: 2
+  - node_id: person:joe-besser
+    seq: 3
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-26T03:44:53.785000'
+  system_updated: '2026-09-13T16:55:09.458000'
+  created_by: admin
+  version: 3
+  description: null
+  valid_from: '1954-06-16T07:00:00'
+  valid_to: '1956-06-16T06:59:00'
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  relation_node_id: null
+  hypergraph_id: hello-world
+  hyperkey: c8e516aa9f09ea747909ae9458c57f5d
+- id: edge:stooges-curly-joe
+  relation: rel:member
+  label: Three Stooges - Curly Joe
+  flavor: hub
+  members:
+  - node_id: group:three-stooges
+    seq: 0
+  - node_id: person:moe
+    seq: 1
+  - node_id: person:larry
+    seq: 2
+  - node_id: person:curly-joe
+    seq: 3
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-26T03:47:35.941000'
+  system_updated: '2026-09-13T16:56:14.880000'
+  created_by: admin
+  version: 2
+  description: null
+  valid_from: '1956-06-16T07:01:00'
+  valid_to: '1970-01-31T07:59:00'
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  relation_node_id: null
+  hypergraph_id: hello-world
+  hyperkey: 99c9255e9596db56879199ce05359a74
+- id: edge:stooges-lineups
+  relation: rel:lineup
+  label: Stooges Lineups
+  flavor: hub
+  members:
+  - node_id: group:three-stooges
+    seq: 0
+  - node_id: edge:original-three-stooges
+    seq: 1
+  - node_id: edge:original-three-stooges-redux
+    seq: 2
+  - node_id: edge:classic-stooges
+    seq: 3
+  - node_id: edge:stooges-besser
+    seq: 4
+  - node_id: edge:stooges-curly-joe
+    seq: 5
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-26T02:31:47.765000'
+  system_updated: '2026-09-09T19:02:35.742000'
+  created_by: admin
+  version: 5
+  description: null
+  valid_from: null
+  valid_to: null
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  relation_node_id: null
+  hypergraph_id: hello-world
+  hyperkey: 7381dcf2058269aa7d8e43a8c0604b27
+- id: group:stooges-howards
+  relation: family:brother
+  label: Howard Brothers
+  flavor: symmetric
+  members:
+  - node_id: person:shemp
+    seq: 0
+  - node_id: person:moe
+    seq: 1
+  - node_id: person:curly
+    seq: 2
+  tags: []
+  status: active
+  attributes: {}
+  system_created: '2026-08-25T02:16:22.631000'
+  system_updated: '2026-08-26T04:09:21.366000'
+  created_by: admin
+  version: 3
+  description: null
+  valid_from: null
+  valid_to: null
+  skos_broader: []
+  skos_narrower: []
+  skos_related: []
+  relation_node_id: null
+  hypergraph_id: hello-world
+  hyperkey: 762da3949cf764d9281b58724855829c

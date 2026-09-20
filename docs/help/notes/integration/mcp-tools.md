@@ -76,7 +76,7 @@ Example call payload:
 {
   "name": "hgai_hypernode_create",
   "arguments": {
-    "graph_id": "hello-world",
+    "graph_id": "my-graph",
     "id": "person:john-doe",
     "label": "John Doe",
     "node_type": "Person",

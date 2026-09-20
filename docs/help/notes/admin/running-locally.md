@@ -20,7 +20,7 @@ mongosh --username admin --password pwd357 \
 
 cp .env.example .env
 ./hgai.sh                       # http://localhost:8357/ui/
-python scripts/seed_data.py     # optional sample data
+python scripts/seed_data.py     # optional: load the example hypergraphs from scripts/seeds/ (hello-world, eden)
 ```
 
 ## Options

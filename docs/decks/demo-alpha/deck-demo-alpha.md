@@ -834,8 +834,9 @@ vocabulary and a full worked example.
   from (architecture, complete API reference, all WHERE operators, mesh
   federation for multi-server deployments)
 - `docs/api-reference.md` — full REST API reference
-- `scripts/seed_data.py` — a second, smaller example dataset (Three
-  Stooges) if you want a different demo story
+- `scripts/seeds/` + `scripts/seed_data.py` — example hypergraphs as
+  export YAML files (`hello-world`: Three Stooges / Rat Pack / Beatles;
+  `eden`: a family tree) if you want a different demo story
 - `tests/` — `test_engine.py`, `test_query.py`, `test_mesh.py` for engine
   internals
 

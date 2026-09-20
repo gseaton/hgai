@@ -27,7 +27,7 @@ Inferencing is opt-in per query: add `infer: true` to an [SHQL](help:help-shql-o
 
 | Axiom | Effect |
 |---|---|
-| `owl:inverse-of [R, R']` | For a hub-flavor edge, each (hub, spoke) fact of `R` also implies `R'(spoke, hub)`. E.g. `has-member` ↔ `member-of`. |
+| `owl:inverse-of [R, R']` | For a hub-flavor edge, each (hub, spoke) fact of `R` also implies `R'(spoke, hub)`. E.g. `rel:member` ↔ `rel:member-of` (declared in the `hello-world` seed). |
 | `owl:symmetric` | Every member of a symmetric-flavor edge is equivalent to every other: A related-to B implies B related-to A. |
 | `skos:broaderTransitive` / `narrowerTransitive` | *Superproperty projection*: if relation `father` is narrower than `parent`, which is narrower than `ancestor`, a `father` fact is copied to `parent` and `ancestor`, through every level. |
 | `owl:transitive` | Whole-relation reachability: given `parent` facts A→B→C and an `owl:transitive` axiom on `parent`, it synthesizes A→C. |

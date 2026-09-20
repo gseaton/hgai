@@ -13,11 +13,26 @@ def _col():
     return get_db()["notes"]
 
 
+PUBLIC_SCOPES = ["public", "public-edit"]
+
+
 def _visibility_clause(username: str) -> Dict[str, Any]:
-    """A note is visible to `username` iff they own it or appear in its acl —
-    matches `hgai.core.notes.can_view_note`'s definition of visibility, kept
-    in sync deliberately since this is the query-side equivalent."""
-    return {"$or": [{"owner_username": username}, {"acl.username": username}]}
+    """A note is visible to `username` iff they own it, its scope is public*,
+    or they appear in its acl and the scope isn't private. A note stored
+    without a scope (created before scopes existed) is 'protected' — so it
+    matches `$ne: private`. Query-side twin of `hgai.core.notes.note_access`;
+    keep the two in sync."""
+    return {"$or": [
+        {"owner_username": username},
+        {"scope": {"$in": PUBLIC_SCOPES}},
+        {"$and": [{"acl.username": username}, {"scope": {"$ne": "private"}}]},
+    ]}
+
+
+def _scope_clause(scope: str) -> Dict[str, Any]:
+    if scope == "protected":  # legacy notes have no stored scope
+        return {"$or": [{"scope": "protected"}, {"scope": {"$exists": False}}]}
+    return {"scope": scope}
 
 
 class MongoNoteStore(NoteStore):
@@ -46,6 +61,10 @@ class MongoNoteStore(NoteStore):
         clauses: List[Dict[str, Any]] = []
         if filters.username:
             clauses.append(_visibility_clause(filters.username))
+        if filters.owner_username:
+            clauses.append({"owner_username": filters.owner_username})
+        if filters.scope:
+            clauses.append(_scope_clause(filters.scope))
         if filters.status:
             clauses.append({"status": filters.status})
         if filters.tags:
@@ -71,7 +90,7 @@ class MongoNoteStore(NoteStore):
     async def update(self, note_id: str, patch: NotePatch) -> Optional[NoteInDB]:
         from hgai.models.common import now_utc
         update_fields: Dict[str, Any] = {}
-        for attr in ("label", "name", "text", "media", "tags", "attributes", "status", "acl", "mutations"):
+        for attr in ("label", "name", "text", "media", "tags", "attributes", "status", "acl", "scope", "mutations"):
             val = getattr(patch, attr, None)
             if val is not None:
                 update_fields[attr] = val

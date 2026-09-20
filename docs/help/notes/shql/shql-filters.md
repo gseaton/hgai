@@ -13,8 +13,10 @@ A `filter:` entry in `where:` applies an expression to already-bound variables:
 
 ```yaml
 where:
-  - node: { bind: ?person, type: Person }
-  - filter: "?person.attributes.born < '1900-01-01'"
+  - node:
+      bind: ?person
+      type: Person
+  - filter: "CONTAINS(?person.description, 'Howard')"
 ```
 
 ## Operators and functions
@@ -36,6 +38,6 @@ where:
 
 ## Filter or attribute operator?
 
-Both can express "born before 1900". Use an `attributes:` operator inside the pattern when you're matching while binding; use a `filter:` when the comparison involves a variable that is already bound, or combines several conditions with `AND`/`OR`.
+Both can express "the description mentions Howard" or "the sex attribute is female". Use an `attributes:` operator inside the pattern when you're matching while binding; use a `filter:` when the comparison involves a variable that is already bound, or combines several conditions with `AND`/`OR`.
 
 Back to [SHQL patterns](help:help-shql-patterns) or the [overview](help:help-shql-overview).

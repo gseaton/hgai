@@ -15,24 +15,51 @@ from hgai.core.mutations import create_delta as _create_delta
 from hgai.core.mutations import update_delta as _update_delta
 from hgai.db.storage import get_storage
 from hgai.models.common import now_utc
-from hgai.models.note import NoteCreate, NoteGrant, NoteInDB, NoteRole, NoteUpdate
+from hgai.models.note import NoteCreate, NoteGrant, NoteInDB, NoteRole, NoteScope, NoteUpdate
 from hgai_module_storage.filters import NoteFilters, NotePatch
 
-NOTE_TRACKED_FIELDS = ["label", "name", "text", "media", "tags", "status", "attributes"]
+NOTE_TRACKED_FIELDS = ["label", "name", "text", "media", "tags", "status", "attributes", "scope"]
+
+
+def note_access(note: NoteInDB, username: str) -> Optional[str]:
+    """`username`'s access to `note`, as owner | editor | viewer | None.
+
+    Owner always has full access. For anyone else the note's scope sets the
+    baseline audience, and a share-list grant can raise (never lower) it:
+
+        scope           share-list member          everyone else
+        private         none (grants inactive)     none
+        protected       their grant's role         none
+        protected-edit  editor                     none
+        public          max(viewer, grant role)    viewer
+        public-edit     editor                     editor
+
+    (Admin bypass is applied by the API layer, not here.) The Mongo store's
+    `_visibility_clause` is the query-side equivalent of "is not None".
+    """
+    if note.owner_username == username:
+        return "owner"
+    scope = note.scope
+    if scope == NoteScope.private:
+        return None
+    if scope == NoteScope.public_edit:
+        return "editor"
+    grant = next((g for g in note.acl if g.username == username), None)
+    if scope == NoteScope.protected_edit:
+        return "editor" if grant else None
+    if grant and grant.role == NoteRole.editor:
+        return "editor"
+    if grant or scope == NoteScope.public:
+        return "viewer"
+    return None  # protected, not on the share list
 
 
 def can_view_note(note: NoteInDB, username: str) -> bool:
-    """Owner always can; otherwise any ACL entry (viewer or editor) grants view."""
-    if note.owner_username == username:
-        return True
-    return any(grant.username == username for grant in note.acl)
+    return note_access(note, username) is not None
 
 
 def can_edit_note(note: NoteInDB, username: str) -> bool:
-    """Owner always can; otherwise only an ACL entry with role=editor grants edit."""
-    if note.owner_username == username:
-        return True
-    return any(grant.username == username and grant.role == NoteRole.editor for grant in note.acl)
+    return note_access(note, username) in ("owner", "editor")
 
 
 async def create_note(data: NoteCreate, owner_username: str, id: Optional[str] = None) -> NoteInDB:
@@ -65,8 +92,12 @@ async def list_notes_visible_to(
     skip: int = 0,
     limit: int = 50,
     sort: Optional[List[Tuple[str, int]]] = None,
+    scope: Optional[str] = None,
+    owner_username: Optional[str] = None,
 ) -> Tuple[int, List[NoteInDB]]:
-    filters = NoteFilters(username=username, tags=tags, search=search, sort=sort)
+    filters = NoteFilters(
+        username=username, tags=tags, search=search, sort=sort, scope=scope, owner_username=owner_username,
+    )
     return await get_storage().notes.list(filters, skip=skip, limit=limit)
 
 
@@ -123,10 +154,16 @@ async def share_note(note_id: str, username: str, role: NoteRole, shared_by: str
     # when the remove-then-append above happens to reorder other entries.
     unchanged = {(g["username"], g["role"]) for g in old_dump} == {(g["username"], g["role"]) for g in new_dump}
     delta = [] if unchanged else [{"field": "acl", "old": old_dump, "new": new_dump}]
+    # A share list is inactive on a private note, so sharing with someone
+    # widens the scope to 'protected' rather than silently doing nothing.
+    promote = existing.scope == NoteScope.private
+    if promote:
+        delta.append({"field": "scope", "old": NoteScope.private.value, "new": NoteScope.protected.value})
     new_mutations = _append_mutation(existing_mutations, "share", delta, shared_by)
 
     patch = NotePatch(
         acl=new_dump,
+        scope=NoteScope.protected.value if promote else None,
         mutations=new_mutations if new_mutations is not existing_mutations else None,
     )
     return await get_storage().notes.update(note_id, patch)
@@ -151,3 +188,20 @@ async def unshare_note(note_id: str, username: str, unshared_by: str) -> Optiona
     )
     patch = NotePatch(acl=new_dump, mutations=new_mutations)
     return await get_storage().notes.update(note_id, patch)
+
+
+async def set_note_scope(note_id: str, scope: NoteScope, changed_by: str) -> Optional[NoteInDB]:
+    """Change who can reach a note. Kept apart from `update_note` (like
+    sharing) so "who changed the content" and "who changed the audience" stay
+    distinct audit events; a no-op change records no mutation."""
+    existing = await get_note(note_id)
+    if not existing:
+        return None
+    new_value = NoteScope(scope).value
+    if existing.scope == new_value:
+        return existing
+    existing_mutations = existing.model_dump().get("mutations", [])
+    new_mutations = _append_mutation(
+        existing_mutations, "scope", [{"field": "scope", "old": existing.scope, "new": new_value}], changed_by,
+    )
+    return await get_storage().notes.update(note_id, NotePatch(scope=new_value, mutations=new_mutations))

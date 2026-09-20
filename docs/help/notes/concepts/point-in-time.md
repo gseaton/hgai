@@ -22,13 +22,17 @@ shql:
   where:
     - edge:
         bind: ?edge
-        relation: has-member
+        relation: rel:member
         members:
-          - node: { id: three-stooges }
-          - node: { bind: ?stooge, type: Person }
+          - node_id: group:three-stooges
+          - node_id: ?person_id
+    - node:
+        bind: ?stooge
+        id: ?person_id
+        type: Person
   select:
     - ?stooge.label
-    - ?edge.attributes
+    - ?edge.label
 ```
 
 `at:` is applied at every stage — both edge and node lookups — and works the same for [space-scoped graphs](help:help-spaces) and [mesh](help:help-meshes) references.
@@ -37,4 +41,4 @@ shql:
 
 The **At (point-in-time)** field renders only hyperedges valid at that instant. Hypernodes are never filtered by it — they always render ([Visualize](help:help-visualize)).
 
-More: [SHQL examples](help:help-shql-examples) (#7 and #12), [SHQL overview](help:help-shql-overview).
+The `hello-world` seed has lineup edges with `valid_from`/`valid_to` (the Stooges, the Beatles), so this returns Moe, Larry and Curly. More: [SHQL examples](help:help-shql-examples), [SHQL overview](help:help-shql-overview).

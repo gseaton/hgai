@@ -18,21 +18,32 @@ from hgai.core.notes import (
     delete_note,
     get_note,
     list_notes_visible_to,
+    note_access,
+    set_note_scope,
     share_note,
     unshare_note,
     update_note,
 )
 from hgai.models.account import AccountInDB
 from hgai.models.common import PaginatedResponse
-from hgai.models.note import NoteCreate, NoteResponse, NoteUpdate, ShareNoteRequest
+from hgai.models.note import NoteCreate, NoteResponse, NoteScope, NoteUpdate, SetNoteScopeRequest, ShareNoteRequest
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
-NOTE_SORT_FIELDS = {"label", "name", "owner_username", "status", "system_created", "system_updated"}
+NOTE_SORT_FIELDS = {"label", "name", "owner_username", "scope", "status", "system_created", "system_updated"}
 
 
 def _is_admin(account: AccountInDB) -> bool:
     return "admin" in account.roles
+
+
+def _with_access(note, account: AccountInDB) -> dict:
+    """The note as a dict plus the caller's effective access to it, so clients
+    never have to re-derive scope/ACL rules: owner | admin | editor | viewer."""
+    access = note_access(note, account.username)
+    if _is_admin(account) and access != "owner":
+        access = "admin"
+    return dict(note.model_dump(), my_access=access)
 
 
 async def _get_viewable(note_id: str, account: AccountInDB):
@@ -55,19 +66,23 @@ async def _get_editable(note_id: str, account: AccountInDB):
 async def list_notes(
     tags: Optional[List[str]] = Query(default=None),
     search: Optional[str] = Query(default=None, description="Substring match against label or text"),
+    scope: Optional[NoteScope] = Query(default=None, description="Only notes with this scope"),
+    owner: Optional[str] = Query(default=None, description="Only notes owned by this account"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
     sort: Optional[str] = Query(default=None, description=f"Comma-separated fields, '-' prefix = descending. Allowed: {sorted(NOTE_SORT_FIELDS)}"),
     account: AccountInDB = Depends(get_current_active_account),
 ):
-    """Notes visible to the calling account: owned, or shared with them.
-    An admin still only sees their own + shared notes here — use a direct
-    GET /notes/{id} (also admin-bypassed) to reach any specific note."""
+    """Notes visible to the calling account: owned by them, shared with them
+    (per the note's scope and share list), or public. An admin still only sees
+    notes visible to them here — use a direct GET /notes/{id} (also
+    admin-bypassed) to reach any specific note."""
     total, notes = await list_notes_visible_to(
         account.username, tags=tags, search=search, skip=skip, limit=limit,
         sort=parse_sort_param(sort, NOTE_SORT_FIELDS),
+        scope=scope.value if scope else None, owner_username=owner,
     )
-    return PaginatedResponse(total=total, skip=skip, limit=limit, items=[n.model_dump() for n in notes])
+    return PaginatedResponse(total=total, skip=skip, limit=limit, items=[_with_access(n, account) for n in notes])
 
 
 @router.post("", response_model=NoteResponse, status_code=status.HTTP_201_CREATED)
@@ -75,7 +90,7 @@ async def create_note_route(
     data: NoteCreate,
     account: AccountInDB = Depends(get_current_active_account),
 ):
-    return await create_note(data, account.username)
+    return _with_access(await create_note(data, account.username), account)
 
 
 @router.get("/{note_id}", response_model=NoteResponse)
@@ -83,7 +98,7 @@ async def get_note_route(
     note_id: str,
     account: AccountInDB = Depends(get_current_active_account),
 ):
-    return await _get_viewable(note_id, account)
+    return _with_access(await _get_viewable(note_id, account), account)
 
 
 @router.put("/{note_id}", response_model=NoteResponse)
@@ -96,7 +111,7 @@ async def update_note_route(
     result = await update_note(note_id, data, account.username)
     if not result:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Note '{note_id}' not found")
-    return result
+    return _with_access(result, account)
 
 
 @router.delete("/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -116,7 +131,24 @@ async def list_note_shares(
     account: AccountInDB = Depends(get_current_active_account),
 ):
     note = await _get_viewable(note_id, account)
-    return {"owner_username": note.owner_username, "acl": [g.model_dump() for g in note.acl]}
+    return {"owner_username": note.owner_username, "scope": note.scope, "acl": [g.model_dump() for g in note.acl]}
+
+
+@router.put("/{note_id}/scope", response_model=NoteResponse)
+async def set_note_scope_route(
+    note_id: str,
+    data: SetNoteScopeRequest,
+    account: AccountInDB = Depends(get_current_active_account),
+):
+    """Change who can reach the note (private / protected / protected-edit /
+    public / public-edit). Owner or admin only."""
+    note = await _get_viewable(note_id, account)
+    if not _is_admin(account) and note.owner_username != account.username:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the owner can change a note's scope")
+    result = await set_note_scope(note_id, data.scope, account.username)
+    if not result:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Note '{note_id}' not found")
+    return _with_access(result, account)
 
 
 @router.post("/{note_id}/share", response_model=NoteResponse)
@@ -133,7 +165,7 @@ async def share_note_route(
     result = await share_note(note_id, data.username, data.role, account.username)
     if not result:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Note '{note_id}' not found")
-    return result
+    return _with_access(result, account)
 
 
 @router.delete("/{note_id}/share/{username}", response_model=NoteResponse)
@@ -148,4 +180,4 @@ async def unshare_note_route(
     result = await unshare_note(note_id, username, account.username)
     if not result:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Note '{note_id}' not found")
-    return result
+    return _with_access(result, account)

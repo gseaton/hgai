@@ -471,6 +471,23 @@
                     <input type="text" id="notes-tags-filter" class="form-control form-control-sm" placeholder="Filter by tag..." style="width:180px"/>
                   </div>
                   <div class="col-auto">
+                    <select id="notes-scope-filter" class="form-select form-select-sm" title="Filter by scope">
+                      <option value="">Any scope</option>
+                      <option value="private">private</option>
+                      <option value="protected">protected</option>
+                      <option value="protected-edit">protected-edit</option>
+                      <option value="public">public</option>
+                      <option value="public-edit">public-edit</option>
+                    </select>
+                  </div>
+                  <div class="col-auto">
+                    <select id="notes-owner-filter" class="form-select form-select-sm" title="Filter by owner">
+                      <option value="">All accessible notes</option>
+                      <option value="me">Only my notes</option>
+                      <option value="others">Only others' notes</option>
+                    </select>
+                  </div>
+                  <div class="col-auto">
                     <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-notes">
                       <i class="bi bi-arrow-clockwise"></i>
                     </button>
@@ -487,6 +504,7 @@
                       <th class="sortable-th" data-table="notes" data-sort-field="label">Label<span class="sort-indicator"></span></th>
                       <th>Tags</th>
                       <th class="sortable-th" data-table="notes" data-sort-field="owner_username">Owner<span class="sort-indicator"></span></th>
+                      <th class="sortable-th" data-table="notes" data-sort-field="scope">Scope<span class="sort-indicator"></span></th>
                       <th>Shared With</th>
                       <th class="sortable-th" data-table="notes" data-sort-field="system_updated">Updated<span class="sort-indicator"></span></th>
                       <th class="sortable-th" data-table="notes" data-sort-field="status">Status<span class="sort-indicator"></span></th>
@@ -1533,7 +1551,8 @@
         <!-- ── Browse view: read-only, just Label/Name/rendered content ── -->
         <div id="note-browse-view" class="node-form-section node-form-section-last">
           <h4 id="note-browse-label" class="mb-1"></h4>
-          <div id="note-browse-name" class="text-muted mb-3"></div>
+          <div id="note-browse-name" class="text-muted mb-2"></div>
+          <div id="note-browse-meta" class="small text-muted mb-3"></div>
           <div id="note-browse-content" class="note-preview-pane"></div>
         </div>
 
@@ -1576,6 +1595,17 @@
                 </select>
               </div>
               <div class="col-md-8">
+                <label class="form-label">Scope <span class="text-muted fw-normal small" id="note-scope-owner-only"></span></label>
+                <select id="note-scope" class="form-select">
+                  <option value="private">private — only me</option>
+                  <option value="protected">protected — shared accounts can view</option>
+                  <option value="protected-edit">protected-edit — shared accounts can view and edit</option>
+                  <option value="public">public — every account can view</option>
+                  <option value="public-edit">public-edit — every account can view and edit</option>
+                </select>
+                <div class="form-text" id="note-scope-help"></div>
+              </div>
+              <div class="col-12">
                 <label class="form-label">Tags</label>
                 <input type="text" id="note-tags" class="form-control" placeholder="tag1, tag2, //folder/path"/>
                 <div class="form-text">Comma-separated list. A tag starting with <code>//</code> (e.g. <code>//projects/quill</code>) places this note in that folder in the sidebar.</div>
@@ -1637,7 +1667,9 @@
       </div>
       <div class="modal-body">
         <input type="hidden" id="note-share-note-id" value=""/>
-        <p class="text-muted small">Owner: <strong id="note-share-owner"></strong> (always full access)</p>
+        <p class="text-muted small mb-1">Owner: <strong id="note-share-owner"></strong> (always full access)</p>
+        <p class="text-muted small">Scope: <span id="note-share-scope"></span>
+          <span id="note-share-scope-hint"></span></p>
         <div id="note-share-list" class="mb-3"></div>
         <div class="d-flex gap-2">
           <input type="text" id="note-share-username" class="form-control form-control-sm" placeholder="username"/>

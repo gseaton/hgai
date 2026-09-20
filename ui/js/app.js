@@ -1757,7 +1757,11 @@ document.getElementById('btn-save-node').addEventListener('click', async () => {
 
 function currentUsername() { return HGAI_API.getUsername(); }
 
+// The server computes the caller's effective access (owner | admin | editor |
+// viewer) from the note's scope and share list and returns it as `my_access`;
+// the fallbacks only cover a note object that didn't come from the API.
 function noteCanEdit(note) {
+  if (note.my_access) return ['owner', 'admin', 'editor'].includes(note.my_access);
   if (HGAI_API.isAdmin()) return true;
   const me = currentUsername();
   if (note.owner_username === me) return true;
@@ -1765,19 +1769,42 @@ function noteCanEdit(note) {
 }
 
 function noteIsOwner(note) {
+  if (note.my_access) return note.my_access === 'owner' || note.my_access === 'admin';
   return HGAI_API.isAdmin() || note.owner_username === currentUsername();
+}
+
+// ── Note scope: who besides the owner can reach a note ──
+const NOTE_SCOPES = {
+  'private':        { icon: 'bi-lock-fill',        cls: 'bg-secondary',        text: 'Only the owner can see this note.' },
+  'protected':      { icon: 'bi-people-fill',      cls: 'bg-warning text-dark', text: 'Accounts on the share list can view it (a per-account editor grant still lets that account edit).' },
+  'protected-edit': { icon: 'bi-people-fill',      cls: 'bg-warning text-dark', text: 'Accounts on the share list can view and edit it.' },
+  'public':         { icon: 'bi-globe2',           cls: 'bg-info text-dark',   text: 'Every account on this server can view it (share-list editors can still edit).' },
+  'public-edit':    { icon: 'bi-globe2',           cls: 'bg-success',          text: 'Every account on this server can view and edit it.' },
+};
+
+function noteScopeBadge(scope) {
+  const s = NOTE_SCOPES[scope] || NOTE_SCOPES.protected;
+  const label = NOTE_SCOPES[scope] ? scope : 'protected';
+  return `<span class="badge ${s.cls}" title="${escapeHtml(s.text)}"><i class="bi ${s.icon} me-1"></i>${escapeHtml(label)}</span>`;
+}
+
+function noteScopeText(scope) {
+  return (NOTE_SCOPES[scope] || NOTE_SCOPES.protected).text;
 }
 
 async function loadNotes() {
   const tbody = document.getElementById('tbody-notes');
-  tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
 
   const tagFilter = document.getElementById('notes-tags-filter').value.trim();
+  const ownerFilter = document.getElementById('notes-owner-filter').value;
   const params = {
     skip: State.notesPage * State.notesPageSize,
     limit: State.notesPageSize,
     search: document.getElementById('notes-search').value.trim() || undefined,
     tags: tagFilter ? [tagFilter] : undefined,
+    scope: document.getElementById('notes-scope-filter').value || undefined,
+    owner: ownerFilter === 'me' ? currentUsername() : undefined,
     sort: sortParam(State.notesSort),
   };
   updateSortIndicators('notes');
@@ -1785,14 +1812,19 @@ async function loadNotes() {
   try {
     const resp = await HGAI_API.listNotes(params);
     tbody.innerHTML = '';
-    if (!resp.items || !resp.items.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No notes found</td></tr>';
+    // "Only others' notes" has no server-side equivalent (the API filters by
+    // one owner), so it is applied to the fetched page.
+    const items = ownerFilter === 'others'
+      ? (resp.items || []).filter(n => n.owner_username !== currentUsername())
+      : (resp.items || []);
+    if (!items.length) {
+      tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">No notes found</td></tr>';
     } else {
       const me = currentUsername();
-      resp.items.forEach(n => {
+      items.forEach(n => {
         const tr = document.createElement('tr');
         const sharedWith = (n.acl || []).map(g => `<span class="badge bg-light text-dark me-1" title="${escapeHtml(g.role)}">${escapeHtml(g.username)}</span>`).join('') || '<span class="text-muted small">—</span>';
-        const isOwner = n.owner_username === me || HGAI_API.isAdmin();
+        const isOwner = noteIsOwner(n);
         tr.innerHTML = `
           <td class="table-id-link" onclick="openNoteModal('${n.id}')">
             <i class="bi bi-journal-richtext text-secondary me-1"></i>
@@ -1800,12 +1832,13 @@ async function loadNotes() {
           </td>
           <td class="small" title="${escapeHtml(n.label)}">${escapeHtml(truncate(n.label, 40))}</td>
           <td>${tagBadges(n.tags)}</td>
-          <td class="small">${escapeHtml(n.owner_username)}</td>
+          <td class="small">${escapeHtml(n.owner_username)}${n.owner_username === me ? ' <span class="text-muted">(you)</span>' : ''}</td>
+          <td>${noteScopeBadge(n.scope)}</td>
           <td>${sharedWith}</td>
           <td class="small text-muted">${fmtDate(n.system_updated)}</td>
           <td>${statusBadge(n.status)}</td>
           <td class="text-end">
-            <button class="btn btn-xs btn-outline-secondary me-1" onclick="openNoteModal('${n.id}')" title="Open"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-xs btn-outline-secondary me-1" onclick="openNoteModal('${n.id}')" title="${noteCanEdit(n) ? 'Open' : 'Open (view only)'}"><i class="bi ${noteCanEdit(n) ? 'bi-pencil' : 'bi-eye'}"></i></button>
             ${isOwner ? `<button class="btn btn-xs btn-outline-secondary me-1" onclick="openNoteShareModal('${n.id}')" title="Share"><i class="bi bi-people"></i></button>` : ''}
             ${isOwner ? `<button class="btn btn-xs btn-outline-danger" onclick="deleteNoteRow('${n.id}', '${escapeHtml(n.label).replace(/'/g, "\\'")}')" title="Delete"><i class="bi bi-trash"></i></button>` : ''}
           </td>`;
@@ -1814,7 +1847,7 @@ async function loadNotes() {
     }
     renderPagination('notes', resp.total, State.notesPage, State.notesPageSize);
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="8" class="text-danger text-center">${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="text-danger text-center">${err.message}</td></tr>`;
   }
 }
 
@@ -2075,6 +2108,9 @@ document.getElementById('btn-refresh-notes').addEventListener('click', () => { l
   document.getElementById(id).addEventListener('keydown', e => {
     if (e.key === 'Enter') { State.notesPage = 0; loadNotes(); }
   });
+});
+['notes-scope-filter', 'notes-owner-filter'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => { State.notesPage = 0; loadNotes(); });
 });
 
 function deleteNoteRow(id, label) {
@@ -2564,6 +2600,8 @@ document.getElementById('note-browse-content').addEventListener('click', noteInt
 // read by setNoteMode() to decide Save's visibility independent of which
 // mode is active (a viewer-only note hides Save in every mode, not just Browse).
 let noteModalEditable = true;
+let noteModalMeta = null;      // { owner_username } of the note open in the modal, null for a new one
+let noteModalScope = 'private'; // the scope as last loaded/saved, to tell whether Save must change it
 
 // Three modes: Browse (default — read-only Label/Name/rendered content
 // only), Edit (the full form, raw Markdown textarea), Preview (the full
@@ -2586,6 +2624,9 @@ function setNoteMode(mode) {
     const nameEl = document.getElementById('note-browse-name');
     nameEl.textContent = nameVal;
     nameEl.classList.toggle('d-none', !nameVal);
+    document.getElementById('note-browse-meta').innerHTML = noteModalMeta
+      ? `Owner <strong>${escapeHtml(noteModalMeta.owner_username)}</strong> · ${noteScopeBadge(document.getElementById('note-scope').value)}`
+      : '';
     renderNoteMarkdown(document.getElementById('note-text').value, 'note-browse-content');
   } else if (mode === 'preview') {
     renderNoteMarkdown(document.getElementById('note-text').value, 'note-preview');
@@ -2648,6 +2689,10 @@ async function openNoteModal(noteId) {
   // meaningless before a first save).
   document.getElementById('btn-note-copy-link').classList.toggle('d-none', !noteId);
   noteModalEditable = true;
+  noteModalMeta = null;
+  document.getElementById('note-scope').value = 'private'; // new notes start private
+  noteModalScope = 'private';
+  updateNoteScopeHelp(true);
   document.getElementById('btn-note-mode-edit').classList.remove('d-none');
   setNoteFieldsDisabled(false);
 
@@ -2660,6 +2705,9 @@ async function openNoteModal(noteId) {
       document.getElementById('note-text').value = n.text || '';
       document.getElementById('note-tags').value = (n.tags || []).join(', ');
       document.getElementById('note-status').value = n.status || 'active';
+      noteModalMeta = { owner_username: n.owner_username };
+      noteModalScope = n.scope || 'protected';
+      document.getElementById('note-scope').value = noteModalScope;
       noteMediaItems = (n.media || []).map(m => ({ ...m }));
       renderMediaList('note-media-list', noteMediaItems);
       document.getElementById('note-history-section').classList.remove('d-none');
@@ -2669,6 +2717,7 @@ async function openNoteModal(noteId) {
       const editable = noteCanEdit(n);
       noteModalEditable = editable;
       setNoteFieldsDisabled(!editable);
+      updateNoteScopeHelp(noteIsOwner(n)); // after the fields are (re)enabled: only the owner/admin may change scope
       document.getElementById('btn-note-mode-edit').classList.toggle('d-none', !editable);
       if (!editable) {
         document.getElementById('modal-note-title').textContent = `${n.label} (view only)`;
@@ -2687,6 +2736,19 @@ async function openNoteModal(noteId) {
   }
   modal.show();
 }
+
+// The scope select is always owner/admin-only, independent of whether the
+// rest of the form is editable (a public-edit editor can change content but
+// not who can see it).
+function updateNoteScopeHelp(canChangeScope) {
+  const sel = document.getElementById('note-scope');
+  sel.disabled = !canChangeScope;
+  document.getElementById('note-scope-owner-only').textContent = canChangeScope ? '' : '(only the owner can change this)';
+  document.getElementById('note-scope-help').textContent = noteScopeText(sel.value);
+}
+document.getElementById('note-scope').addEventListener('change', () => {
+  document.getElementById('note-scope-help').textContent = noteScopeText(document.getElementById('note-scope').value);
+});
 
 function setNoteFieldsDisabled(disabled) {
   ['note-label', 'note-name', 'note-text', 'note-tags', 'note-status', 'note-media-file', 'note-media-role',
@@ -2715,13 +2777,18 @@ document.getElementById('btn-save-note').addEventListener('click', async () => {
     status: document.getElementById('note-status').value,
     media: noteMediaItems,
   };
+  const scope = document.getElementById('note-scope').value;
 
   try {
     if (id) {
       await HGAI_API.updateNote(id, data);
+      // Scope changes go through their own owner-only endpoint.
+      if (!document.getElementById('note-scope').disabled && scope !== noteModalScope) {
+        await HGAI_API.setNoteScope(id, scope);
+      }
       toast('Note updated');
     } else {
-      await HGAI_API.createNote(data);
+      await HGAI_API.createNote({ ...data, scope });
       toast('Note created');
     }
     bootstrap.Modal.getInstance(document.getElementById('modal-note'))?.hide();
@@ -2746,6 +2813,15 @@ async function loadNoteShares(noteId) {
     const info = await HGAI_API.listNoteShares(noteId);
     document.getElementById('note-share-label').textContent = noteId;
     document.getElementById('note-share-owner').textContent = info.owner_username;
+    document.getElementById('note-share-scope').innerHTML = noteScopeBadge(info.scope);
+    document.getElementById('note-share-scope-hint').textContent = info.scope === 'private'
+      ? '— the share list is inactive while a note is private; granting access makes it protected.'
+      : `— ${noteScopeText(info.scope)}`;
+    if (document.getElementById('note-form-id').value === noteId) { // keep the open note's scope select in step
+      noteModalScope = info.scope;
+      document.getElementById('note-scope').value = info.scope;
+      document.getElementById('note-scope-help').textContent = noteScopeText(info.scope);
+    }
     listEl.innerHTML = '';
     if (!info.acl || !info.acl.length) {
       listEl.innerHTML = '<div class="text-muted small">Not shared with anyone else yet</div>';

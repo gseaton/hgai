@@ -15,13 +15,16 @@ Rows are kept even when the optional patterns don't match; their variables are s
 
 ```yaml
 where:
-  - node: { bind: ?person, type: Person }
+  - node:
+      bind: ?person
+      type: Person
   - optional:
       - edge:
-          bind: ?sibling_edge
-          relation: sibling
+          bind: ?brothers
+          relation: family:brother
           members:
-            - node: { bind: ?person }
+            - node:
+                bind: ?person
 ```
 
 ## UNION — alternatives
@@ -30,11 +33,21 @@ where:
 where:
   - union:
       - patterns:
-          - node: { bind: ?person, type: Person }
-          - filter: "?person.attributes.born < '1900-01-01'"
+          - edge:
+              relation: rel:member
+              members:
+                - node_id: group:beatles
+                - node_id: ?member_id
       - patterns:
-          - node: { bind: ?person, type: Person }
-          - filter: "CONTAINS(?person.label, 'Curly')"
+          - edge:
+              relation: rel:member
+              members:
+                - node_id: group:rat-pack
+                - node_id: ?member_id
+  - node:
+      bind: ?person
+      id: ?member_id
+      type: Person
 distinct: true
 ```
 
@@ -45,7 +58,7 @@ distinct: true
 ```yaml
 order_by:
   - ?edge.relation desc
-  - ?edge.members
+  - ?edge.label
 limit: 100
 offset: 0
 distinct: true
@@ -59,7 +72,8 @@ distinct: true
 select:
   - ?edge.relation
 where:
-  - edge: { bind: ?edge }
+  - edge:
+      bind: ?edge
 aggregate:
   count: true
   group_by: edge.relation
@@ -77,6 +91,6 @@ The response `meta` then includes `count` (total matched rows) and `groups` (`{"
 
 ## Several graphs, spaces and meshes
 
-`from:` may list several graphs (`[hello-world, alpha/alpha-hg]`). Servers in a [mesh](help:help-meshes) are queried concurrently, using dot-notation such as `mesh.server.graph`.
+`from:` may list several graphs (for example `hello-world` and `alpha/alpha-hg`, in a YAML list). Servers in a [mesh](help:help-meshes) are queried concurrently, using dot-notation such as `mesh.server.graph`.
 
 More: [Worked examples](help:help-shql-examples).

@@ -196,7 +196,9 @@ class MediaPatch:
 
 @dataclass
 class NoteFilters:
-    username: Optional[str] = None  # visibility: owner_username == username OR acl contains username
+    username: Optional[str] = None  # visibility: owner, or note scope public*, or (on the acl and scope != private)
+    scope: Optional[str] = None  # only notes with this scope (a note with no stored scope counts as 'protected')
+    owner_username: Optional[str] = None  # only notes owned by this account
     tags: Optional[List[str]] = None
     search: Optional[str] = None  # substring match against label or text
     status: Optional[str] = None
@@ -213,6 +215,7 @@ class NotePatch:
     attributes: Optional[Dict[str, Any]] = None
     status: Optional[str] = None
     acl: Optional[List[Any]] = None  # only set by share/unshare, never by the general update path
+    scope: Optional[str] = None  # only set by the dedicated scope route (and a share that promotes a private note)
     mutations: Optional[List[Dict[str, Any]]] = None
 
 

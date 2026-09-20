@@ -28,8 +28,13 @@ The same operations are available as `hgai_mesh_*` [MCP tools](help:help-mcp-too
 shql:
   from: alpha-bravo-mesh
   where:
-    - node: { bind: ?person, node_type: Person }
-  select: [?person.id, ?person.label, ?person.node_type]
+    - node:
+        bind: ?person
+        node_type: Person
+  select:
+    - ?person.id
+    - ?person.label
+    - ?person.node_type
 ```
 
 All servers are queried **concurrently** — total latency is the slowest server, not the sum. Unreachable servers are skipped and reported in the response's `errors`.

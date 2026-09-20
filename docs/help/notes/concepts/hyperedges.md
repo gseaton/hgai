@@ -13,7 +13,7 @@ A **hyperedge** is a first-class semantic relationship that connects *n* hyperno
 
 | Field | Meaning |
 |---|---|
-| `relation` | Semantic relation type, e.g. `has-member`, `sibling`, `broader`, `rel:president-of` |
+| `relation` | Semantic relation type, e.g. `rel:member`, `rel:sibling`, `skos:broaderTransitive`, `rel:parent` |
 | `members` | Ordered list of participating hypernodes — each with a `node_id`, a position `seq`, and optionally a role |
 | `flavor` | How the member list decomposes into facts — `hub`, `symmetric`, `direct`, `transitive`, `inverse-transitive` (see [Edge flavors](help:help-edge-flavors)) |
 | `attributes` | Arbitrary JSON document (e.g. `era: classic`) |
@@ -29,15 +29,18 @@ The `hyperkey` is computed from the edge's relation and members, so two edges wi
 
 ```json
 {
-  "relation": "has-member",
+  "id": "edge:classic-stooges",
+  "relation": "rel:member",
   "flavor": "hub",
+  "label": "Classic Three Stooges Trio",
   "members": [
-    { "node_id": "three-stooges", "seq": 0 },
-    { "node_id": "moe-howard",    "seq": 1 },
-    { "node_id": "larry-fine",    "seq": 2 }
+    { "node_id": "group:three-stooges", "seq": 0 },
+    { "node_id": "person:moe",          "seq": 1 },
+    { "node_id": "person:larry",        "seq": 2 },
+    { "node_id": "person:curly",        "seq": 3 }
   ],
-  "attributes": { "era": "classic" },
-  "tags": ["original"]
+  "valid_from": "1932-07-02T16:01:00",
+  "valid_to": "1946-07-03T15:59:00"
 }
 ```
 

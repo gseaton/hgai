@@ -1,36 +1,97 @@
 #!/usr/bin/env python3
 """
-HypergraphAI Seed Data Script
-Populates the 'hello-world' hypergraph with example data demonstrating
-hypernodes, hyperedges, and semantic relationships.
+HypergraphAI seed loader.
+
+Loads the example hypergraphs in `scripts/seeds/` into a running server. Each
+seed is an ordinary HypergraphAI hypergraph export file
+(`hgai-hypergraph-<id>.export.yml`), so the same files can also be loaded from
+the Web UI (Hypergraphs > Import) or the shell (`import -f <file>`). Nothing is
+hard-coded here: add or edit a seed by adding or editing a file in that folder.
 
 Usage:
-    python scripts/seed_data.py [--server http://localhost:8000] [--user admin] [--password pwd357]
+    python scripts/seed_data.py                       # load every seed (hello-world, eden)
+    python scripts/seed_data.py hello-world           # load one (by graph id) ...
+    python scripts/seed_data.py eden ./my.export.yml  # ... or several, by id or file path
+    python scripts/seed_data.py --list                # show the available seeds
+    python scripts/seed_data.py --server http://localhost:8357 --user admin --password pwd357
+
+Loading is idempotent: a hypergraph that already exists is merged into, and
+nodes/edges that are already present are skipped, never overwritten.
+
+Default server: http://localhost:$HGAI_PORT (8357 if HGAI_PORT is unset). In
+the Docker image HGAI_PORT is 8000, so `docker-compose exec hgai python
+scripts/seed_data.py` needs no options.
 """
-import sys
-import os
 import argparse
 import asyncio
-
-# Allow running from project root
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import os
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional
 
 import httpx
+import yaml
+
+SEEDS_DIR = Path(__file__).resolve().parent / "seeds"
+SEED_SUFFIX = ".export.yml"
 
 
-API_BASE = "http://localhost:8000/api/v1"
-GRAPH_ID = "hello-world"
+class SeedError(Exception):
+    """A seed file could not be found, read, or is not a hypergraph export."""
+
+
+def default_server() -> str:
+    return f"http://localhost:{os.environ.get('HGAI_PORT', '8357')}"
+
+
+def describe_seed(path: Path) -> Dict[str, object]:
+    """Read just enough of a seed file to identify it: its graph id, label and
+    size. Raises SeedError if it isn't a hypergraph export file."""
+    try:
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as e:
+        raise SeedError(f"{path}: cannot read as YAML ({e})")
+    if not isinstance(doc, dict) or not doc.get("hgai_export"):
+        raise SeedError(f"{path}: not a HypergraphAI export file (missing 'hgai_export')")
+    graph = doc.get("graph") or {}
+    if not graph.get("id"):
+        raise SeedError(f"{path}: the export has no graph id")
+    return {
+        "id": graph["id"], "label": graph.get("label") or graph["id"], "path": path,
+        "nodes": len(doc.get("nodes") or []), "edges": len(doc.get("edges") or []),
+    }
+
+
+def find_seeds(seeds_dir: Path = SEEDS_DIR) -> List[Dict[str, object]]:
+    """Every `*.export.yml` in the seeds folder, ordered by file name."""
+    return [describe_seed(p) for p in sorted(seeds_dir.glob(f"*{SEED_SUFFIX}"))]
+
+
+def resolve_seeds(names: List[str], seeds_dir: Path = SEEDS_DIR) -> List[Dict[str, object]]:
+    """No names -> every seed. A name is a seed's graph id (e.g. `eden`) or a
+    path to any export file."""
+    available = find_seeds(seeds_dir)
+    if not names:
+        return available
+    by_id = {s["id"]: s for s in available}
+    chosen = []
+    for name in names:
+        if name in by_id:
+            chosen.append(by_id[name])
+        elif Path(name).is_file():
+            chosen.append(describe_seed(Path(name)))
+        else:
+            known = ", ".join(sorted(by_id)) or "none found"
+            raise SeedError(f"'{name}' is neither a seed id ({known}) nor an export file")
+    return chosen
 
 
 async def wait_for_server(base_url: str, retries: int = 30, delay: float = 2.0):
     """Poll /health until the server is ready or retries are exhausted."""
-    import asyncio
-    health_url = f"{base_url}/health"
     async with httpx.AsyncClient(timeout=5.0) as probe:
         for attempt in range(1, retries + 1):
             try:
-                resp = await probe.get(health_url)
-                if resp.status_code == 200:
+                if (await probe.get(f"{base_url}/health")).status_code == 200:
                     print(f"  Server ready (attempt {attempt})")
                     return
             except Exception:
@@ -40,311 +101,98 @@ async def wait_for_server(base_url: str, retries: int = 30, delay: float = 2.0):
     raise RuntimeError(f"Server at {base_url} did not become ready after {retries} attempts")
 
 
-async def login(client: httpx.AsyncClient, username: str, password: str) -> str:
-    resp = await client.post(
-        f"{API_BASE}/auth/token",
-        data={"username": username, "password": password},
-    )
+async def login(client: httpx.AsyncClient, server: str, username: str, password: str) -> str:
+    resp = await client.post(f"{server}/api/v1/auth/token", data={"username": username, "password": password})
     resp.raise_for_status()
     return resp.json()["access_token"]
 
 
-async def create_node(client: httpx.AsyncClient, token: str, graph_id: str, node: dict) -> dict:
+async def import_seed(client: httpx.AsyncClient, server: str, token: str, seed: Dict[str, object]) -> Dict:
+    """POST the export file's text to the server's import endpoint (mode=merge:
+    create the hypergraph if missing, skip what already exists)."""
     resp = await client.post(
-        f"{API_BASE}/graphs/{graph_id}/nodes",
-        json=node,
-        headers={"Authorization": f"Bearer {token}"},
+        f"{server}/api/v1/graphs/import",
+        params={"mode": "merge"},
+        content=Path(seed["path"]).read_bytes(),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/x-yaml"},
     )
-    if resp.status_code == 409:
-        print(f"  [skip] Node '{node['id']}' already exists")
-        return node
-    resp.raise_for_status()
+    if resp.status_code >= 400:
+        try:
+            detail = resp.json().get("detail", resp.text)
+        except Exception:
+            detail = resp.text
+        raise RuntimeError(f"HTTP {resp.status_code}: {detail}")
     return resp.json()
 
 
-async def create_edge(client: httpx.AsyncClient, token: str, graph_id: str, edge: dict) -> dict:
-    resp = await client.post(
-        f"{API_BASE}/graphs/{graph_id}/edges",
-        json=edge,
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    if resp.status_code == 409:
-        print(f"  [skip] Edge '{edge.get('id', edge.get('relation'))}' already exists")
-        return edge
-    resp.raise_for_status()
-    return resp.json()
-
-
-async def seed(server: str, username: str, password: str):
-    global API_BASE
-    API_BASE = f"{server}/api/v1"
-
+async def seed(server: str, username: str, password: str, seeds: List[Dict[str, object]]) -> int:
+    """Load `seeds`; returns the number that failed."""
+    server = server.rstrip("/")
     print(f"Connecting to {server} ...")
     await wait_for_server(server)
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        token = await login(client, username, password)
-        print(f"Authenticated as '{username}'")
+    failures = 0
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        token = await login(client, server, username, password)
+        print(f"Authenticated as '{username}'\n")
+        for s in seeds:
+            print(f"Loading '{s['id']}' ({s['label']}) from {Path(s['path']).name} "
+                  f"— {s['nodes']} nodes, {s['edges']} edges")
+            try:
+                r = await import_seed(client, server, token, s)
+            except Exception as e:
+                failures += 1
+                print(f"  [FAILED] {e}")
+                continue
+            action = "created" if r.get("graph_created") else "already existed, merged"
+            print(f"  [ok] hypergraph {action}: {r['nodes']} nodes and {r['edges']} edges added"
+                  f" ({r['skipped_nodes']} nodes / {r['skipped_edges']} edges already present)")
+            for detail in r.get("error_details", []):
+                print(f"       ! {detail}")
+            if r.get("errors"):
+                failures += 1
 
-        # ── Hypernodes ────────────────────────────────────────────────────────
-        print(f"\nCreating hypernodes in '{GRAPH_ID}' ...")
-
-        nodes = [
-            {
-                "id": "group:three-stooges",
-                "label": "Three Stooges",
-                "type": "Group",
-                "attributes": {
-                    "formed": 1925,
-                    "genre": "comedy",
-                    "medium": ["film", "television", "stage"]
-                },
-                "tags": ["entertainment", "comedy", "classic"],
-                "status": "active"
-            },
-            {
-                "id": "person:moe",
-                "label": "Moe Howard",
-                "type": "Person",
-                "attributes": {
-                    "first_name": "Moe",
-                    "last_name": "Howard",
-                    "birth_name": "Moses Horwitz",
-                    "born": "1897-06-19",
-                    "died": "1975-05-04",
-                    "role": "leader",
-                    "order": 1
-                },
-                "tags": ["stooge", "comedian"],
-                "status": "active",
-                "valid_from": "1897-06-19T00:00:00Z",
-                "valid_to": "1975-05-04T23:59:59Z"
-            },
-            {
-                "id": "person:larry",
-                "label": "Larry Fine",
-                "type": "Person",
-                "attributes": {
-                    "first_name": "Larry",
-                    "last_name": "Fine",
-                    "birth_name": "Louis Feinberg",
-                    "born": "1902-10-05",
-                    "died": "1975-01-24",
-                    "role": "middle stooge",
-                    "order": 2
-                },
-                "tags": ["stooge", "comedian"],
-                "status": "active",
-                "valid_from": "1902-10-05T00:00:00Z",
-                "valid_to": "1975-01-24T23:59:59Z"
-            },
-            {
-                "id": "person:curly",
-                "label": "Curly Howard",
-                "type": "Person",
-                "attributes": {
-                    "first_name": "Curly",
-                    "last_name": "Howard",
-                    "birth_name": "Jerome Lester Horwitz",
-                    "born": "1903-10-22",
-                    "died": "1952-01-18",
-                    "role": "funny one",
-                    "order": 3
-                },
-                "tags": ["stooge", "comedian", "original"],
-                "status": "active",
-                "valid_from": "1903-10-22T00:00:00Z",
-                "valid_to": "1952-01-18T23:59:59Z"
-            },
-            {
-                "id": "person:shemp",
-                "label": "Shemp Howard",
-                "type": "Person",
-                "attributes": {
-                    "first_name": "Shemp",
-                    "last_name": "Howard",
-                    "birth_name": "Samuel Horwitz",
-                    "born": "1895-03-11",
-                    "died": "1955-11-22",
-                    "role": "replacement stooge",
-                    "order": 3
-                },
-                "tags": ["stooge", "comedian"],
-                "status": "active",
-                "valid_from": "1895-03-11T00:00:00Z",
-                "valid_to": "1955-11-22T23:59:59Z"
-            },
-            {
-                "id": "person:curly-joe",
-                "label": "Curly-Joe DeRita",
-                "type": "Person",
-                "attributes": {
-                    "first_name": "Joe",
-                    "last_name": "DeRita",
-                    "born": "1909-07-12",
-                    "died": "1993-07-03",
-                    "role": "replacement stooge",
-                    "order": 3
-                },
-                "tags": ["stooge", "comedian", "comeback"],
-                "status": "active"
-            },
-            {
-                "id": "rel:member",
-                "label": "Has Member",
-                "type": "RelationType",
-                "attributes": {
-                    "description": "Indicates group membership",
-                    "inverse": "member-of"
-                },
-                "tags": ["semantic", "relation"],
-                "status": "active"
-            },
-            {
-                "id": "rel:sibling",
-                "label": "Sibling",
-                "type": "RelationType",
-                "attributes": {
-                    "description": "Sibling relationship between persons",
-                    "symmetric": True
-                },
-                "tags": ["semantic", "relation", "symmetric"],
-                "status": "active"
-            }
-        ]
-
-        for node in nodes:
-            result = await create_node(client, token, GRAPH_ID, node)
-            print(f"  [ok] Node: {node['id']} ({node['type']})")
-
-        # ── Hyperedges ────────────────────────────────────────────────────────
-        print(f"\nCreating hyperedges in '{GRAPH_ID}' ...")
-
-        edges = [
-            # Original lineup (1932–1946): Moe, Larry, Curly
-            {
-                "id": "edge:stooges-original",
-                "relation": "rel:member",
-                "label": "Three Stooges Original Lineup",
-                "flavor": "hub",
-                "members": [
-                    {"node_id": "group:three-stooges", "seq": 0},
-                    {"node_id": "person:moe",    "seq": 1},
-                    {"node_id": "person:larry",    "seq": 2},
-                    {"node_id": "person:curly",  "seq": 3},
-                ],
-                "attributes": {
-                    "era": "classic",
-                    "shorts_count": 97
-                },
-                "tags": ["original", "classic"],
-                "status": "active",
-                "valid_from": "1932-01-01T00:00:00Z",
-                "valid_to": "1946-12-31T23:59:59Z"
-            },
-            # Shemp era (1947–1955): Moe, Larry, Shemp
-            {
-                "id": "edge:stooges-shemp",
-                "relation": "rel:member",
-                "label": "Three Stooges Shemp Era",
-                "flavor": "hub",
-                "members": [
-                    {"node_id": "group:three-stooges", "seq": 0},
-                    {"node_id": "person:moe",    "seq": 1},
-                    {"node_id": "person:larry",    "seq": 2},
-                    {"node_id": "person:shemp",  "seq": 3},
-                ],
-                "attributes": {
-                    "era": "shemp",
-                    "shorts_count": 77
-                },
-                "tags": ["shemp"],
-                "status": "active",
-                "valid_from": "1947-01-01T00:00:00Z",
-                "valid_to": "1955-11-22T23:59:59Z"
-            },
-            # Comeback era (1959–1970): Moe, Larry, Curly-Joe
-            {
-                "id": "edge:stooges-comeback",
-                "relation": "rel:member",
-                "label": "Three Stooges Comeback Era",
-                "flavor": "hub",
-                "members": [
-                    {"node_id": "group:three-stooges",   "seq": 0},
-                    {"node_id": "person:moe",       "seq": 1},
-                    {"node_id": "person:larry",       "seq": 2},
-                    {"node_id": "person:curly-joe", "seq": 3},
-                ],
-                "attributes": {
-                    "era": "comeback",
-                    "films_count": 6
-                },
-                "tags": ["comeback"],
-                "status": "active",
-                "valid_from": "1959-01-01T00:00:00Z",
-                "valid_to": "1970-12-31T23:59:59Z"
-            },
-            # Sibling: Moe, Shemp, and Curly are brothers (Horwitz family)
-            {
-                "id": "edge:horwitz-siblings",
-                "relation": "rel:sibling",
-                "label": "Horwitz Brothers",
-                "flavor": "symmetric",
-                "members": [
-                    {"node_id": "person:moe",   "seq": 1},
-                    {"node_id": "person:shemp", "seq": 2},
-                    {"node_id": "person:curly", "seq": 3},
-                ],
-                "attributes": {
-                    "family": "Horwitz",
-                    "stage_name_family": "Howard"
-                },
-                "tags": ["family", "rel:sibling"],
-                "status": "active"
-            },
-        ]
-
-        for edge in edges:
-            result = await create_edge(client, token, GRAPH_ID, edge)
-            print(f"  [ok] Edge: {edge['id']} ({edge['relation']})")
-
-        print("\nSeed data complete!")
-        print(f"\nExample SHQL queries to try:")
-        print("""
-  # Who were the Three Stooges in 1940?
-  shql:
-    from: hello-world
-    at: "1940-06-01T00:00:00Z"
-    where:
-      - edge: "?e"
-        relation: rel:member
-        members:
-          - id: group:three-stooges
-    select:
-      - "?e.members"
-      - "?e.attributes"
-
-  # Find all siblings
-  shql:
-    from: hello-world
-    where:
-      - edge: "?e"
-        relation: rel:sibling
-    select:
-      - "?e.members"
-      - "?e.attributes"
-""")
+    if failures:
+        print(f"\nSeed finished with {failures} problem(s).")
+    else:
+        first = seeds[0]["id"] if seeds else "<graph-id>"
+        print("\nSeed data complete! Try this in the Query (SHQL) screen:\n"
+              f"\n  shql:\n    from: {first}\n    where:\n      - node: ?n\n    select:\n      - ?n.id\n      - ?n.label\n      - ?n.type\n")
+    return failures
 
 
-def main():
-    parser = argparse.ArgumentParser(description="HypergraphAI seed data loader")
-    parser.add_argument("--server", default="http://localhost:8000", help="HypergraphAI server URL")
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Load the example hypergraphs in scripts/seeds/ (HypergraphAI export files) into a running server")
+    parser.add_argument("seeds", nargs="*", help="Seed graph ids or export-file paths (default: every seed)")
+    parser.add_argument("--list", action="store_true", help="List the available seeds and exit")
+    parser.add_argument("--server", default=default_server(), help="HypergraphAI server URL (default: %(default)s)")
     parser.add_argument("--user", default="admin", help="Username")
     parser.add_argument("--password", default="pwd357", help="Password")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    asyncio.run(seed(args.server, args.user, args.password))
+    try:
+        if args.list:
+            for s in find_seeds():
+                print(f"{s['id']:<14} {s['nodes']:>3} nodes {s['edges']:>3} edges  {Path(s['path']).name}  ({s['label']})")
+            return 0
+        seeds = resolve_seeds(args.seeds)
+    except SeedError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 2
+    if not seeds:
+        print(f"ERROR: no seed files found in {SEEDS_DIR}", file=sys.stderr)
+        return 2
+
+    try:
+        return 1 if asyncio.run(seed(args.server, args.user, args.password, seeds)) else 0
+    except httpx.HTTPStatusError as e:
+        hint = " (check --user / --password)" if e.response.status_code == 401 else ""
+        print(f"ERROR: {e.request.method} {e.request.url} -> HTTP {e.response.status_code}{hint}", file=sys.stderr)
+    except (httpx.HTTPError, RuntimeError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

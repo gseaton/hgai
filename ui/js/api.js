@@ -169,6 +169,7 @@ const HGAI_API = (() => {
   async function updateNote(id, data) { return request('PUT', `/notes/${id}`, data); }
   async function deleteNote(id) { return request('DELETE', `/notes/${id}`); }
   async function listNoteShares(id) { return request('GET', `/notes/${id}/share`); }
+  async function setNoteScope(id, scope) { return request('PUT', `/notes/${id}/scope`, { scope }); }
   async function shareNote(id, data) { return request('POST', `/notes/${id}/share`, data); }
   async function unshareNote(id, username) { return request('DELETE', `/notes/${id}/share/${username}`); }
 
@@ -394,7 +395,7 @@ const HGAI_API = (() => {
     // inference
     projectInference,
     // notes
-    listNotes, getNote, createNote, updateNote, deleteNote, listNoteShares, shareNote, unshareNote,
+    listNotes, getNote, createNote, updateNote, deleteNote, listNoteShares, setNoteScope, shareNote, unshareNote,
     // parameterized queries
     listParameterizedQueries, getParameterizedQuery, createParameterizedQuery, updateParameterizedQuery,
     deleteParameterizedQuery, executeParameterizedQuery, parseParameterizedQueryTemplate,

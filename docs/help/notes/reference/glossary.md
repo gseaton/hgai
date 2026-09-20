@@ -14,7 +14,7 @@ status: active
 | **Hypergraph** | A named container of hypernodes and hyperedges ([more](help:help-hypergraphs)) |
 | **Hypernode** | An entity with id, label, type, attributes and tags ([more](help:help-hypernodes)) |
 | **Hyperedge** | A first-class relationship connecting *n* hypernodes ([more](help:help-hyperedges)) |
-| **Relation** | The type of a hyperedge, e.g. `has-member` |
+| **Relation** | The type of a hyperedge, e.g. `rel:member` |
 | **Member** | One participant of a hyperedge: `node_id`, `seq`, optional role |
 | **`seq`** | A member's position in a hyperedge; `seq: 0` is the first member |
 | **Flavor** | How a hyperedge's members decompose into facts — `hub`, `symmetric`, … ([more](help:help-edge-flavors)) |
@@ -31,6 +31,7 @@ status: active
 | **Dot-notation** | `mesh.server.space.graph` references to remote graphs |
 | **MCP** | Model Context Protocol — how AI agents call hgai tools ([more](help:help-mcp-server)) |
 | **Note** | A Markdown document with tags, sharing and media ([more](help:help-notes)) |
+| **Note scope** | A note's baseline audience: `private`, `protected`, `protected-edit`, `public`, `public-edit` ([more](help:help-notes)) |
 | **Virtual folder** | A `//Folder/Sub` tag shown as a folder in the Notes and Help trees |
 | **Parameterized query** | A saved SHQL template with `/$name$/` placeholders ([more](help:help-parameterized-queries)) |
 | **Export file** | `hgai-hypergraph-<id>-<timestamp>.export.yml` — a portable copy of one hypergraph ([more](help:help-export-import)) |

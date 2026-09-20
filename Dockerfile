@@ -18,6 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY hgai/ ./hgai/
 COPY ui/ ./ui/
 COPY shell/ ./shell/
+# scripts/ includes scripts/seeds/ (hypergraph export files) used by scripts/seed_data.py
 COPY scripts/ ./scripts/
 COPY docs/help/ ./docs/help/
 

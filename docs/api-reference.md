@@ -274,34 +274,60 @@ Materialize inference results from source graph(s) into this (target) graph as o
 
 ## Notes
 
-Notes are a standalone, account-owned resource — not nested under any hypergraph — closer to a flat document (label, tags, Markdown text) than a hypernode. Visibility is controlled by ownership plus a per-note access-control list, not path-based scoping.
+Notes are a standalone, account-owned resource — not nested under any hypergraph — closer to a flat document (label, tags, Markdown text) than a hypernode. Visibility is controlled by ownership, the note's **scope**, and a per-note share list (ACL), not path-based scoping.
+
+### Note scopes
+
+Every note has a `scope` saying who besides the owner can reach it. New notes are `private`; notes stored before scopes existed read as `protected` (owner + share list — exactly how they behaved).
+
+| Scope | Share-list member | Any other account |
+|-------|-------------------|-------------------|
+| `private` | no access (grants are kept but inactive) | none |
+| `protected` | view (a per-account `editor` grant lets that account edit) | none |
+| `protected-edit` | view and edit | none |
+| `public` | view (or edit with an `editor` grant) | view |
+| `public-edit` | view and edit | view and edit |
+
+The owner and admins always have full access; only they can change the scope, manage the share list, or delete the note. Sharing a `private` note with an account promotes it to `protected`. Note responses include `scope` and `my_access` (the caller's effective access: `owner`, `admin`, `editor` or `viewer`).
 
 ### GET /notes
 
-List notes visible to the caller (owned, or shared via the note's ACL; admins see all).
+List notes visible to the caller: owned, shared with them (per the scope and share list), or `public`/`public-edit` notes of any account. An admin sees the same list; a direct `GET /notes/{id}` is admin-bypassed.
 
 | Query Param | Type | Default | Description |
 |-------------|------|---------|-------------|
 | `tags` | string[] | - | Filter by tags |
 | `search` | string | - | Substring match against label or text |
+| `scope` | string | - | Only notes with this scope |
+| `owner` | string | - | Only notes owned by this account |
 | `skip` | int | `0` | Pagination offset |
 | `limit` | int | `50` | Max results (max 200) |
-| `sort` | string | - | Comma-separated fields, `-` prefix = descending |
+| `sort` | string | - | Comma-separated fields (incl. `scope`, `owner_username`), `-` prefix = descending |
 
 ### POST /notes
 
 **Body:**
 ```json
-{ "label": "Meeting Notes", "name": "Optional subtitle", "text": "Markdown body", "tags": ["project-x"] }
+{ "label": "Meeting Notes", "name": "Optional subtitle", "text": "Markdown body", "tags": ["project-x"], "scope": "private" }
 ```
 
 ### GET /notes/{note_id}
 ### PUT /notes/{note_id}
 ### DELETE /notes/{note_id}
 
+### PUT /notes/{note_id}/scope
+
+Change who can reach the note. Owner or admin only (`403` otherwise). Recorded in the note's audit trail as a `scope` mutation.
+
+**Body:**
+```json
+{ "scope": "public-edit" }
+```
+`scope` is one of `private`, `protected`, `protected-edit`, `public`, `public-edit` (`422` otherwise).
+
 ### GET /notes/{note_id}/share
 
-List accounts the note has been shared with and their role.
+List accounts the note has been shared with and their role, plus the note's `scope`.
 
 ### POST /notes/{note_id}/share
 

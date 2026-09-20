@@ -134,6 +134,7 @@ async def ensure_indexes() -> None:
         IndexModel([("id", ASCENDING)], unique=True, name="id_unique"),
         IndexModel([("owner_username", ASCENDING)], name="owner_username"),
         IndexModel([("acl.username", ASCENDING)], name="acl_username"),
+        IndexModel([("scope", ASCENDING)], name="scope"),
         IndexModel([("tags", ASCENDING)], name="tags"),
     ])
 

@@ -55,7 +55,7 @@ docker compose up -d
 curl http://localhost:8000/health
 # {"status": "ok", "server_id": "...", "version": "0.1.0"}
 
-docker compose exec hgai python scripts/seed_data.py   # optional sample data
+docker compose exec hgai python scripts/seed_data.py   # optional: load scripts/seeds/ (hello-world, eden)
 ```
 
 Default admin: `admin` / `pwd357` — **rotate this immediately**, it's a
@@ -448,7 +448,7 @@ HGAI_RELOAD=true
 
 **Seeding a repeatable dataset for local testing:**
 ```bash
-python scripts/seed_data.py     # baseline hello-world graph
+python scripts/seed_data.py     # baseline hello-world + eden graphs (export files in scripts/seeds/)
 ```
 
 **Round-tripping a schema you're iterating on:**

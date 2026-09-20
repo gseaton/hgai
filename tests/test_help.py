@@ -9,6 +9,7 @@ plain fakes, which is enough to test the help-specific logic layered on top
 (tag filter, visibility check, id precedence, active-only).
 """
 
+import asyncio
 import json
 import re
 from datetime import datetime, timezone
@@ -38,9 +39,9 @@ def help_root(tmp_path):
     help_core._file_cache.clear()
 
 
-def _note(id_, label="A note", tags=("system:help",), owner="alice", acl=None, status="active", text="body", name=""):
+def _note(id_, label="A note", tags=("system:help",), owner="alice", acl=None, status="active", text="body", name="", scope="protected"):
     return SimpleNamespace(
-        id=id_, label=label, name=name, tags=list(tags), owner_username=owner, acl=acl or [],
+        id=id_, label=label, name=name, tags=list(tags), owner_username=owner, acl=acl or [], scope=scope,
         status=status, text=text, system_updated=datetime(2026, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -379,3 +380,32 @@ def test_search_ranks_title_matches_above_body_only_matches():
     # an explicit sort overrides relevance, and no search falls back to label order
     assert [t["label"] for t in help_core._rank(topics, "point in time", [("label", 1)])] == ["A Frequently Asked", "Other", "Point-in-time queries"]
     assert [t["label"] for t in help_core._rank(topics, None, None)] == ["A Frequently Asked", "Other", "Point-in-time queries"]
+
+
+def test_a_public_note_is_a_help_topic_for_any_account_but_a_private_one_is_not():
+    with patch("hgai.core.notes.get_note", AsyncMock(return_value=_note("n2", owner="alice", scope="public"))):
+        assert asyncio.run(help_core.get_topic("mallory", "n2"))["id"] == "n2"
+    with patch("hgai.core.notes.get_note", AsyncMock(return_value=_note("n3", owner="alice", scope="private"))):
+        assert asyncio.run(help_core.get_topic("mallory", "n3")) is None
+
+
+@pytest.mark.parametrize("scope, share_list_member, stranger", [
+    ("private", False, False),
+    ("protected", True, False),
+    ("protected-edit", True, False),
+    ("public", True, True),
+    ("public-edit", True, True),
+])
+def test_a_system_help_note_is_a_help_topic_exactly_when_scope_lets_the_account_view_it(scope, share_list_member, stranger):
+    """Help includes every active `system:help` Note the account can at least view."""
+    note = _note("n9", owner="alice", scope=scope, acl=[SimpleNamespace(username="bob", role="viewer")])
+    with patch("hgai.core.notes.get_note", AsyncMock(return_value=note)):
+        assert bool(asyncio.run(help_core.get_topic("alice", "n9"))) is True                # owner
+        assert bool(asyncio.run(help_core.get_topic("bob", "n9"))) is share_list_member
+        assert bool(asyncio.run(help_core.get_topic("mallory", "n9"))) is stranger
+
+
+def test_a_visible_note_without_the_system_help_tag_or_not_active_is_not_a_help_topic():
+    for note in (_note("n8", scope="public", tags=("other",)), _note("n7", scope="public", status="draft")):
+        with patch("hgai.core.notes.get_note", AsyncMock(return_value=note)):
+            assert asyncio.run(help_core.get_topic("mallory", note.id)) is None

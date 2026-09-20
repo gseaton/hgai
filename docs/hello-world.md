@@ -101,10 +101,11 @@ curl -X POST http://localhost:8000/api/v1/graphs/hello-world/nodes \
 
 Repeat for `larry-fine`, `curly-howard`, and `shemp-howard`.
 
-Or use the seed script to create all nodes and edges at once:
-```bash
-python scripts/seed_data.py
-```
+> **Want ready-made data instead?** The repository ships example hypergraphs as ordinary export files in `scripts/seeds/` (`hello-world` — Stooges, Rat Pack and Beatles lineups — and `eden`, a small family tree). Load them with:
+> ```bash
+> python scripts/seed_data.py            # docker-compose exec hgai python scripts/seed_data.py
+> ```
+> or import a file from **Hypergraphs → Import**. The seeds use ids such as `person:moe` and `rel:member`, so the queries in *this* tutorial (which use `moe-howard`, `has-member`, …) apply to the data you create by hand, not to the seed. If you have loaded the seeds, give the graph you create here a different ID in Step 1 (for example `hello-tutorial`) so the two don't mix; the SHQL examples in the README and Help use the seed data.
 
 ---
 

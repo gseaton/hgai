@@ -19,9 +19,9 @@ It is built for people *and* AI agents: everything you can do in the Web UI is a
 
 | Building block | What it is | Example |
 |---|---|---|
-| **Hypernode** | An entity, with an id, label, type, tags and a free-form `attributes` document | `moe-howard` (a `Person`) |
-| **Hyperedge** | A relationship connecting *n* hypernodes — a first-class object with its own attributes | `has-member` linking `three-stooges`, `moe-howard`, `larry-fine`, `curly-howard` |
-| **Hypergraph** | A named container of hypernodes and hyperedges | `hello-world` |
+| **Hypernode** | An entity, with an id, label, type, tags and a free-form `attributes` document | `person:moe` (a `Person`) |
+| **Hyperedge** | A relationship connecting *n* hypernodes — a first-class object with its own attributes | `rel:member` linking `group:three-stooges`, `person:moe`, `person:larry`, `person:curly` |
+| **Hypergraph** | A named container of hypernodes and hyperedges | `hello-world` (an example hypergraph you can load from `scripts/seeds/`) |
 | **SHQL** | The pattern-matching query language (YAML, SPARQL-inspired) | "who was in the group in 1940?" |
 
 Because every hyperedge is timestamped and versioned, you can also ask questions **as of a point in time**, and derive new facts automatically with **inferencing** (inverse, symmetric, and transitive relations).
@@ -29,7 +29,7 @@ Because every hyperedge is timestamped and versioned, you can also ask questions
 ## Common questions — jump straight in
 
 **Getting started**
-- New here? Read [What is HypergraphAI?](help:help-what-is-hgai) and then the [Quick Start](help:help-quick-start).
+- New here? Read [What is HypergraphAI?](help:help-what-is-hgai) and then the [Quick Start](help:help-quick-start), which also loads the `hello-world` and `eden` example hypergraphs.
 - Can't find something? Try the [FAQ](help:help-faq) or the [Glossary](help:help-glossary).
 
 **Understand the model**

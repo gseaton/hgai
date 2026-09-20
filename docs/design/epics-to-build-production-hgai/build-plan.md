@@ -115,7 +115,7 @@ hgai/
     hgai-shell/          src/hgai_shell/         # prompt_toolkit REPL + rich output
   apps/
     web-ui/               # TypeScript + Vite + Preact SPA
-  scripts/                 # mongo-init.js, seed_data.py, qdrant-init
+  scripts/                 # mongo-init.js, seed_data.py + seeds/ (hypergraph export YAML files), qdrant-init
   tests/
     unit/                  # pure-function tests, per package
     contract/               # storage backend ABC compliance suite, run against every backend

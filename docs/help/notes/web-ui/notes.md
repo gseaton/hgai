@@ -33,14 +33,30 @@ Opening a note starts in **Browse** (read-only, rendered). Switch to **Edit** fo
 | `[text](note:<id or label>)` | Link to another note (a label is used only if it is unique) |
 | `![alt](media:<media-id>)` | Embed an uploaded image from [Media](help:help-media) |
 
+## Scope — who can reach a note
+
+Every note has a **scope**, set in the note's *Scope* field. New notes start **private**.
+
+| Scope | Who can view | Who can edit |
+|---|---|---|
+| **private** | only the owner | only the owner |
+| **protected** | accounts on the note's share list | only share-list accounts individually granted *editor* |
+| **protected-edit** | accounts on the share list | accounts on the share list |
+| **public** | every account on this server | the owner, plus share-list accounts granted *editor* |
+| **public-edit** | every account on this server | every account on this server |
+
+"Every account" means every signed-in account on this HypergraphAI server — public notes are not visible to anonymous visitors. Public notes from other accounts appear in your Notes list (see the **Owner** and **Scope** columns), and you can filter the list by scope and by *Only my notes*. A note you can only view opens as "(view only)".
+
+Only the **owner** (or an administrator) can change a note's scope, manage its share list, or delete it — an account with *edit* access can change the content but not who sees it. Changes to scope are recorded in the note's history.
+
 ## Sharing
 
-The owner can share a note with other accounts as a **viewer** (read) or **editor** (read and change). Owners and administrators can share and delete. Notes visible to you — yours plus those shared with you — appear in your list.
+For **protected** notes, the owner adds accounts to the share list from the note's **Share** button, each as a **viewer** (read) or **editor** (read and change). With **protected-edit** every listed account can edit. The share list is inactive while a note is **private**: sharing a private note with someone makes it **protected** automatically. Setting a note back to private hides it from everyone else without discarding the share list.
 
 ## Search and API
 
-Search the list and filter by tag. Via REST: `GET/POST /api/v1/notes`, `GET/PUT/DELETE /api/v1/notes/{id}`, `POST /api/v1/notes/{id}/share` and `DELETE /api/v1/notes/{id}/share/{username}` ([REST API](help:help-rest-api)).
+Search the list and filter by tag. Via REST: `GET/POST /api/v1/notes`, `GET/PUT/DELETE /api/v1/notes/{id}`, `PUT /api/v1/notes/{id}/scope`, `POST /api/v1/notes/{id}/share` and `DELETE /api/v1/notes/{id}/share/{username}` ([REST API](help:help-rest-api)).
 
 ## Notes and Help
 
-A note tagged **`system:help`** also shows up in the [Help tab](help:help-authoring-help) for everyone who can view it.
+A note tagged **`system:help`** also shows up in the [Help tab](help:help-authoring-help) for everyone who can view it — so a **public** help note is shown to every account.

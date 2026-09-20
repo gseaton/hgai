@@ -47,7 +47,7 @@ The landing page is `notes/home.md` (id `help-home`).
 
 ## 2. Notes tagged `system:help`
 
-Any [Note](help:help-notes) carrying the tag **`system:help`** appears as a help topic for the accounts that can view that note (its owner and anyone it is shared with) — handy for team- or project-specific guidance without touching files. Give it a `//Folder/Path` tag to place it in a folder; otherwise it lands under **Other**. Only *active* notes are used. Use **Open Note** on the topic to edit it.
+Any [Note](help:help-notes) carrying the tag **`system:help`** appears as a help topic for the accounts that can view that note (its owner, accounts it is shared with, or everyone if its scope is `public`/`public-edit` — see [Notes](help:help-notes)) — handy for team- or project-specific guidance without touching files. Give it a `//Folder/Path` tag to place it in a folder; otherwise it lands under **Other**. Every *active* note tagged `system:help` that an account can at least **view** — as its owner, on its share list, or because its scope makes it visible to everyone — is included in that account's Help; a `private` note appears only for its owner, and changing a note's scope or share list immediately changes who sees it in Help. Drafts and archived notes are not shown. Use **Open Note** on the topic to edit it.
 
 ## Virtual folders
 

@@ -13,7 +13,7 @@ status: active
 cp .env.example .env
 docker-compose up --build -d          # build and run MongoDB + the server
 docker-compose logs -f hgai           # follow the server log
-docker-compose exec hgai python scripts/seed_data.py   # optional sample data
+docker-compose exec hgai python scripts/seed_data.py   # optional: load the example hypergraphs (scripts/seeds/)
 docker-compose down                   # stop
 docker-compose down -v                # stop AND delete all data (volumes)
 ```
@@ -27,4 +27,4 @@ Under Compose the server listens on **port 8000**:
 - MCP `http://localhost:8000/mcp/`
 - Health check `http://localhost:8000/health`
 
-The image includes the built-in Help content, so this Help tab works in containers too. Settings are passed as environment variables — see [Configuration](help:help-configuration).
+The image includes the built-in Help content (so this Help tab works in containers too) and the example hypergraph export files in `scripts/seeds/`, which `seed_data.py` loads. Settings are passed as environment variables — see [Configuration](help:help-configuration).

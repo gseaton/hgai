@@ -13,7 +13,7 @@ A **hypernode** represents an entity — a person, organization, concept, place,
 
 | Field | Meaning |
 |---|---|
-| `id` | Human-readable identifier, unique within its hypergraph (e.g. `moe-howard`, `person:john-doe`) |
+| `id` | Human-readable identifier, unique within its hypergraph (e.g. `person:moe`, `group:three-stooges`) |
 | `label` | Display label |
 | `type` | Entity type, e.g. `Person`, `Organization`, `Concept`, `Group`, `RelationType` |
 | `description` | Optional prose description |
@@ -26,11 +26,12 @@ Example:
 
 ```json
 {
-  "id": "moe-howard",
-  "label": "Moe Howard",
+  "id": "person:moe",
+  "label": "Moe",
   "type": "Person",
-  "attributes": { "born": "1897-06-19", "role": "Leader" },
-  "tags": ["stooge", "original"],
+  "description": "Moe Howard",
+  "attributes": { "role": "leader" },
+  "tags": ["stooge", "comedian"],
   "status": "active"
 }
 ```

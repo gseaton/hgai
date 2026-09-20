@@ -62,7 +62,7 @@ A **hypernode** represents an entity (noun) with flexible document-based attribu
 
 ### Hyperedge
 A **hyperedge** is a first-class semantic relationship that connects _n_ hypernodes. Key properties:
-- `relation` — semantic relation type (e.g., `has-member`, `sibling`, `broader`)
+- `relation` — semantic relation type (e.g., `rel:member`, `rel:sibling`, `skos:broaderTransitive`)
 - `members` — ordered list of participating hypernodes with optional roles
 - `flavor` — relationship pattern: `hub`, `symmetric`, `direct`, `transitive`, `inverse-transitive`
 - `attributes` — arbitrary JSON document
@@ -78,15 +78,15 @@ HypergraphAI queries are written in SHQL — a SPARQL-inspired, YAML-based patte
 
 ```yaml
 shql:
-  from: my-graph
+  from: hello-world
   where:
     - edge:
         bind: ?e
-        relation: has-member
-        tags: [original]
+        relation: rel:member
   select:
+    - ?e.label
     - ?e.members
-    - ?e.attributes
+    - ?e.valid_from
   as: result
 ```
 
@@ -207,6 +207,7 @@ hgai/
 ├── ui/                          # Web UI (SPA, vanilla JS + Bootstrap)
 ├── shell/                       # hgai interactive CLI shell
 ├── scripts/                     # MongoDB cold-start and seed scripts
+│   └── seeds/                   # Example hypergraphs as export YAML files (hello-world, eden)
 ├── tests/                       # pytest test suite
 │   ├── test_engine.py           # Hyperkey tests
 │   ├── test_shql.py             # SHQL member-pattern matching tests
@@ -249,7 +250,7 @@ See `hgai_module_storage_mongodb/` for the reference implementation and `hgai_mo
 ```bash
 cp .env.example .env
 docker-compose up -d
-python scripts/seed_data.py     # load hello-world example data
+python scripts/seed_data.py     # load the example hypergraphs from scripts/seeds/ (hello-world, eden)
 ```
 
 - Web UI: http://localhost:8000/ui/ — login: admin / pwd357
@@ -327,11 +328,27 @@ This starts:
 |---------|----------|----------|
 | Admin   | `admin`  | `pwd357` |
 
-### 4. Seed hello-world data
+### 4. Seed the example hypergraphs
 
 ```bash
 docker-compose exec hgai python scripts/seed_data.py
 ```
+
+The seeds are **ordinary hypergraph export files** in [`scripts/seeds/`](scripts/seeds/) (also copied into the Docker image with the rest of `scripts/`) — nothing is hard-coded in the loader:
+
+| File | Hypergraph |
+|------|------------|
+| `hgai-hypergraph-hello-world.export.yml` | `hello-world` — 30 hypernodes / 16 hyperedges: the Three Stooges, Rat Pack and Beatles, with temporal lineup edges and inverse-of / broader axioms |
+| `hgai-hypergraph-eden.export.yml` | `eden` — 9 hypernodes / 8 hyperedges: a small family tree with parent/child/sibling edges and inverse-of / transitive axioms |
+
+```bash
+python scripts/seed_data.py                 # load every seed (safe to repeat: existing data is skipped, never overwritten)
+python scripts/seed_data.py eden            # load one, by graph id ...
+python scripts/seed_data.py ./my.export.yml # ... or any export file by path
+python scripts/seed_data.py --list          # list the available seeds
+```
+
+The same files can be loaded from the Web UI (**Hypergraphs → Import**) or the shell (`import -f scripts/seeds/hgai-hypergraph-eden.export.yml`). To add or change a seed, add or edit an export file in `scripts/seeds/` (see the export/import section under [Web UI](#web-ui)).
 
 ---
 
@@ -551,11 +568,12 @@ POST /api/v1/graphs/{g}/infer/project      # Materialize inference results as pe
 
 ### Notes
 ```
-GET    /api/v1/notes                          # List notes visible to the caller
+GET    /api/v1/notes                          # List notes visible to the caller (own, shared, public)
 POST   /api/v1/notes                          # Create a note
 GET    /api/v1/notes/{id}                     # Get a note
 PUT    /api/v1/notes/{id}                     # Update a note
 DELETE /api/v1/notes/{id}                     # Delete a note
+PUT    /api/v1/notes/{id}/scope               # Set the note's scope (private/protected/protected-edit/public/public-edit)
 POST   /api/v1/notes/{id}/share               # Grant/replace an account's access
 DELETE /api/v1/notes/{id}/share/{username}    # Revoke an account's access
 ```
@@ -713,7 +731,7 @@ curl -X POST http://localhost:8357/mcp/ \
       "name": "hgai_hypernode_get",
       "arguments": {
         "graph_id": "hello-world",
-        "node_id": "moe-howard"
+        "node_id": "person:moe"
       }
     }
   }'
@@ -826,7 +844,7 @@ status           New status: 'active', 'draft', or 'archived' (optional)
 #### `hgai_hyperedge_create`
 ```
 graph_id         Target hypergraph ID
-relation         Semantic relation type: 'has-member', 'sibling', 'broader', etc.
+relation         Semantic relation type: 'rel:member', 'rel:sibling', 'skos:broaderTransitive', etc.
 members_json     JSON array: [{"node_id": "id", "seq": 0}, ...]
 edge_id          Optional human-readable ID (hyperkey auto-generated if omitted)
 label            Optional display label
@@ -844,13 +862,18 @@ use_cache   Whether to use query result cache (default: true)
 Example:
 ```yaml
 shql:
-  from: my-graph
+  from: hello-world
   where:
     - edge:
         bind: ?e
-        relation: has-member
+        relation: rel:member
         members:
-          - node: { bind: ?stooge, type: Person }
+          - node_id: group:three-stooges
+          - node_id: ?person_id
+    - node:
+        bind: ?stooge
+        id: ?person_id
+        type: Person
   select:
     - ?stooge.label
 ```
@@ -940,7 +963,7 @@ curl -s -X POST http://localhost:8357/mcp/ \
       "name": "hgai_hypernode_get",
       "arguments": {
         "graph_id": "hello-world",
-        "node_id": "moe-howard"
+        "node_id": "person:moe"
       }
     }
   }'
@@ -967,7 +990,7 @@ async def get_node(graph_id: str, node_id: str):
             node = json.loads(result.content[0].text)
             return node
 
-node = asyncio.run(get_node("hello-world", "moe-howard"))
+node = asyncio.run(get_node("hello-world", "person:moe"))
 print(node)
 ```
 
@@ -980,7 +1003,7 @@ print(node)
     "content": [
       {
         "type": "text",
-        "text": "{\"id\": \"moe-howard\", \"graph_id\": \"hello-world\", \"label\": \"Moe Howard\", \"type\": \"Person\", \"attributes\": {\"born\": \"1897-06-19\", \"role\": \"Leader\"}, \"tags\": [\"stooge\", \"original\"], \"status\": \"active\", \"valid_from\": null, \"valid_to\": null}"
+        "text": "{\"id\": \"person:moe\", \"graph_id\": \"hello-world\", \"label\": \"Moe\", \"type\": \"Person\", \"description\": \"Moe Howard\", \"attributes\": {}, \"tags\": [], \"status\": \"active\", \"valid_from\": null, \"valid_to\": null}"
       }
     ]
   }
@@ -1041,7 +1064,7 @@ If the node does not exist, the tool returns `{"error": "Node '<node_id>' not fo
   "name": "hgai_hyperedge_list",
   "arguments": {
     "graph_id": "hello-world",
-    "relation": "has-member",
+    "relation": "rel:member",
     "node_id": "",
     "skip": 0,
     "limit": 50
@@ -1068,7 +1091,7 @@ If the node does not exist, the tool returns `{"error": "Node '<node_id>' not fo
   "name": "hgai_hyperedge_create",
   "arguments": {
     "graph_id": "hello-world",
-    "relation": "has-member",
+    "relation": "rel:member",
     "members_json": "[{\"node_id\": \"team:engineering\", \"seq\": 0}, {\"node_id\": \"person:john-doe\", \"seq\": 1}, {\"node_id\": \"person:jane-smith\", \"seq\": 2}]",
     "edge_id": "engineering-team-members",
     "label": "Engineering Team Members",
@@ -1097,7 +1120,7 @@ If the node does not exist, the tool returns `{"error": "Node '<node_id>' not fo
 {
   "name": "hgai_query_execute",
   "arguments": {
-    "query_yaml": "shql:\n  from: hello-world\n  where:\n    - node:\n        bind: ?person\n        type: Person\n    - edge:\n        bind: ?membership\n        relation: has-member\n        members:\n          - node: { bind: ?person }\n  select:\n    - ?person.id\n    - ?person.label\n    - ?membership.relation\n  limit: 100",
+    "query_yaml": "shql:\n  from: hello-world\n  where:\n    - edge:\n        bind: ?membership\n        relation: rel:member\n        members:\n          - node_id: group:three-stooges\n          - node_id: ?person_id\n    - node:\n        bind: ?person\n        id: ?person_id\n        type: Person\n  select:\n    - ?person.id\n    - ?person.label\n    - ?membership.label\n  limit: 100",
     "use_cache": true
   }
 }
@@ -1109,7 +1132,7 @@ If the node does not exist, the tool returns `{"error": "Node '<node_id>' not fo
 {
   "name": "hgai_query_validate",
   "arguments": {
-    "query_yaml": "shql:\n  from: hello-world\n  where:\n    - edge:\n        relation: has-member\n  select:\n    - \"*\""
+    "query_yaml": "shql:\n  from: hello-world\n  where:\n    - edge:\n        relation: rel:member\n  select:\n    - \"*\""
   }
 }
 ```
@@ -1236,7 +1259,7 @@ Inferencing is opt-in per query — add `infer: true` to an SHQL query (see [SHQ
 
 Given the literal hyperedges an SHQL edge pattern already matched, `expand_edge_closure` synthesizes additional derived edges from whatever `owl:inverse-of`, `owl:symmetric`, `skos:broaderTransitive`/`narrowerTransitive`, and `owl:transitive` axiom hyperedges exist for those edges' relations:
 
-- **`owl:inverse-of [R, R']`** — for a hub-flavor edge, each (hub, spoke) pair also implies a 2-member `R'` edge `(spoke, hub)`. E.g. a `has-member` axiom edge declaring `owl:inverse-of [has-member, member-of]` means every `has-member` fact also implies the reverse `member-of` fact.
+- **`owl:inverse-of [R, R']`** — for a hub-flavor edge, each (hub, spoke) pair also implies a 2-member `R'` edge `(spoke, hub)`. E.g. the `hello-world` seed declares `owl:inverse-of [rel:member, rel:member-of]`, so every `rel:member` fact also implies the reverse `rel:member-of` fact.
 - **`owl:symmetric`** — every member of a symmetric-flavor edge is mutually equivalent to every other; A related-to B implies B related-to A.
 - **`skos:broaderTransitive` / `narrowerTransitive` (superproperty projection)** — if a fact's relation is narrower than one or more broader relations (walked transitively over the axiom graph, so a multi-hop relation hierarchy — e.g. `father` narrower-than `parent` narrower-than `ancestor` — projects through every level), the same fact is copied onto each broader relation unchanged.
 - **`owl:transitive`** — unlike the other three, this isn't a per-edge transformation: reachability is a whole-relation, whole-graph property. Once per distinct relation seen in the candidate set (not once per edge), `_expand_transitive_relation` walks the complete network of that relation's literal facts and synthesizes every non-1-hop pair as a 2-member hub edge — e.g. given `rel:parent` facts `A→B→C` and an `owl:transitive` axiom on `rel:parent`, it synthesizes `A→C`. This is what lets a general, open-ended `infer: true` query — including Visualize's whole-graph "show inferred" fetch — surface transitively-derived facts, not just a targeted single-pair reachability question (see [Transitive-Closure Reachability](#transitive-closure-reachability) below for that separate, narrower use case).
@@ -1414,7 +1437,8 @@ Variables start with `?` and bind matched entities across patterns. A variable u
     tags: [stooge]      # must have all listed tags
     status: active      # default: active
     attributes:
-      born: { $lt: "1910-01-01" }   # MongoDB operators work here
+      rat_pack_member: true         # exact attribute match
+      # born: { $lt: "1910-01-01" } # MongoDB operators work here too
 ```
 
 ### Edge Pattern
@@ -1422,16 +1446,21 @@ Variables start with `?` and bind matched entities across patterns. A variable u
 ```yaml
 - edge:
     bind: ?edge         # bind matched edge to this variable
-    id: my-edge-id       # match by exact edge id (literal or ?var)
-    relation: has-member
+    id: edge:classic-stooges   # match by exact edge id (literal or ?var)
+    relation: rel:member
     flavor: hub
-    tags: [original]
+    tags: [some-tag]
     attributes:
-      era: classic
+      some_key: some-value
     members:            # member patterns (order-independent)
-      - node: { bind: ?group, id: three-stooges }
-      - node: { bind: ?stooge }     # bind any other member
+      - node:
+          bind: ?group
+          id: group:three-stooges
+      - node:
+          bind: ?other              # bind any other member
 ```
+
+A member pattern matches on `id`/`node_id`, `seq` and `bind` only — a `type`, `tags` or `attributes` inside it is ignored. To constrain a member's own properties, bind its id (`node_id: ?member_id`) and join to a `node:` pattern (`id: ?member_id`, `type: Person`); see the worked examples below. Write patterns in block style: an unquoted `?variable` inside flow-style `{ ... }` or `[ ... ]` is not valid YAML.
 
 ### Filter Expressions
 
@@ -1456,7 +1485,9 @@ FILTER expressions are strings supporting:
 
 ### Examples
 
-All examples use the `hello-world` seed data (Three Stooges).
+All examples use the seed hypergraphs shipped in `scripts/seeds/` — `hello-world` (Three Stooges, Rat Pack and Beatles lineups) and `eden` (a small family tree). Load them with `python scripts/seed_data.py`, then paste any query into the Web UI's **Query (SHQL)** screen; each one runs as written.
+
+> **Member patterns match by id and position only.** Inside an edge's `members:` a pattern matches on `node_id` (or `id`), `seq`, and `bind`. To also constrain a member's own properties (`type`, `tags`, `attributes`), bind its id to a variable and join to a `node:` pattern on that id, as in examples 3, 6, 7 and 18.
 
 #### 1. Find all Person hypernodes
 
@@ -1466,58 +1497,60 @@ shql:
   select:
     - ?person.id
     - ?person.label
-    - ?person.attributes
+    - ?person.description
   where:
     - node:
         bind: ?person
         type: Person
   order_by: ?person.label
-  as: all_people
 ```
 
-#### 2. Find which hyperedges contain a specific node (Moe Howard)
+#### 2. Find which hyperedges contain a specific node (Moe)
 
 ```yaml
 shql:
   from: hello-world
   select:
     - ?edge.id
+    - ?edge.label
     - ?edge.relation
-    - ?edge.attributes
   where:
     - edge:
         bind: ?edge
         members:
-          - node: { id: moe-howard }
-  as: moes_edges
+          - node:
+              id: person:moe
 ```
 
-#### 3. Multi-hop join — find all stooges in the classic era lineup
+#### 3. Multi-hop join — the members of every Three Stooges lineup
 
-Variables `?stooge` and `?edge` are bound across node and edge patterns; the
-shared variable is the implicit join key.
+A member pattern matches on `node_id` and `seq` only — it binds the member's *id*. To also constrain the member's own properties (its `type`, `tags`, `attributes`), bind the id to a variable and join to a `node` pattern on that id. The shared `?person_id` is the join key:
 
 ```yaml
 shql:
   from: hello-world
   select:
-    - ?stooge.id
+    - ?edge.label
     - ?stooge.label
-    - ?edge.attributes.era
   where:
     - edge:
         bind: ?edge
-        relation: has-member
-        attributes:
-          era: classic
+        relation: rel:member
         members:
-          - node: { bind: ?group, id: three-stooges }
-          - node: { bind: ?stooge, type: Person }
-  order_by: ?stooge.label
-  as: classic_stooges
+          - node_id: group:three-stooges
+          - node_id: ?person_id
+    - node:
+        bind: ?stooge
+        id: ?person_id
+        type: Person
+  order_by:
+    - ?edge.label
+    - ?stooge.label
 ```
 
-#### 4. FILTER on attribute value
+#### 4. FILTER on a property
+
+Match `description` text with a filter expression (see [Filter Expressions](#filter-expressions)). Node attributes can also be matched directly inside the pattern — here only Frank Sinatra has `rat_pack_member: true`:
 
 ```yaml
 shql:
@@ -1525,37 +1558,52 @@ shql:
   select:
     - ?person.id
     - ?person.label
-    - ?person.attributes.born
+    - ?person.description
   where:
     - node:
         bind: ?person
         type: Person
-    - filter: "?person.attributes.born < '1900-01-01'"
-  as: born_before_1900
+    - filter: "CONTAINS(?person.description, 'Howard')"
 ```
 
-#### 5. OPTIONAL — include sibling edges where they exist
+#### 4b. Match node attributes in the pattern
 
 ```yaml
 shql:
   from: hello-world
   select:
     - ?person.label
-    - ?sibling_edge.relation
+    - ?person.attributes
+  where:
+    - node:
+        bind: ?person
+        type: Person
+        attributes:
+          rat_pack_member: true
+```
+
+#### 5. OPTIONAL — include the Howard-brothers edge where it exists
+
+```yaml
+shql:
+  from: hello-world
+  select:
+    - ?person.label
+    - ?brothers.label
   where:
     - node:
         bind: ?person
         type: Person
     - optional:
         - edge:
-            bind: ?sibling_edge
-            relation: sibling
+            bind: ?brothers
+            relation: family:brother
             members:
-              - node: { bind: ?person }
-  as: people_with_optional_siblings
+              - node:
+                  bind: ?person
 ```
 
-#### 6. UNION — people born before 1900 OR named "Curly"
+#### 6. UNION — members of the Beatles OR the Rat Pack
 
 ```yaml
 shql:
@@ -1566,20 +1614,26 @@ shql:
   where:
     - union:
         - patterns:
-            - node:
-                bind: ?person
-                type: Person
-            - filter: "?person.attributes.born < '1900-01-01'"
+            - edge:
+                relation: rel:member
+                members:
+                  - node_id: group:beatles
+                  - node_id: ?member_id
         - patterns:
-            - node:
-                bind: ?person
-                type: Person
-            - filter: "CONTAINS(?person.label, 'Curly')"
+            - edge:
+                relation: rel:member
+                members:
+                  - node_id: group:rat-pack
+                  - node_id: ?member_id
+    - node:
+        bind: ?person
+        id: ?member_id
+        type: Person
   distinct: true
-  as: union_result
+  order_by: ?person.label
 ```
 
-#### 7. Point-in-time query — who was a stooge in 1940?
+#### 7. Point-in-time query — who was a Stooge in 1940?
 
 ```yaml
 shql:
@@ -1587,15 +1641,18 @@ shql:
   at: "1940-06-01T00:00:00Z"
   select:
     - ?stooge.label
-    - ?edge.attributes
+    - ?edge.label
   where:
     - edge:
         bind: ?edge
-        relation: has-member
+        relation: rel:member
         members:
-          - node: { id: three-stooges }
-          - node: { bind: ?stooge, type: Person }
-  as: stooges_in_1940
+          - node_id: group:three-stooges
+          - node_id: ?person_id
+    - node:
+        bind: ?stooge
+        id: ?person_id
+        type: Person
 ```
 
 ### Space-scoped Graph References
@@ -1639,9 +1696,10 @@ shql:
         type: Person
     - edge:
         bind: ?membership
-        relation: has-member
+        relation: rel:member
         members:
-          - node: { bind: ?person }
+          - node:
+              bind: ?person
   as: space_memberships
 ```
 
@@ -1689,13 +1747,18 @@ shql:
   at: "1940-06-01T00:00:00Z"
   select:
     - ?stooge.label
-    - ?edge.attributes
+    - ?edge.label
   where:
     - edge:
         bind: ?edge
-        relation: has-member
+        relation: rel:member
         members:
-          - node: { bind: ?stooge, type: Person }
+          - node_id: group:three-stooges
+          - node_id: ?person_id
+    - node:
+        bind: ?stooge
+        id: ?person_id
+        type: Person
   as: space_stooges_in_1940
 ```
 
@@ -1717,23 +1780,22 @@ shql:
 
 #### 13. Positional member filter — find the first member by seq
 
-Combine `seq` with another member sub-field (typically `node_id`) inside the same member pattern to require both to hold on the **same** array element, rather than "contains this node anywhere." The query below only matches edges whose *first* member (`seq: 0`) is `three-stooges`:
+Combine `seq` with `node_id` inside the same member pattern to require both to hold on the **same** array element, rather than "contains this node anywhere." The query below only matches `rel:lineup` edges whose *first* member (`seq: 0`) is `group:three-stooges` (the lineups edge, which also lists other edges as members):
 
 ```yaml
 shql:
   from: hello-world
   select:
     - ?edge.id
-    - ?edge.relation
+    - ?edge.label
     - ?edge.members
   where:
     - edge:
         bind: ?edge
-        relation: has-member
+        relation: rel:lineup
         members:
-          - node_id: three-stooges
+          - node_id: group:three-stooges
             seq: 0
-  as: edges_hubbed_on_three_stooges
 ```
 
 #### 14. Aggregate — count edges grouped by relation
@@ -1751,50 +1813,110 @@ shql:
   aggregate:
     count: true
     group_by: edge.relation
-  as: edge_counts_by_relation
 ```
-
-Response `meta` includes `count` (total matched rows) and `groups` (a `{"<relation>": <count>, ...}` breakdown) alongside the usual fields.
 
 #### 15. Inferencing — axiom-driven expansion
 
-`infer: true` extends the live candidate set with synthesized edges before member-pattern matching runs (see [Inferencing](#inferencing) above). Assuming an `owl:inverse-of` axiom hyperedge asserting `[has-member, member-of]` between the two relations' `RelationType` hypernodes has been declared in the graph, this also returns a synthesized `member-of` edge — the reverse of each literal `has-member` fact — tagged `_inferred: true`:
+`infer: true` extends the live candidate set with synthesized edges before member-pattern matching runs. The `hello-world` seed declares an `owl:inverse-of` axiom between `rel:member` and `rel:member-of`, so this query returns `rel:member-of` edges (the reverse of each literal `rel:member` fact) tagged `_inferred: true`, though none is stored:
 
 ```yaml
 shql:
   from: hello-world
   infer: true
-  where:
-    - edge:
-        bind: ?edge
-        relation: has-member
   select:
     - ?edge.relation
     - ?edge.members
     - ?edge._inferred
-    - ?edge._source_edge
     - ?edge._axiom
-  as: has_member_with_inverse
+  where:
+    - edge:
+        bind: ?edge
+        relation: rel:member-of
 ```
 
 #### 16. Multi-key sort with descending order
 
-`order_by` takes a list to sort by more than one field, and each field may carry a trailing `asc`/`desc` (default `asc` when omitted) — independent per field, so a primary key can sort one direction while a secondary key sorts the other:
+`order_by` takes a list to sort by more than one field, and each field may carry a trailing `asc`/`desc` (default `asc`) — independent per field:
 
 ```yaml
 shql:
   from: hello-world
+  select:
+    - ?edge.relation
+    - ?edge.label
   where:
     - edge:
         bind: ?edge
-        relation: rel:member
-  select:
-    - ?edge.relation
-    - ?edge.members
   order_by:
     - ?edge.relation desc
-    - ?edge.members
-  as: members_by_relation_desc_then_members
+    - ?edge.label
+```
+
+#### 17. Eden — who are the parents of Cain?
+
+The `eden` seed is a small family tree. A `rel:parent` edge is a hub edge: the child is the hub (`seq: 0`) and the parents follow.
+
+```yaml
+shql:
+  from: eden
+  select:
+    - ?parent.label
+  where:
+    - edge:
+        relation: rel:parent
+        members:
+          - node_id: person:cain
+            seq: 0
+          - node_id: ?parent_id
+    - node:
+        bind: ?parent
+        id: ?parent_id
+```
+
+#### 18. Eden — who is the mother of Cain?
+
+Join to the parent's node and test its `sex` attribute:
+
+```yaml
+shql:
+  from: eden
+  select:
+    - ?mother.label
+  where:
+    - edge:
+        relation: rel:parent
+        members:
+          - node_id: person:cain
+            seq: 0
+          - node_id: ?parent_id
+    - node:
+        bind: ?mother
+        id: ?parent_id
+        attributes:
+          sex: female
+```
+
+#### 19. Eden — inferred: who is Enoch's parent?
+
+Only Seth's `rel:child` edge (Seth → Enosh, Enoch) is stored. With `infer: true` the `owl:inverse-of` axiom between `rel:child` and `rel:parent` derives the reverse fact, so Enoch's parent is found:
+
+```yaml
+shql:
+  from: eden
+  infer: true
+  select:
+    - ?ancestor.label
+  where:
+    - edge:
+        relation: rel:parent
+        members:
+          - node_id: person:enoch
+            seq: 0
+          - node_id: ?ancestor_id
+    - node:
+        bind: ?ancestor
+        id: ?ancestor_id
+  distinct: true
 ```
 
 ### Module Location

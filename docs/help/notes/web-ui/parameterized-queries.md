@@ -32,15 +32,20 @@ shql:
   where:
     - edge:
         bind: ?e
-        relation: /$relationship:str:has-member$/
+        relation: /$relationship:str:rel:member$/
         members:
-          - node: { bind: ?n, type: /$kind:str:Person$/ }
+          - node_id: /$group:str:group:three-stooges$/
+          - node_id: ?member_id
+    - node:
+        bind: ?n
+        id: ?member_id
+        type: /$kind:str:Person$/
   select:
     - ?n.label
   limit: /$max:int:50$/
 ```
 
-Running it shows a form with `relationship`, `kind` and `max`; supplied values are rendered as safe YAML scalars before the query runs. Missing required values, wrong types, or values outside the allowed choices are rejected with a clear message.
+Running it shows a form with `relationship`, `group`, `kind` and `max` (defaults `rel:member`, `group:three-stooges`, `Person` and 50 — run against the `hello-world` seed); supplied values are rendered as safe YAML scalars before the query runs. Missing required values, wrong types, or values outside the allowed choices are rejected with a clear message.
 
 ## API
 

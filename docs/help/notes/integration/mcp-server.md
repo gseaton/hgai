@@ -51,7 +51,7 @@ curl -s -X POST http://localhost:8357/mcp/ \
   -H "Authorization: Bearer <credential>" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call",
        "params":{"name":"hgai_hypernode_get",
-                 "arguments":{"graph_id":"hello-world","node_id":"moe-howard"}}}'
+                 "arguments":{"graph_id":"hello-world","node_id":"person:moe"}}}'
 ```
 
 Results come back as text content (usually JSON). Errors are returned as tool output — for example `{"error": "Node 'x' not found in graph 'y'"}` — with HTTP 200, not as HTTP errors.
