@@ -277,6 +277,39 @@ Revoke an account's access.
 
 ---
 
+## Help
+
+Read-only access to the built-in Help library: markdown topics under `docs/help/notes/` (front matter fields `id`, `label`, `name`, `description`, `tags`, `status`) plus any Note carrying the tag `system:help` that the caller can view. Media for topics lives under `docs/help/media/`. The help root is configurable with `HGAI_HELP_DIR`. Topics with a `status` other than `active` are hidden. All routes require authentication.
+
+Topic object: `id`, `source` (`file` or `note`), `path`, `label`, `name`, `description`, `tags`, `status`, `text` (Markdown), `owner_username`, `system_updated`. List responses omit `text`.
+
+### GET /help/topics
+
+| Query Param | Type | Default | Description |
+|-------------|------|---------|-------------|
+| `tags` | string[] | - | Topic must carry every listed tag (case-insensitive) |
+| `search` | string | - | Every word must appear in the id, label, name, description, tags, or text |
+| `skip` | int | `0` | Pagination offset |
+| `limit` | int | `50` | Max results (max 500) |
+| `sort` | string | - | Comma-separated fields (`label`, `name`, `system_updated`, `source`), `-` prefix = descending |
+
+### GET /help/home
+
+The landing topic (`notes/home.md`, id `help-home`). `404` if not installed.
+
+### GET /help/topics/{topic_id}
+
+One topic including its Markdown `text`. Note-backed topics are returned only if the caller can view the note.
+
+### GET /help/media
+### GET /help/media/{media_path}
+
+List help media files, or download one (path relative to `docs/help/media/`; traversal, hidden files and symlinks escaping the folder are rejected).
+
+Inside topic Markdown, `[text](help:<topic-id>)` links to another topic and `![alt](help-media:<path>)` embeds a media file.
+
+---
+
 ## Media
 
 Binary file upload/download/delete — a standalone resource referenced by hypernodes/hyperedges via their `media` field, not graph-scoped.

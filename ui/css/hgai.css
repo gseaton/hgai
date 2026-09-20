@@ -717,6 +717,18 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 #note-browse-view { padding-top: 20px; }
 #note-browse-label { font-weight: 700; }
 
+/* ── Help screen: topic body reuses .note-preview-pane's Markdown styling but
+   is a full-height reading pane rather than a bounded editor preview. ───── */
+.help-topic-content.note-preview-pane { min-height: 0; max-height: none; overflow-y: visible; }
+.help-topic-content img { max-width: min(100%, 640px); height: auto; }
+.help-topic-content table { border-collapse: collapse; margin-bottom: 1rem; }
+.help-topic-content th, .help-topic-content td { border: 1px solid var(--hgai-border-strong); padding: 4px 10px; }
+.help-topic-content th { background: var(--hgai-surface-alt); }
+.help-topic-content code:not(pre code) { background: var(--hgai-surface-alt); padding: 1px 5px; border-radius: 4px; }
+.help-topic-content blockquote { border-left: 3px solid var(--hgai-border-strong); margin-left: 0; padding-left: 12px; color: #6b7280; }
+.help-internal-link, .help-tag-link { text-decoration: none; cursor: pointer; }
+.help-tag-link:hover { background: #e5e7eb; }
+
 /* ── Note Editor: Markdown preview pane & broken-link/embed styling ────────── */
 .note-preview-pane {
   min-height: 280px;

@@ -355,6 +355,7 @@ All configuration is via environment variables (or `.env` file):
 | `HGAI_CACHE_ENABLED` | `true` | Enable query caching |
 | `HGAI_SERVER_ID` | `hgai-local` | Server identifier (for meshes) |
 | `HGAI_SERVER_NAME` | `HypergraphAI Local` | Server display name |
+| `HGAI_HELP_DIR` | `<project>/docs/help` | Root of the built-in Help content (`notes/` markdown topics, `media/` files) |
 
 ### Authentication Methods
 
@@ -555,6 +556,14 @@ PUT    /api/v1/notes/{id}                     # Update a note
 DELETE /api/v1/notes/{id}                     # Delete a note
 POST   /api/v1/notes/{id}/share               # Grant/replace an account's access
 DELETE /api/v1/notes/{id}/share/{username}    # Revoke an account's access
+```
+
+### Help
+```
+GET /api/v1/help/topics              # List/search help topics (tags, search, skip, limit, sort)
+GET /api/v1/help/home                # Landing topic (help-home)
+GET /api/v1/help/topics/{id}         # One topic, with Markdown text
+GET /api/v1/help/media/{path}        # Media file used by help topics
 ```
 
 ### Media
@@ -1210,6 +1219,7 @@ The web UI is served at `http://localhost:8357/ui/` (local dev) or `http://local
 - **Hypernodes** — full CRUD with attribute editing
 - **Hyperedges** — full CRUD with member management
 - **Query** — interactive SHQL query editor with results visualization
+- **Help** — searchable documentation with tag-based virtual folders, landing on `docs/help/notes/home.md`; built from markdown files with front matter under `docs/help/notes/` and from any Note tagged `system:help`. The AI Chat agent reads the same topics to answer questions about HypergraphAI. See [docs/help](docs/help/notes/home.md) and the *Adding your own help topics* topic.
 - **Admin** — account management, server info (admin role only)
 
 ---

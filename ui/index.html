@@ -80,6 +80,7 @@
     <a class="sidebar-link" data-screen="shql" href="#"><i class="bi bi-braces"></i> Query (SHQL)</a>
     <a class="sidebar-link" data-screen="pq" href="#"><i class="bi bi-list-columns-reverse"></i> Parameterized Queries</a>
     <a class="sidebar-link" data-screen="project-inference" href="#"><i class="bi bi-diagram-2-fill"></i> Project Inference</a>
+    <a class="sidebar-link" data-screen="help" href="#"><i class="bi bi-question-circle-fill"></i> Help</a>
 
     <div class="sidebar-section-label admin-only">Administration</div>
     <a class="sidebar-link admin-only" data-screen="agent-admin" href="#"><i class="bi bi-robot"></i> AI Agent</a>
@@ -817,6 +818,94 @@
           <div class="fw-semibold mb-2"><i class="bi bi-list-check me-1"></i><span id="pi-results-title">Preview</span></div>
           <div id="pi-summary" class="mb-2"></div>
           <div id="pi-preview-list" style="max-height:420px;overflow:auto;"></div>
+        </div>
+      </div>
+
+      <!-- ─── HELP ────────────────────────────────────────────────────── -->
+      <div id="screen-help" class="screen d-none">
+        <div class="screen-header">
+          <h4><i class="bi bi-question-circle-fill text-info me-2"></i>Help</h4>
+          <div class="btn-group btn-group-sm">
+            <button class="btn btn-outline-secondary" id="btn-help-back" title="Back" disabled>
+              <i class="bi bi-arrow-left"></i>
+            </button>
+            <button class="btn btn-outline-primary" id="btn-help-home"><i class="bi bi-house-fill me-1"></i>Home</button>
+            <button class="btn btn-outline-secondary" id="btn-help-all"><i class="bi bi-list-ul me-1"></i>All Topics</button>
+          </div>
+        </div>
+        <div class="notes-layout">
+          <aside class="notes-folder-sidebar" aria-label="Tag-based help folders">
+            <div class="notes-folder-sidebar-header">
+              <h6 class="mb-0"><i class="bi bi-folder-fill me-1"></i>Topics</h6>
+              <div class="btn-group btn-group-sm d-none" id="help-folder-actions">
+                <button type="button" class="btn btn-outline-secondary" id="btn-help-folders-expand">Expand All</button>
+                <button type="button" class="btn btn-outline-secondary" id="btn-help-folders-collapse">Collapse All</button>
+              </div>
+            </div>
+            <div id="help-folder-tree" class="notes-folder-tree"></div>
+          </aside>
+          <div class="notes-sidebar-resize-handle" id="help-sidebar-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize topics panel" tabindex="0"></div>
+          <div class="notes-main">
+            <div class="card mb-3">
+              <div class="card-body py-2">
+                <div class="row g-2 align-items-center">
+                  <div class="col-auto">
+                    <input type="text" id="help-search" class="form-control form-control-sm" placeholder="Search help topics..." style="width:240px"/>
+                  </div>
+                  <div class="col-auto">
+                    <input type="text" id="help-tags-filter" class="form-control form-control-sm" placeholder="Filter by tag..." style="width:180px"/>
+                  </div>
+                  <div class="col-auto">
+                    <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-help" title="Reload topics">
+                      <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Topic view (default: the Home topic) -->
+            <div class="card" id="help-topic-view">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                  <div>
+                    <h4 class="mb-1" id="help-topic-label"></h4>
+                    <div class="text-muted" id="help-topic-description"></div>
+                  </div>
+                  <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                    <span class="badge bg-light text-dark" id="help-topic-source"></span>
+                    <button class="btn btn-outline-secondary btn-sm d-none" id="btn-help-open-note" title="Open this topic's Note">
+                      <i class="bi bi-pencil me-1"></i>Open Note
+                    </button>
+                  </div>
+                </div>
+                <div class="mb-3" id="help-topic-tags"></div>
+                <div class="note-preview-pane help-topic-content" id="help-topic-content"></div>
+              </div>
+            </div>
+
+            <!-- List view (search / tag filter / All Topics) -->
+            <div class="card d-none" id="help-list-view">
+              <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                  <thead>
+                    <tr>
+                      <th class="sortable-th" data-table="help" data-sort-field="label">Label<span class="sort-indicator"></span></th>
+                      <th>Description</th>
+                      <th>Tags</th>
+                      <th class="sortable-th" data-table="help" data-sort-field="source">Source<span class="sort-indicator"></span></th>
+                      <th class="sortable-th" data-table="help" data-sort-field="system_updated">Updated<span class="sort-indicator"></span></th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbody-help"></tbody>
+                </table>
+              </div>
+              <div class="card-footer d-flex justify-content-between align-items-center">
+                <span id="help-pagination-info" class="text-muted small"></span>
+                <div class="btn-group btn-group-sm" id="help-pagination"></div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

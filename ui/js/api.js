@@ -241,6 +241,28 @@ const HGAI_API = (() => {
   async function updateSpaceGraph(spaceId, graphId, data) { return request('PUT', `/spaces/${spaceId}/graphs/${graphId}`, data); }
   async function deleteSpaceGraph(spaceId, graphId) { return request('DELETE', `/spaces/${spaceId}/graphs/${graphId}`); }
 
+  // ── Help ─────────────────────────────────────────────────────────────────
+  async function listHelpTopics(params = {}) { return request('GET', '/help/topics', null, params); }
+  async function getHelpTopic(id) { return request('GET', `/help/topics/${encodeURIComponent(id)}`); }
+  async function getHelpHome() { return request('GET', '/help/home'); }
+  // Help media is auth-protected like every other endpoint, so an <img src>
+  // can't load it directly — fetch it with the token and hand back a Blob
+  // (same approach as downloadMedia).
+  async function downloadHelpMedia(path) {
+    const url = new URL(BASE + '/help/media/' + path.split('/').map(encodeURIComponent).join('/'), window.location.origin);
+    const headers = {};
+    const token = getToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const resp = await fetch(url.toString(), { headers });
+    if (resp.status === 401) {
+      clearSession();
+      window.dispatchEvent(new Event('hgai:unauthorized'));
+      throw new Error('Unauthorized');
+    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.blob();
+  }
+
   // ── AI Agent (vendors/models/chat sessions/messages) ─────────────────────
   async function listAgentVendors(params = {}) { return request('GET', '/agent/vendors', null, params); }
   async function getAgentVendor(id) { return request('GET', `/agent/vendors/${id}`); }
@@ -351,6 +373,8 @@ const HGAI_API = (() => {
     listSpaces, getSpace, createSpace, updateSpace, deleteSpace,
     listSpaceMembers, addSpaceMember, updateSpaceMemberRole, removeSpaceMember,
     listSpaceGraphs, getSpaceGraph, createSpaceGraph, updateSpaceGraph, deleteSpaceGraph,
+    // help
+    listHelpTopics, getHelpTopic, getHelpHome, downloadHelpMedia,
     // AI agent
     listAgentVendors, getAgentVendor, createAgentVendor, updateAgentVendor, deleteAgentVendor,
     listAgentModels, getAgentModel, createAgentModel, updateAgentModel, deleteAgentModel,

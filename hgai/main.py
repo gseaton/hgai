@@ -12,7 +12,7 @@ from fastapi.responses import RedirectResponse
 from hgai.config import get_settings
 from hgai.db.storage import init_storage, close_storage
 from hgai.core.auth import bootstrap_admin
-from hgai.api.routers import auth, hypergraphs, hypernodes, hyperedges, accounts, spaces, media, inference, notes, parameterized_queries
+from hgai.api.routers import auth, hypergraphs, hypernodes, hyperedges, accounts, spaces, media, inference, notes, parameterized_queries, help_topics
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +140,7 @@ def create_app() -> FastAPI:
     app.include_router(inference.router, prefix=prefix)
     app.include_router(notes.router, prefix=prefix)
     app.include_router(parameterized_queries.router, prefix=prefix)
+    app.include_router(help_topics.router, prefix=prefix)
 
     # Mesh module — mounted conditionally; failures are non-fatal
     try:

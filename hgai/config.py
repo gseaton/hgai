@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     # Mesh
     mesh_sync_interval_seconds: int = Field(default=300, description="Background mesh graph-list sync interval (0 = disabled)")
 
+    # Help
+    help_dir: Optional[str] = Field(
+        default=None,
+        description="Root directory of the built-in Help content (contains notes/*.md topics and media/). "
+                    "Defaults to <project root>/docs/help. Env: HGAI_HELP_DIR",
+    )
+
     # AI Agent Chat
     agent_chat_enabled: bool = Field(
         default=True, description="Master on/off switch for the AI Agent Chat module. Env: HGAI_AGENT_CHAT_ENABLED"

@@ -19,6 +19,7 @@ COPY hgai/ ./hgai/
 COPY ui/ ./ui/
 COPY shell/ ./shell/
 COPY scripts/ ./scripts/
+COPY docs/help/ ./docs/help/
 
 # Create non-root user
 RUN useradd -m -u 1001 hgai && chown -R hgai:hgai /app

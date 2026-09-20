@@ -35,6 +35,10 @@ const State = {
   edgesSort: [{ field: 'label', dir: 'asc' }],  // default until the user clicks a column header, then their choice persists for the session
   mediaSort: [],
   notesSort: [],
+  helpPage: 0,
+  helpPageSize: 20,
+  helpSort: [],
+  helpHistory: [],
   graphsSort: [],
   viz3d: null,
 };
@@ -171,7 +175,7 @@ function showScreen(name) {
 
   const titles = {
     dashboard: 'Dashboard', graphs: 'Hypergraphs', nodes: 'Hypernodes',
-    edges: 'Hyperedges', media: 'Media', notes: 'Notes', viz: 'Visualize', shql: 'SHQL Query',
+    edges: 'Hyperedges', media: 'Media', notes: 'Notes', help: 'Help', viz: 'Visualize', shql: 'SHQL Query',
     pq: 'Parameterized Queries',
     'project-inference': 'Project Inference',
     'agent-admin': 'AI Agent',
@@ -188,6 +192,7 @@ function showScreen(name) {
     edges: () => { State.edgesPage = 0; populateEdgesGraphSelect(); loadEdges(); },
     media: () => { State.mediaPage = 0; loadMedia(); },
     notes: () => { State.notesPage = 0; loadNotes(); loadNotesFolderTree(); },
+    help: loadHelpScreen,
     viz: loadVizScreen,
     shql: initShqlEditor,
     pq: () => { State.pqPage = 0; loadPQ(); },
@@ -789,7 +794,7 @@ async function loadNodes() {
   }
 }
 
-const PAGINATION_LOADERS = { nodes: () => loadNodes(), edges: () => loadEdges(), media: () => loadMedia(), mediaPicker: () => loadMediaPicker(), notes: () => loadNotes(), graphs: () => loadGraphs(), pq: () => loadPQ() };
+const PAGINATION_LOADERS = { nodes: () => loadNodes(), edges: () => loadEdges(), media: () => loadMedia(), mediaPicker: () => loadMediaPicker(), notes: () => loadNotes(), help: () => loadHelpList(), graphs: () => loadGraphs(), pq: () => loadPQ() };
 
 // ── Default-media thumbnails (Nodes/Edges list tables) ────────────────────────
 let _nodeThumbUrls = [];
@@ -1727,11 +1732,13 @@ const NOTES_FOLDER_TAG_PREFIX = '//';
 const NOTES_FOLDER_STATE_KEY = 'hgai_notes_folder_state';
 const NOTES_FOLDER_TREE_LIMIT = 200; // matches GET /notes' own server-side max `limit` — a v1 cap for large accounts
 
-function notesGetFolderState() {
-  try { return JSON.parse(sessionStorage.getItem(NOTES_FOLDER_STATE_KEY)) || {}; } catch { return {}; }
+// `key` lets the Help screen's folder tree (same tree code, see
+// renderNoteFolderNode's `opts`) keep its own open/closed state.
+function notesGetFolderState(key = NOTES_FOLDER_STATE_KEY) {
+  try { return JSON.parse(sessionStorage.getItem(key)) || {}; } catch { return {}; }
 }
-function notesSetFolderState(state) {
-  try { sessionStorage.setItem(NOTES_FOLDER_STATE_KEY, JSON.stringify(state)); } catch { /* unavailable — state just won't persist */ }
+function notesSetFolderState(state, key = NOTES_FOLDER_STATE_KEY) {
+  try { sessionStorage.setItem(key, JSON.stringify(state)); } catch { /* unavailable — state just won't persist */ }
 }
 
 function parseNoteFolderSegments(tag) {
@@ -1787,9 +1794,17 @@ function buildNoteFolderTree(notes) {
   return toSorted(root);
 }
 
-function renderNoteFolderNode(folder, depth, pathPrefix) {
+// `opts` (all optional; the defaults are the Notes screen's behavior) lets the
+// Help screen reuse this exact tree: `onOpen(id)` is what clicking a leaf
+// does, `stateKey` names the sessionStorage entry holding open/closed folder
+// state, and `showIdSuffix: false` drops the "#abcd" id-suffix disambiguator
+// (meaningful for random note ids, noise for readable help-topic ids).
+function renderNoteFolderNode(folder, depth, pathPrefix, opts = {}) {
+  const onOpen = opts.onOpen || openNoteModal;
+  const stateKey = opts.stateKey || NOTES_FOLDER_STATE_KEY;
+  const showIdSuffix = opts.showIdSuffix !== false;
   const currentPath = pathPrefix ? `${pathPrefix}/${folder.name}` : folder.name;
-  const savedState = notesGetFolderState();
+  const savedState = notesGetFolderState(stateKey);
   const isOpen = currentPath in savedState ? savedState[currentPath] : depth === 0; // top-level expanded, nested collapsed by default
 
   const li = document.createElement('li');
@@ -1808,7 +1823,7 @@ function renderNoteFolderNode(folder, depth, pathPrefix) {
 
   const ul = document.createElement('ul');
   ul.className = 'notes-folder-contents';
-  folder.children.forEach(child => ul.appendChild(renderNoteFolderNode(child, depth + 1, currentPath)));
+  folder.children.forEach(child => ul.appendChild(renderNoteFolderNode(child, depth + 1, currentPath, opts)));
   folder.notes.forEach(n => {
     const item = document.createElement('li');
     item.className = 'notes-folder-note-item';
@@ -1817,9 +1832,11 @@ function renderNoteFolderNode(folder, depth, pathPrefix) {
     // context (e.g. two notes both named "Draft" but with different labels) —
     // mirrors this feature's reference app showing "name or label" as the
     // primary text with the label always available alongside it.
-    const meta = n.name ? `${escapeHtml(n.label)} · #${escapeHtml(n.idSuffix)}` : `#${escapeHtml(n.idSuffix)}`;
-    item.innerHTML = `<a title="${escapeHtml(primary)} (#${escapeHtml(n.idSuffix)})">${escapeHtml(truncate(primary, 28))} <span class="notes-folder-note-meta">${meta}</span></a>`;
-    item.querySelector('a').addEventListener('click', e => { e.preventDefault(); openNoteModal(n.id); });
+    const meta = showIdSuffix
+      ? (n.name ? `${escapeHtml(n.label)} · #${escapeHtml(n.idSuffix)}` : `#${escapeHtml(n.idSuffix)}`)
+      : (n.name ? escapeHtml(n.label) : '');
+    item.innerHTML = `<a title="${escapeHtml(primary)}${showIdSuffix ? ` (#${escapeHtml(n.idSuffix)})` : ''}">${escapeHtml(truncate(primary, 28))} <span class="notes-folder-note-meta">${meta}</span></a>`;
+    item.querySelector('a').addEventListener('click', e => { e.preventDefault(); onOpen(n.id); });
     ul.appendChild(item);
   });
   details.appendChild(ul);
@@ -1830,9 +1847,9 @@ function renderNoteFolderNode(folder, depth, pathPrefix) {
   // any note create/update/delete doesn't visually re-collapse folders
   // the user had deliberately opened.
   details.addEventListener('toggle', () => {
-    const state = notesGetFolderState();
+    const state = notesGetFolderState(stateKey);
     state[currentPath] = details.open;
-    notesSetFolderState(state);
+    notesSetFolderState(state, stateKey);
   });
 
   li.appendChild(details);
@@ -1894,9 +1911,10 @@ function notesRestoreSidebarWidth() {
 }
 notesRestoreSidebarWidth();
 
-function notesInitSidebarResize() {
-  const handle = document.getElementById('notes-sidebar-resize-handle');
-  const sidebar = document.querySelector('.notes-folder-sidebar');
+// Shared by the Notes and Help screens (both use the same folder-sidebar
+// layout, and share one persisted width — a panel-width preference, not a
+// per-screen one).
+function initFolderSidebarResize(handle, sidebar) {
   if (!handle || !sidebar) return;
 
   let startX = 0;
@@ -1939,6 +1957,12 @@ function notesInitSidebarResize() {
     try { localStorage.setItem(NOTES_SIDEBAR_WIDTH_KEY, String(Math.round(width))); } catch { /* unavailable */ }
   });
 }
+function notesInitSidebarResize() {
+  initFolderSidebarResize(
+    document.getElementById('notes-sidebar-resize-handle'),
+    document.querySelector('#screen-notes .notes-folder-sidebar'),
+  );
+}
 notesInitSidebarResize();
 
 document.getElementById('btn-refresh-notes').addEventListener('click', () => { loadNotes(); loadNotesFolderTree(); });
@@ -1958,6 +1982,287 @@ function deleteNoteRow(id, label) {
     } catch (err) { toast(err.message, 'danger'); }
   });
 }
+
+// ── Help ────────────────────────────────────────────────────────────────────
+// Built-in help topics (docs/help/notes/*.md) plus any Notes tagged
+// `system:help`, served by GET /help/*. The screen reuses the Notes screen's
+// folder-tree code (tags shaped `//Folder/Sub Folder`) and its sidebar-resize
+// handle; the main panel shows one rendered topic (Home by default) or, when
+// searching / filtering by tag / choosing "All Topics", a sortable list.
+const HELP_FOLDER_STATE_KEY = 'hgai_help_folder_state';
+const HELP_FOLDER_TREE_LIMIT = 500; // matches GET /help/topics' server-side max `limit`
+const HELP_UNFILED_FOLDER = '//Other'; // topics with no `//` tag (typically system:help Notes) still get a tree slot
+let helpObjectUrls = [];
+let helpCurrentTopic = null;
+
+function helpShowView(view) {
+  document.getElementById('help-topic-view').classList.toggle('d-none', view !== 'topic');
+  document.getElementById('help-list-view').classList.toggle('d-none', view !== 'list');
+}
+
+function helpUpdateBackButton() {
+  document.getElementById('btn-help-back').disabled = !State.helpHistory.length;
+}
+
+function helpClearFilters() {
+  document.getElementById('help-search').value = '';
+  document.getElementById('help-tags-filter').value = '';
+}
+
+// Entering the Help screen always lands on the Home topic.
+function loadHelpScreen() {
+  State.helpHistory = [];
+  helpClearFilters();
+  loadHelpFolderTree();
+  openHelpHome();
+}
+
+async function openHelpHome() {
+  try {
+    const topic = await HGAI_API.getHelpHome();
+    renderHelpTopic(topic);
+  } catch (err) {
+    helpShowView('topic');
+    document.getElementById('help-topic-label').textContent = 'Help';
+    document.getElementById('help-topic-description').textContent = '';
+    document.getElementById('help-topic-tags').innerHTML = '';
+    document.getElementById('help-topic-source').textContent = '';
+    document.getElementById('btn-help-open-note').classList.add('d-none');
+    document.getElementById('help-topic-content').innerHTML =
+      `<span class="text-danger">${escapeHtml(err.message)}</span>`;
+  }
+}
+
+async function openHelpTopic(id, { push = true } = {}) {
+  try {
+    const topic = await HGAI_API.getHelpTopic(id);
+    if (push && helpCurrentTopic && helpCurrentTopic.id !== topic.id) State.helpHistory.push(helpCurrentTopic.id);
+    renderHelpTopic(topic);
+  } catch (err) {
+    toast(err.message, 'danger');
+  }
+}
+
+function renderHelpTopic(topic) {
+  helpCurrentTopic = topic;
+  helpShowView('topic');
+  helpUpdateBackButton();
+  document.getElementById('help-topic-label').textContent = topic.label;
+  document.getElementById('help-topic-description').textContent = topic.description || '';
+  document.getElementById('help-topic-source').textContent = topic.source === 'note' ? 'Note' : 'Built-in';
+  document.getElementById('btn-help-open-note').classList.toggle('d-none', topic.source !== 'note');
+  helpRenderTagBadges(document.getElementById('help-topic-tags'), topic.tags);
+  renderHelpMarkdown(topic.text, 'help-topic-content');
+  document.getElementById('help-topic-view').scrollIntoView({ block: 'nearest' });
+}
+
+// Clickable tag badges — clicking one lists every topic carrying that tag.
+function helpRenderTagBadges(container, tags) {
+  container.innerHTML = (tags || []).map(t =>
+    `<a href="#" class="badge-tag help-tag-link" data-help-tag="${escapeHtml(t)}">${escapeHtml(t)}</a>`).join('');
+}
+
+function helpFilterByTag(tag) {
+  document.getElementById('help-tags-filter').value = tag;
+  State.helpPage = 0;
+  loadHelpList();
+}
+
+// Same placeholder-substitution approach as renderNoteMarkdown (see there for
+// why): `[text](help:<topic-id>)` links and `![alt](help-media:<path>)` embeds
+// are swapped for tokens before marked+DOMPurify (which would strip the custom
+// schemes) and swapped back for hand-built, escapeHtml'd HTML afterwards.
+// A Note-backed topic may also use the Notes conventions — `![alt](media:<id>)`
+// embeds and `[text](note:<id>)` links (opened as help topics, since a note
+// that is itself a help topic shares its id).
+async function renderHelpMarkdown(text, containerId) {
+  const embeds = [];
+  const links = [];
+  let working = text || '';
+
+  working = working.replace(/!\[([^\]]*)\]\((help-media|media):([^)\s]+)\)/g, (_, alt, kind, ref) => {
+    const token = `zzHELPEMBEDzz${embeds.length}zz`;
+    embeds.push({ alt, kind, ref });
+    return token;
+  });
+  working = working.replace(/(?<!!)\[([^\]]*)\]\((?:help:|note[:/])([^)\s]+)\)/g, (_, label, ref) => {
+    const token = `zzHELPLINKzz${links.length}zz`;
+    links.push({ label, ref });
+    return token;
+  });
+
+  let html = DOMPurify.sanitize(marked.parse(working));
+  embeds.forEach((e, i) => {
+    const built = `<img data-help-embed-kind="${escapeHtml(e.kind)}" data-help-embed-ref="${escapeHtml(e.ref)}" alt="${escapeHtml(e.alt)}" class="note-embed-loading"/>`;
+    html = html.split(`zzHELPEMBEDzz${i}zz`).join(built);
+  });
+  links.forEach((l, i) => {
+    const built = `<a href="#" class="help-internal-link" data-help-id="${escapeHtml(l.ref)}">${escapeHtml(l.label || l.ref)}</a>`;
+    html = html.split(`zzHELPLINKzz${i}zz`).join(built);
+  });
+
+  const el = document.getElementById(containerId);
+  el.innerHTML = html || '<span class="text-muted">This topic is empty</span>';
+  // External links open in a new tab, never inside the app frame.
+  el.querySelectorAll('a[href^="http"]').forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
+  await resolveHelpEmbeds(el);
+}
+
+async function resolveHelpEmbeds(containerEl) {
+  helpObjectUrls.forEach(u => URL.revokeObjectURL(u));
+  helpObjectUrls = [];
+  const imgs = containerEl.querySelectorAll('img[data-help-embed-ref]');
+  await Promise.all([...imgs].map(async img => {
+    const { helpEmbedKind: kind, helpEmbedRef: ref } = img.dataset;
+    try {
+      const blob = kind === 'media' ? await HGAI_API.downloadMedia(ref) : await HGAI_API.downloadHelpMedia(ref);
+      const url = URL.createObjectURL(blob);
+      helpObjectUrls.push(url);
+      img.src = url;
+      img.classList.remove('note-embed-loading');
+    } catch {
+      const span = document.createElement('span');
+      span.className = 'note-embed-broken';
+      span.title = `Media '${ref}' not found or not accessible`;
+      span.textContent = img.alt || ref;
+      img.replaceWith(span);
+    }
+  }));
+}
+
+document.getElementById('help-topic-content').addEventListener('click', e => {
+  const a = e.target.closest('.help-internal-link');
+  if (!a) return;
+  e.preventDefault();
+  openHelpTopic(a.dataset.helpId);
+});
+document.addEventListener('click', e => {
+  const a = e.target.closest('.help-tag-link');
+  if (!a) return;
+  e.preventDefault();
+  helpFilterByTag(a.dataset.helpTag);
+});
+
+// ── List view ──
+async function loadHelpList() {
+  helpShowView('list');
+  const tbody = document.getElementById('tbody-help');
+  tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+
+  const tagFilter = document.getElementById('help-tags-filter').value.trim();
+  const params = {
+    skip: State.helpPage * State.helpPageSize,
+    limit: State.helpPageSize,
+    search: document.getElementById('help-search').value.trim() || undefined,
+    tags: tagFilter ? [tagFilter] : undefined,
+    sort: sortParam(State.helpSort),
+  };
+  updateSortIndicators('help');
+
+  try {
+    const resp = await HGAI_API.listHelpTopics(params);
+    tbody.innerHTML = '';
+    if (!resp.items || !resp.items.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No help topics found</td></tr>';
+    } else {
+      resp.items.forEach(t => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="table-id-link" data-help-open="${escapeHtml(t.id)}">
+            <i class="bi bi-file-earmark-text text-secondary me-1"></i>${escapeHtml(t.label)}
+            ${t.name ? `<div class="small text-muted font-monospace">${escapeHtml(t.name)}</div>` : ''}
+          </td>
+          <td class="small">${escapeHtml(truncate(t.description, 90))}</td>
+          <td>${(t.tags || []).map(g => `<a href="#" class="badge-tag help-tag-link" data-help-tag="${escapeHtml(g)}">${escapeHtml(g)}</a>`).join('')}</td>
+          <td class="small">${t.source === 'note' ? 'Note' : 'Built-in'}</td>
+          <td class="small text-muted">${fmtDate(t.system_updated)}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+    renderPagination('help', resp.total, State.helpPage, State.helpPageSize);
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="5" class="text-danger text-center">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+document.getElementById('tbody-help').addEventListener('click', e => {
+  const cell = e.target.closest('[data-help-open]');
+  if (cell) openHelpTopic(cell.dataset.helpOpen);
+});
+
+// ── Folder tree (same virtual `//Folder/Sub` tag convention as Notes) ──
+function renderHelpFolderTree(topics) {
+  const container = document.getElementById('help-folder-tree');
+  const filed = topics.map(t => {
+    // The tree shows each topic's readable label; `name` (often a slug) stays
+    // available in the list view and for search.
+    const hasFolder = (t.tags || []).some(tag => parseNoteFolderSegments(tag));
+    return { ...t, name: '', tags: hasFolder ? t.tags : [...(t.tags || []), HELP_UNFILED_FOLDER] };
+  });
+  const tree = buildNoteFolderTree(filed);
+  container.innerHTML = '';
+  document.getElementById('help-folder-actions').classList.toggle('d-none', tree.length === 0);
+  if (!tree.length) {
+    container.innerHTML = '<div class="notes-folder-empty">No help topics found.</div>';
+    return;
+  }
+  const ul = document.createElement('ul');
+  ul.className = 'notes-folder-tree';
+  const opts = { onOpen: id => openHelpTopic(id), stateKey: HELP_FOLDER_STATE_KEY, showIdSuffix: false };
+  tree.forEach(folder => ul.appendChild(renderNoteFolderNode(folder, 0, '', opts)));
+  container.appendChild(ul);
+}
+
+async function loadHelpFolderTree() {
+  const container = document.getElementById('help-folder-tree');
+  try {
+    const resp = await HGAI_API.listHelpTopics({ limit: HELP_FOLDER_TREE_LIMIT });
+    renderHelpFolderTree(resp.items || []);
+  } catch (err) {
+    container.innerHTML = `<div class="notes-folder-empty text-danger">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+document.getElementById('btn-help-folders-expand').addEventListener('click', () => {
+  document.querySelectorAll('#help-folder-tree details').forEach(d => { d.open = true; });
+});
+document.getElementById('btn-help-folders-collapse').addEventListener('click', () => {
+  document.querySelectorAll('#help-folder-tree details').forEach(d => { d.open = false; });
+});
+
+initFolderSidebarResize(
+  document.getElementById('help-sidebar-resize-handle'),
+  document.querySelector('#screen-help .notes-folder-sidebar'),
+);
+
+// ── Toolbar ──
+document.getElementById('btn-help-home').addEventListener('click', () => {
+  helpClearFilters();
+  if (helpCurrentTopic) State.helpHistory.push(helpCurrentTopic.id);
+  openHelpHome();
+});
+document.getElementById('btn-help-all').addEventListener('click', () => {
+  helpClearFilters();
+  State.helpPage = 0;
+  loadHelpList();
+});
+document.getElementById('btn-help-back').addEventListener('click', () => {
+  const previous = State.helpHistory.pop();
+  if (previous) openHelpTopic(previous, { push: false });
+});
+document.getElementById('btn-help-open-note').addEventListener('click', () => {
+  if (helpCurrentTopic && helpCurrentTopic.source === 'note') openNoteModal(helpCurrentTopic.id);
+});
+document.getElementById('btn-refresh-help').addEventListener('click', () => {
+  loadHelpFolderTree();
+  if (!document.getElementById('help-list-view').classList.contains('d-none')) loadHelpList();
+  else if (helpCurrentTopic) openHelpTopic(helpCurrentTopic.id, { push: false });
+});
+['help-search', 'help-tags-filter'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') { State.helpPage = 0; loadHelpList(); }
+  });
+});
 
 // ── Note Markdown rendering: [text](note:<id>) / [text](note/<id>) links, ![alt](media:<id>) embeds ──
 // Resolved via plain-text placeholder substitution rather than a marked.js

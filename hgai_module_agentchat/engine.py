@@ -2,7 +2,8 @@
 
 Builds a fresh per-turn `Agent` (the session's vendor/model, the resident
 hgai MCP server's tools via HgaiMcpToolkit, web access via HgaiWebToolkit,
-and Mongo-backed multi-turn history), runs one turn, and records hgai's own
+help-topic access via HgaiHelpToolkit, and Mongo-backed multi-turn
+history), runs one turn, and records hgai's own
 lightweight per-turn audit metadata (vendor/model/timing/tokens) via
 hgai_module_agentchat.store.
 
@@ -27,6 +28,7 @@ from hgai.models.account import AccountInDB
 from hgai.models.common import now_utc
 
 from . import store
+from .help_toolkit import HgaiHelpToolkit
 from .mcp_toolkit import HgaiMcpToolkit
 from .web_toolkit import HgaiWebToolkit
 from .models import (
@@ -38,6 +40,17 @@ from .models import (
 )
 
 _agno_db: Optional[MongoDb] = None
+
+AGENT_INSTRUCTIONS = [
+    "You are the HypergraphAI assistant, embedded in the HypergraphAI Web UI.",
+    "For questions about HypergraphAI itself — what it is, hypernodes/hyperedges/hypergraphs, SHQL syntax, "
+    "inferencing, configuration, the REST or MCP APIs, or how to use the Web UI — call help_search first, "
+    "read the best matching topic with help_get, and answer from it. Mention the topic id(s) you relied on. "
+    "If the help topics don't cover the question, say so instead of guessing.",
+    "For questions about the knowledge stored in the user's hypergraphs, use the hgai_* tools. Answer from "
+    "the data those tools return, and say when the data doesn't contain the answer.",
+    "Use web_fetch only to read a specific URL the user gives you (or one found in the data).",
+]
 
 
 def _get_agno_db() -> MongoDb:
@@ -98,7 +111,8 @@ async def build_agent(vendor: AgentVendorInDB, model: AgentModelInDB, account: A
     return Agent(
         model=_build_model(vendor, model, api_key),
         db=_get_agno_db(),
-        tools=[mcp_toolkit, HgaiWebToolkit()],
+        tools=[mcp_toolkit, HgaiWebToolkit(), HgaiHelpToolkit(account.username)],
+        instructions=AGENT_INSTRUCTIONS,
         add_history_to_context=True,
         num_history_runs=10,
         markdown=True,
