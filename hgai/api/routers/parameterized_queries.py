@@ -120,15 +120,17 @@ async def execute_parameterized_query_route(
     request: ExecuteParameterizedQueryRequest,
     account: AccountInDB = Depends(get_current_active_account),
 ):
-    from hgai_module_shql.parser import SHQLError
+    from hgai_module_shql.parser import SHQLError, SHQLPermissionError
 
     query = await get_parameterized_query(query_id)
     if not query:
         raise HTTPException(status_code=404, detail=f"Parameterized query '{query_id}' not found")
     try:
-        rendered, result = await execute_parameterized_query(query_id, request.values, request.use_cache)
+        rendered, result = await execute_parameterized_query(query_id, request.values, request.use_cache, account=account)
     except QueryTemplateError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except SHQLPermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except SHQLError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

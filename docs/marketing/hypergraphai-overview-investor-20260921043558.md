@@ -117,7 +117,7 @@ Adding an inference rule is a **data change** (create a hyperedge), not a code d
 | **Explainability** | Provenance + `_inferred` + axiom links + audit trail | Audit and compliance | Can answer "why did you conclude that?" |
 | **Temporal correctness** | Validity windows + `at:` queries | Historical reporting | Time-aware reasoning |
 | **Shared, vendor-neutral memory** | MCP + REST + files, any model | Knowledge survives tool and vendor changes | Same memory for every agent/model |
-| **Governance** | RBAC and spaces on the REST API, note scopes, API keys, audit trail | Least-privilege access on the REST surfaces | Per-caller authorization for MCP/SHQL is 🗺️ (today: authentication only) |
+| **Governance** | RBAC and spaces, note scopes, API keys, audit trail | Least-privilege access — enforced identically on REST, SHQL and MCP (each agent can run as its own restricted account) | API keys are full-admin (per-key scopes 🗺️) |
 | **Structured retrieval efficiency** | Query returns exactly the rows/edges needed | — | Less context stuffing per request *(qualitative; not yet benchmarked)* |
 | **Federation** | Query several servers as one mesh | No ETL to a central lake | Cross-domain retrieval in one call |
 
@@ -157,7 +157,7 @@ Every capability is reachable both ways. ✅
 | **Semantic inference** | Toggle "show inferred edges", materialize with Project Inference | Call `hgai_infer_expand_edge`, `hgai_infer_check_transitive`; `infer: true` in SHQL |
 | **Point-in-time** | Time-travel in Visualize and queries | Ask "as of" questions in SHQL |
 | **Mesh federation** | Register servers, ping, sync, federate | `hgai_mesh_*` tools; dot-notation `mesh.server.space.graph` |
-| **Spaces & RBAC** | Multi-tenant isolation, member roles (enforced on the REST API) | Authenticates with API key or JWT; per-caller authorization on MCP is 🗺️ |
+| **Spaces & RBAC** | Multi-tenant isolation, member roles (enforced on REST, SHQL and MCP) | Authenticates with API key or JWT; per-agent accounts give least-privilege agents |
 | **Media** | Attach/embed files | `hgai_media_*` tools |
 | **Notes** (Markdown, folders, 5 sharing scopes) | Write and share knowledge, audit records | Export chat turns to Notes; help topics as retrieval source |
 | **Help** (40 built-in topics + `system:help` notes) | Search documentation | `help_search` / `help_get` tools inside HgNexus |
@@ -267,7 +267,7 @@ shql:
 | AI vendor keys | Stored Fernet-encrypted at rest; only admins can manage vendors/models |
 | Agent web access | SSRF-guarded fetch tool (private and internal addresses refused) |
 
-**Human:** Accounts / Spaces / Meshes screens. **Agent:** authenticates with an API key or token. *Authorization is enforced on the REST CRUD/export/import/inference surfaces; the MCP and SHQL endpoints currently authenticate but do not yet apply per-graph permissions (🗺️) — see Honest Gaps.*
+**Human:** Accounts / Spaces / Meshes screens. **Agent:** authenticates with a login token for a dedicated account (or an API key, which is full-admin). *Authorization is enforced identically on REST, SHQL and MCP.*
 
 ---
 
@@ -408,10 +408,10 @@ Agent ── MCP ──▶ hgai_hypergraph_list        discover what knowledge e
 | Retrieve without hallucinating | Typed pattern queries, not similarity guesses |
 | Multi-hop reasoning | Joins over shared variables; transitive closure; inference |
 | Time-aware answers | `at:` |
-| Safe autonomy | API-key/JWT authentication and a per-record audit trail today; **per-agent authorization and scoping over MCP is 🗺️** — until then, run agents against dedicated servers/graphs and isolate the endpoint |
-| Multi-agent collaboration | One shared graph; every MCP write is audit-stamped (today as the generic `mcp-agent` — per-agent identity stamping is 🗺️; agents can record their own identity in `attributes.provenance`) |
+| Safe autonomy | JWT/API-key authentication, **per-caller authorization on every MCP tool and SHQL query** (an agent's account limits which graphs it can read, write, delete or query), and a per-record audit trail attributed to the calling account. API keys are full-admin — give agents accounts, not keys |
+| Multi-agent collaboration | One shared graph; every MCP write is audit-stamped with the calling account (one account per agent gives per-agent attribution; agents can also record their identity in `attributes.provenance`) |
 
-**Status:** ✅ 30 tools, API-key/JWT authentication, audit trail. 🗺️ per-caller authorization on MCP, per-agent usage metering and rate limits.
+**Status:** ✅ 30 tools, JWT/API-key authentication, per-caller authorization, audit trail. 🗺️ per-key scopes, per-agent usage metering and rate limits.
 
 ---
 
@@ -423,7 +423,7 @@ Agent ── MCP ──▶ hgai_hypergraph_list        discover what knowledge e
 |---|---|
 | Vendor lock-in | Admin picks any enabled vendor/model; sessions and history live in *our* store |
 | Cost and control | Bring-your-own keys (encrypted), per-model enable, token usage recorded per answer |
-| Security | Web fetch is SSRF-guarded; vendor keys encrypted and never shown to non-admins; *data access through MCP is not yet permission-scoped per user (🗺️) — restrict who can use HgNexus* |
+| Security | Web fetch is SSRF-guarded; vendor keys encrypted and never shown to non-admins; the agent acts with the signed-in user's own permissions (MCP calls are authorized as that account) |
 | Trust | Answers about HypergraphAI cite help-topic ids; answers about data come from queries |
 | Knowledge capture | One click turns an answer into an audit-ready Note (vendor, model, timing, tokens) |
 | Onboarding | Built-in Help library the agent can search |
@@ -782,7 +782,7 @@ Built on the open-core split in the funding plan: **hgx (HypergraphX)** open-sou
 | **Channels** | Direct (early); SIs and boutique data/AI consultancies (certified); ISVs/OEMs embedding the store; marketplace publishers |
 | **Proof assets** | Reference dataset + query gallery; demo decks; benchmark and reference-architecture papers *(🗺️)* |
 | **Pricing** | Free core → $1.5K / $5K / $15K+ monthly cloud tiers → enterprise annual |
-| **Objection handling** | *Scale?* federation + roadmap for sharding; *Security?* REST-level RBAC and audit today, MCP/SHQL per-caller authorization and SOC 2 planned; *Vectors?* complementary, integration on roadmap |
+| **Objection handling** | *Scale?* federation + roadmap for sharding; *Security?* per-caller RBAC on REST, SHQL and MCP plus audit today, SOC 2 planned; *Vectors?* complementary, integration on roadmap |
 
 ---
 
@@ -807,7 +807,7 @@ Built on the open-core split in the funding plan: **hgx (HypergraphX)** open-sou
 | **No native vector / embedding search** | Similarity retrieval must be paired with a vector store | Embeddings-as-attributes + hybrid retrieval module (🗺️) |
 | **Scale envelope** | Verified to ~5.5M records for storage and targeted queries; SHQL `infer: true` considers a bounded candidate set per pattern and whole-graph export loads in memory | Streaming export, indexed/incremental inference, sharded storage backend (🗺️) |
 | **Single storage backend** | MongoDB only (interface is pluggable) | Additional backends via marketplace |
-| **Authorization on MCP / SHQL** | Both authenticate callers but do not apply per-graph or per-space permissions; an API key is a full-admin credential | Enforce `can_access_graph` / `can_perform` per caller in both paths (small, well-bounded change; first engineering item) |
+| **API keys are full-admin credentials** | Anyone holding a key bypasses per-graph and per-space authorization (user tokens are fully scoped) | Per-key scopes; until then agents use dedicated accounts |
 | **Enterprise packaging** | No SSO/SAML, HA reference architecture, or SOC 2 yet | Funded in seed plan (security/compliance line from month ~10) |
 | **HgNexus sessions pinned to one model** | No mid-session model switch | Session hand-off feature (🗺️) |
 | **Memory lifecycle automation** | Expiry / promotion of working memory is application-side | Lifecycle policies module (🗺️) |
@@ -1037,10 +1037,10 @@ Browser / hgsh / MCP client / REST client
 | Control | Implementation |
 |---|---|
 | Authentication | JWT (interactive), API keys with rotation (machines/agents) |
-| Authorization | Global roles + per-graph permissions + space membership; space membership is the sole gate for space graphs — **enforced on REST CRUD, export/import and inference; not yet on SHQL query or MCP tools** |
+| Authorization | Global roles + per-graph permissions + space membership; space membership is the sole gate for space graphs — **enforced on REST CRUD, export/import and inference, SHQL query and every MCP tool** (API keys are full-admin) |
 | Data segregation | Spaces; Note scopes and per-account grants |
 | Secrets | AI vendor keys encrypted at rest (Fernet, keyed from the server secret); admin-only management |
-| Agent safety | Web-fetch refuses private/internal addresses; help tool is permission-aware. **MCP tools and SHQL do not yet apply per-graph permissions (authentication only)** |
+| Agent safety | Web-fetch refuses private/internal addresses; help tool is permission-aware. **MCP tools and SHQL run as the signed-in account and enforce its per-graph and per-space permissions** |
 | Audit | Per-record mutation history; provenance metadata; export of audit Notes |
 | Planned | SSO/SAML, SOC 2, audit-log export, rate limiting/metering |
 

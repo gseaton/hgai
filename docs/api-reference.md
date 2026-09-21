@@ -435,6 +435,8 @@ The `from` field accepts:
 
 Graph IDs, space IDs, server IDs, and mesh IDs must not contain `.` (reserved as the dot-notation delimiter).
 
+**Authorization:** the query runs as the calling account. Every graph in `from` must be accessible and the account needs the `query` operation on it (`permissions.graphs` for unowned graphs, space membership for `space-id/graph-id`); a logical graph also needs access to each graph it composes. Any refused graph fails the whole query with `403` before it executes. Mesh ids and dot-notation refs require the `admin` role. The same rules apply to `POST /parameterized-queries/{id}/execute` and the `hgai_query_execute` MCP tool.
+
 **Body:**
 ```json
 {

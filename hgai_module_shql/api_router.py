@@ -23,12 +23,16 @@ async def execute_shql_query(
     request: SHQLRequest,
     account: AccountInDB = Depends(get_current_account),
 ):
-    """Execute an SHQL (Semantic Hypergraph Query Language) query."""
+    """Execute an SHQL (Semantic Hypergraph Query Language) query.
+
+    The caller needs the `query` operation on every graph in `from:` (403 otherwise)."""
     from .engine import execute_shql, SHQLResult
-    from .parser import SHQLError
+    from .parser import SHQLError, SHQLPermissionError
     try:
-        result = await execute_shql(request.shql, use_cache=request.use_cache)
+        result = await execute_shql(request.shql, use_cache=request.use_cache, account=account)
         return result.to_dict()
+    except SHQLPermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except SHQLError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

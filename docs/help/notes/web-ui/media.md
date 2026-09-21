@@ -16,6 +16,7 @@ The **Media** screen manages uploaded files — images, audio, video, documents.
 - **Upload** from the Media screen, or directly from the attachment widget in a node, edge or note editor (which also lets you pick an existing item).
 - **Embed** an image in a [note](help:help-notes) with `![alt](media:<media-id>)`.
 - **Search, filter and sort** the list like other tables.
+- **Preview** a file from its preview button on the Media screen or in an attachment list. Images, audio and video play in the preview dialog. **YAML files** (`application/yaml`, `application/x-yaml`, `text/yaml`, or any `.yml` / `.yaml` file whose stored type is generic) open in a wide dialog with syntax highlighting and line numbers — handy for checking a hypergraph export (`*.export.yml`) or a SHQL query file before importing or running it. Very large YAML files preview only their first few thousand lines (a notice says so); use **Download** for the whole file. Other file types show metadata only.
 
 ## API and MCP
 

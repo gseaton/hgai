@@ -32,6 +32,7 @@ Opening a note starts in **Browse** (read-only, rendered). Switch to **Edit** fo
 |---|---|
 | `[text](note:<id or label>)` | Link to another note (a label is used only if it is unique) |
 | `![alt](media:<media-id>)` | Embed an uploaded image from [Media](help:help-media) |
+| ` ```yaml ` … ` ``` ` (also `yml`, `shql`) | Fenced code block with **YAML syntax highlighting** — keys, strings, numbers, booleans, comments, block scalars, flow collections, anchors/tags, and SHQL `?variables` |
 
 ## Scope — who can reach a note
 

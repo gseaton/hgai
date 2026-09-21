@@ -50,6 +50,6 @@ Two keys are accepted so you can rotate with no downtime: (1) set the new key as
 
 ## Roles
 
-What an authenticated *account* may do through the **REST CRUD, export/import and inference** endpoints depends on its roles and permissions — see [Accounts and roles](help:help-accounts-roles). The **SHQL query** endpoint and the **MCP** tools currently only require authentication (no per-graph permission check), so treat any credential that can reach them as broadly privileged. To let an MCP client authenticate, see [MCP server](help:help-mcp-server).
+What an authenticated *account* may do depends on its roles, `permissions` and space memberships — see [Accounts and roles](help:help-accounts-roles). The same rules apply on every surface: the **REST** endpoints, the **SHQL** query endpoint (`403` when a `from:` graph is not permitted) and the **MCP** tools (`PermissionDenied` results). An API key is the exception: it is a full-admin credential and bypasses them, so prefer a dedicated account's login token for agents and integrations. To let an MCP client authenticate, see [MCP server](help:help-mcp-server).
 
 **Important:** change the default `admin` password immediately after installation, and set a strong `HGAI_SECRET_KEY` ([Configuration](help:help-configuration)).

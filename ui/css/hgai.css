@@ -370,6 +370,13 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 .media-preview-body { min-height: 120px; display: flex; align-items: center; justify-content: center; }
 .media-preview-body img, .media-preview-body video { max-width: 100%; max-height: 70vh; border-radius: 6px; }
 .media-preview-body audio { width: 100%; }
+/* YAML file preview: left-aligned, scrollable, dark code block with a line-number gutter */
+.media-preview-body:has(.media-yaml-preview) { display: block; }
+.media-yaml-preview { text-align: left; }
+.media-yaml-preview pre { margin: 0; background: #1a1b2e; color: #f8f8f2; border-radius: 6px; padding: 10px 0; max-height: 65vh; overflow: auto; font-size: 0.8rem; line-height: 1.5; }
+.media-yaml-preview code { display: block; white-space: pre; min-width: max-content; }
+.media-yaml-preview .yaml-line::before { content: attr(data-ln); display: inline-block; width: 3.4em; padding-right: 1em; margin-right: 0.8em; text-align: right; color: #6272a4; border-right: 1px solid #2f3251; user-select: none; }
+.media-preview-inline .media-yaml-preview pre { max-height: 260px; }
 .media-preview-inline { background: var(--hgai-surface-alt); border: 1px solid var(--hgai-border); border-radius: 8px; padding: 10px; text-align: center; }
 .media-preview-inline:empty { display: none; }
 .media-preview-inline img, .media-preview-inline video { max-width: 100%; max-height: 260px; border-radius: 6px; }
@@ -748,7 +755,21 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 .note-frontmatter > summary { cursor: pointer; padding: 6px 12px; font-size: 0.8rem; font-weight: 600; color: var(--hgai-text-muted); background: var(--hgai-surface-alt); user-select: none; }
 .note-frontmatter-kind { font-weight: 500; font-size: 0.7rem; padding: 1px 6px; margin-left: 4px; border-radius: 4px; background: rgba(127, 127, 127, 0.18); }
 .note-preview-pane .note-frontmatter pre { margin: 0; border-radius: 0; font-size: 0.8rem; line-height: 1.5; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
-.note-fm-comment { color: #6272a4; font-style: italic; }
+/* YAML syntax highlighting (ui/js/yaml-highlight.js) — used for ```yaml / ```shql
+   code blocks in Notes and Help, and for a Note's front-matter panel. Same
+   palette as the JSON viewer, on the dark code-block background. */
+.yaml-key     { color: var(--hgai-json-key); }
+.yaml-str     { color: var(--hgai-json-string); }
+.yaml-num     { color: var(--hgai-json-number); }
+.yaml-date    { color: #8be9fd; }
+.yaml-bool    { color: var(--hgai-json-bool); }
+.yaml-null    { color: var(--hgai-json-bool); font-style: italic; }
+.yaml-var     { color: #8be9fd; font-weight: 600; }          /* SHQL ?variables */
+.yaml-anchor  { color: #ffb86c; }
+.yaml-tag     { color: #ffb86c; font-style: italic; }
+.yaml-punct   { color: #a9adc1; }
+.yaml-doc     { color: #ff79c6; font-weight: 600; }
+.yaml-comment { color: #6272a4; font-style: italic; }
 /* GFM task list items (`- [ ] foo`): marked's default output is a bare
    `<li><input type="checkbox" disabled> foo</li>` with no distinguishing
    class (unlike GitHub's own renderer, which adds task-list-item) — so

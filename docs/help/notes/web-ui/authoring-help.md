@@ -61,6 +61,7 @@ Exactly as for Notes, a tag such as `//Getting Started` or `//Query Language/Adv
 | `![alt](help-media:diagrams/overview.png)` | Image from `docs/help/media/` (path relative to that folder) |
 | `![alt](media:<media-id>)` | Image from the [Media](help:help-media) library (useful in note topics) |
 | `[text](https://example.org)` | Ordinary external link (opens in a new tab) |
+| ` ```yaml ` … ` ``` ` (also `yml`, `shql`) | Code block with YAML syntax highlighting (SHQL queries are YAML; `?variables` are highlighted) |
 
 ## Searching and filtering
 

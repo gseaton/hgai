@@ -95,7 +95,7 @@ async def sync_mesh(mesh_id: str, _admin=Depends(require_admin)):
 async def query_mesh(
     mesh_id: str,
     body: dict,
-    _admin=Depends(require_admin),
+    admin=Depends(require_admin),
 ):
     """Fan out an SHQL query across all servers in a mesh and merge results.
 
@@ -106,7 +106,7 @@ async def query_mesh(
 
     if "shql" in body:
         try:
-            return await federated_shql(mesh_id, body["shql"], use_cache=use_cache)
+            return await federated_shql(mesh_id, body["shql"], use_cache=use_cache, account=admin)
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
 

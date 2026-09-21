@@ -22,7 +22,7 @@ A fresh install has one account: **admin** / **pwd357**. **Change this password 
 | `agent` | API/MCP-only access for AI agents |
 | `readonly` | Read-only access |
 
-Beyond roles, an account has `permissions.graphs` (which unowned graphs it may use — wildcards such as `["*"]` are allowed) and [space](help:help-spaces) memberships. Access to a space's graphs comes **only** from space membership. These checks apply to the REST CRUD, export/import and inference endpoints; the SHQL query endpoint and the MCP tools currently authenticate but do not apply them (see [MCP server](help:help-mcp-server)).
+Beyond roles, an account has `permissions.graphs` (which unowned graphs it may use — wildcards such as `["*"]` are allowed) and [space](help:help-spaces) memberships. Access to a space's graphs comes **only** from space membership. These checks apply everywhere data is reached: the REST CRUD, export/import and inference endpoints, the SHQL query endpoint (needs the `query` operation on every `from:` graph) and the MCP tools (see [MCP server](help:help-mcp-server)). Federated (mesh) queries and the `hgai_mesh_*` tools are admin-only.
 
 ## Managing accounts (administrators)
 

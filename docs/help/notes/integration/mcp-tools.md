@@ -11,6 +11,8 @@ status: active
 
 Connect as described in [MCP server](help:help-mcp-server). Tools are grouped below; use `tools/list` for the authoritative, current list and schemas.
 
+Every tool runs as the authenticated account and is subject to its graph, operation and space permissions; a refused call returns a `PermissionDenied` result. The required permission for each tool is listed under [Authorization](help:help-mcp-server) in the MCP server topic.
+
 ## Hypergraph tools
 
 | Tool | Description |

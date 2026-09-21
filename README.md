@@ -647,6 +647,10 @@ Configure your MCP client (e.g., Claude Desktop):
 }
 ```
 
+### Authorization
+
+Every MCP tool call runs as the authenticated account and is checked with the same rules as the REST API: graph tools need access to the graph plus the `read` / `write` / `delete` operation, `hgai_query_execute` needs the `query` operation on every graph in `from:`, space tools need the matching space role, and `hgai_mesh_*` needs the `admin` role. A refused call returns `{"error": "...", "type": "PermissionDenied"}` as the tool result. API keys are full-admin credentials and bypass the checks — for a restricted agent, create a dedicated account and use its login token. Writes are audited under the caller's username.
+
 ### Discovering Available Tools
 
 To get the list of all available MCP tools from the server, use the `tools/list` MCP method.
@@ -1985,6 +1989,8 @@ Space membership is the **sole gate** for space-scoped graphs. `permissions.grap
 3. **`permissions.graphs`** — applies only to unowned (non-space) graphs.
 
 This ensures that a `["*"]` permissions wildcard cannot leak across tenant boundaries.
+
+The same resolution applies on every surface — REST, the SHQL query endpoint (`POST /shql/query`, which needs the `query` operation on each `from:` graph and returns `403` otherwise) and the MCP tools. Federated mesh queries (mesh ids and dot-notation refs in `from:`, and the `hgai_mesh_*` tools) are admin-only.
 
 #### Space Membership Management
 

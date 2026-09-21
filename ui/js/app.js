@@ -921,6 +921,7 @@ function mediaThumbCellHtml(entity) {
   }
   const icon = ref.content_type && ref.content_type.startsWith('audio/') ? 'bi-music-note-beamed'
     : ref.content_type && ref.content_type.startsWith('video/') ? 'bi-camera-reels-fill'
+    : isYamlMedia(ref.content_type, ref.filename) ? 'bi-filetype-yml'
     : 'bi-file-earmark-fill';
   return `<i class="bi ${icon} text-secondary fs-5" title="${escapeHtml(ref.label || ref.filename || ref.media_id)}"></i>`;
 }
@@ -1143,8 +1144,15 @@ async function downloadMediaFile(mediaId, filename) {
 // ── Media preview (image / audio / video) — shared wherever media is referenced ──
 const _mediaPreviewUrls = {}; // containerId -> object URL currently rendered into it
 
-function isPreviewableMediaType(contentType) {
-  return /^(image|audio|video)\//.test(contentType || '');
+// YAML files are previewed as syntax-highlighted text (isYamlMedia, in yaml-highlight.js,
+// recognises them by content type or — for generic types — file extension).
+// Larger files preview only their first lines (each line becomes a handful of DOM nodes, so an
+// unbounded preview of a multi-MB file would freeze the page); Download gets the rest.
+const MEDIA_TEXT_PREVIEW_MAX_BYTES = 256 * 1024;
+const MEDIA_TEXT_PREVIEW_MAX_LINES = 4000;
+
+function isPreviewableMediaType(contentType, filename) {
+  return /^(image|audio|video)\//.test(contentType || '') || isYamlMedia(contentType, filename);
 }
 
 function clearMediaPreview(containerId) {
@@ -1162,13 +1170,17 @@ async function renderMediaPreviewInto(containerId, mediaId, filename, contentTyp
     URL.revokeObjectURL(_mediaPreviewUrls[containerId]);
     delete _mediaPreviewUrls[containerId];
   }
-  if (!isPreviewableMediaType(contentType)) {
+  if (!isPreviewableMediaType(contentType, filename)) {
     el.innerHTML = `<div class="text-muted py-3"><i class="bi bi-file-earmark display-6 d-block mb-2"></i>No preview available${contentType ? ` for "${escapeHtml(contentType)}"` : ''}</div>`;
     return;
   }
   el.innerHTML = '<div class="spinner-border spinner-border-sm"></div>';
   try {
     const blob = await HGAI_API.downloadMedia(mediaId);
+    if (isYamlMedia(contentType, filename)) {
+      await renderYamlMediaPreview(el, blob);
+      return;
+    }
     const objectUrl = URL.createObjectURL(blob);
     _mediaPreviewUrls[containerId] = objectUrl;
     const altText = escapeHtml(filename || mediaId);
@@ -1182,6 +1194,24 @@ async function renderMediaPreviewInto(containerId, mediaId, filename, contentTyp
   } catch (err) {
     el.innerHTML = `<div class="text-danger small py-3">${escapeHtml(err.message)}</div>`;
   }
+}
+
+// Syntax-highlighted, line-numbered view of a YAML file. The text is decoded as
+// UTF-8 and re-escaped by the highlighter, so file content can never inject markup.
+async function renderYamlMediaPreview(el, blob) {
+  let truncated = blob.size > MEDIA_TEXT_PREVIEW_MAX_BYTES;
+  let text = await (truncated ? blob.slice(0, MEDIA_TEXT_PREVIEW_MAX_BYTES) : blob).text();
+  if (truncated) text = text.slice(0, Math.max(0, text.lastIndexOf('\n')));  // end on a whole line
+  let lines = text.split('\n');
+  if (lines.length > MEDIA_TEXT_PREVIEW_MAX_LINES) {
+    lines = lines.slice(0, MEDIA_TEXT_PREVIEW_MAX_LINES);
+    text = lines.join('\n');
+    truncated = true;
+  }
+  const notice = truncated
+    ? `<div class="alert alert-warning py-1 px-2 small mb-2">Showing the first ${lines.length.toLocaleString()} lines of a ${fmtBytes(blob.size)} file — download it for the rest.</div>`
+    : '';
+  el.innerHTML = `<div class="media-yaml-preview">${notice}<pre><code class="yaml-highlighted">${highlightYamlNumbered(text)}</code></pre></div>`;
 }
 
 // Builds the openMediaPreview() info object from a full Media record (as opposed
@@ -1224,6 +1254,7 @@ async function openMediaPreview(info) {
   document.getElementById('media-preview-title').textContent = info.label || info.filename || mediaId;
   document.getElementById('btn-media-preview-download').onclick = () => downloadMediaFile(mediaId, info.filename);
   renderMediaPreviewMetadata(info);
+  document.querySelector('#modal-media-preview .modal-dialog').classList.toggle('modal-xl', isYamlMedia(info.content_type, info.filename));
   new bootstrap.Modal(document.getElementById('modal-media-preview')).show();
 
   const [, fresh] = await Promise.all([
@@ -2246,6 +2277,7 @@ async function renderHelpMarkdown(text, containerId) {
 
   const el = document.getElementById(containerId);
   el.innerHTML = html || '<span class="text-muted">This topic is empty</span>';
+  highlightYamlBlocks(el); // ```yaml / ```shql fences
   // External links open in a new tab, never inside the app frame.
   el.querySelectorAll('a[href^="http"]').forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
   await resolveHelpEmbeds(el);
@@ -2440,44 +2472,7 @@ function splitFrontmatter(text) {
   return { yaml: block, body: raw.slice(m[0].length) };
 }
 
-function highlightYamlScalar(value) {
-  const t = value.trim();
-  if (!t) return escapeHtml(value);
-  let cls = 'json-string'; // plain and quoted scalars
-  if (/^(true|false|yes|no|on|off)$/i.test(t)) cls = 'json-bool';
-  else if (/^(null|~)$/i.test(t)) cls = 'json-null';
-  else if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(t)) cls = 'json-number';
-  const lead = value.match(/^\s*/)[0];
-  return `${lead}<span class="${cls}">${escapeHtml(value.slice(lead.length))}</span>`;
-}
-
-// Line-based YAML colorizer: keys, scalars by type, comments, and block scalars
-// (`key: |` / `key: >`) whose indented content is shown as one string, so a
-// prompt containing "word: something" isn't mistaken for more keys.
-function highlightYaml(yamlText) {
-  const KEY_RE = /^(\s*(?:-\s+)*)("[^"]*"|'[^']*'|[^\s:#'"][^:]*?):(\s+|$)(.*)$/;
-  let blockIndent = null;
-  return yamlText.split(/\r?\n/).map(line => {
-    const indent = line.match(/^\s*/)[0].length;
-    if (blockIndent !== null) {
-      if (!line.trim() || indent > blockIndent) return `<span class="json-string">${escapeHtml(line)}</span>`;
-      blockIndent = null;
-    }
-    if (/^\s*#/.test(line)) return `<span class="note-fm-comment">${escapeHtml(line)}</span>`;
-    const kv = KEY_RE.exec(line);
-    if (kv) {
-      const [, prefix, key, gap, rest] = kv;
-      if (/^[|>][+-]?\d*\s*$/.test(rest)) {
-        blockIndent = indent;
-        return `${escapeHtml(prefix)}<span class="json-key">${escapeHtml(key)}</span>:${gap}${escapeHtml(rest)}`;
-      }
-      return `${escapeHtml(prefix)}<span class="json-key">${escapeHtml(key)}</span>:${gap}${highlightYamlScalar(rest)}`;
-    }
-    const item = /^(\s*-\s+)(.*)$/.exec(line);
-    if (item) return `${escapeHtml(item[1])}${highlightYamlScalar(item[2])}`;
-    return escapeHtml(line);
-  }).join('\n');
-}
+// highlightYaml / highlightYamlBlocks come from yaml-highlight.js (loaded before this file).
 
 function renderFrontmatterHtml(yamlText) {
   return `<details class="note-frontmatter" open>
@@ -2561,6 +2556,7 @@ async function renderNoteMarkdown(text, containerId) {
 
   const el = document.getElementById(containerId);
   el.innerHTML = html || '<span class="text-muted">Nothing to preview</span>';
+  highlightYamlBlocks(el); // ```yaml / ```shql fences (the front-matter panel is highlighted separately)
   await resolveNoteMediaEmbeds(el);
 }
 

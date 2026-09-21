@@ -10,6 +10,10 @@ class SHQLError(Exception):
     pass
 
 
+class SHQLPermissionError(SHQLError):
+    """The caller is not permitted to query a graph named by the query."""
+
+
 def parse_shql(shql_text: str) -> Dict[str, Any]:
     """Parse SHQL YAML or JSON text into a query dict."""
     try:

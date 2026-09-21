@@ -91,6 +91,10 @@ The response `meta` then includes `count` (total matched rows) and `groups` (`{"
 
 ## Several graphs, spaces and meshes
 
-`from:` may list several graphs (for example `hello-world` and `alpha/alpha-hg`, in a YAML list). Servers in a [mesh](help:help-meshes) are queried concurrently, using dot-notation such as `mesh.server.graph`.
+`from:` may list several graphs (for example `hello-world` and `alpha/alpha-hg`, in a YAML list). Servers in a [mesh](help:help-meshes) are queried concurrently, using dot-notation such as `mesh.server.graph` (administrators only).
+
+## Permissions
+
+A query runs as the calling account. Every graph named in `from:` must be accessible to it and the account needs the `query` operation on it — through `permissions.graphs` for unowned graphs, or space membership for `space_id/graph_id` references. A **logical graph** also requires access to each graph it composes. If any graph is refused the whole query is refused, before anything runs (`403` on REST, a `PermissionDenied` result over MCP); results are never partially filtered. Administrators can query everything. Mesh references require the admin role.
 
 More: [Worked examples](help:help-shql-examples).

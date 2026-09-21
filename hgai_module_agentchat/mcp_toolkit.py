@@ -105,18 +105,11 @@ class HgaiMcpToolkit(Toolkit):
     @classmethod
     async def connect(cls, bearer_token: str, url: Optional[str] = None) -> "HgaiMcpToolkit":
         """Handshake with the resident MCP server and wrap its current tool
-        list. `bearer_token` should be a JWT scoped to the account on whose
-        behalf this chat turn is running (see engine.build_agent) — not a
-        shared service credential — so that whenever hgai_module_mcp's tool
-        implementations gain per-account RBAC checks, this chat engine is
-        already passing the right identity through without further changes.
-
-        NOTE (known gap, not introduced by this module): as of this writing
-        hgai_module_mcp/server.py's tool functions do not actually check the
-        authenticated account's permissions — any validated token currently
-        gets full, unscoped access. Threading a real per-account JWT through
-        here is still the right design; it just isn't a security boundary
-        yet until that gap is closed.
+        list. `bearer_token` must be a JWT for the account on whose behalf this
+        chat turn is running (see engine.build_agent) — never a shared service
+        credential or API key: hgai_module_mcp authorizes every tool call
+        against that account, so this is what scopes the agent's data access
+        to what the signed-in user may see and do.
         """
         if url is None:
             settings = get_settings()

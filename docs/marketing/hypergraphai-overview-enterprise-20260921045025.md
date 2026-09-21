@@ -34,7 +34,7 @@ This deck deliberately states limitations next to capabilities: an architecture 
 2. **System architecture** — context, containers, modules, layers, request flow
 3. **Data architecture** — logical and physical model, identity, tenancy, temporal, provenance
 4. **Query, inference and federation architecture**
-5. **Security architecture** — including exactly where authorization is (and is not) enforced today
+5. **Security architecture** — including exactly where authorization is enforced, and the one credential type that bypasses it (API keys)
 6. **MCP integration architecture** — protocol, tools, sequence, patterns, guardrails
 7. **HgNexus** — the integrated AI agent chat
 8. **Features for humans and for AI agents**
@@ -288,7 +288,7 @@ Note · ParameterizedQuery · Media · AgentVendor/Model/ChatSession  (outside t
 | De-duplication | SHA-256 **hyperkey** = relation + sorted members + graph + validity | Same relation and member set = same hyperedge; merge such facts into one edge with a list property |
 | Counters | `node_count` / `edge_count` on the graph | Maintained by the engine on writes |
 
-⚠️ Writes through the **MCP** tools stamp the audit trail with a generic actor (`mcp-agent`); record the real agent identity in `provenance`.
+Writes through the **MCP** tools are audited under the **calling account's username** (`api-key` when an API key is used). Give each agent its own account so its changes are attributable; agents that must share one account should also record their identity in `provenance`.
 
 ---
 
@@ -417,9 +417,9 @@ Rules are ordinary hyperedges over relation-type nodes; the engine reads them at
 
 ---
 
-## 18. Authorization — Exactly What Is Enforced Where ⚠️
+## 18. Authorization — Exactly What Is Enforced Where
 
-Authorization uses global roles, per-graph permissions and **space membership** (for space-owned graphs membership is the *sole* gate; a `*` permission cannot cross tenants). **Coverage today:**
+Authorization uses global roles, per-graph permissions and **space membership** (for space-owned graphs membership is the *sole* gate; a `*` permission cannot cross tenants). **Coverage:**
 
 | Surface | AuthN | Per-graph / per-space AuthZ |
 |---|:-:|:-:|
@@ -428,13 +428,13 @@ Authorization uses global roles, per-graph permissions and **space membership** 
 | REST: spaces, accounts, meshes, agent vendors/models | ✅ | ✅ (role checks: space role / admin) |
 | REST: Notes, chat sessions, prompt & query history | ✅ | ✅ (owner / note scope / grants) |
 | Help topics (note-backed) | ✅ | ✅ (note visibility) |
-| **REST: `POST /shql/query`** | ✅ | ⚠️ **not checked** |
-| **MCP endpoint — all 30 tools** | ✅ | ⚠️ **not checked** |
+| **REST: `POST /shql/query`** (and parameterized queries) | ✅ | ✅ (`query` operation on every `from:` graph; a logical graph also needs its members; mesh refs admin-only) |
+| **MCP endpoint — all 30 tools** | ✅ | ✅ (per tool: `read` / `write` / `delete` on the graph, `query` for SHQL, space role, or admin for `mesh_*`; authorization runs as the calling account) |
 
-⚠️ **Verified behaviour:** an account with role `readonly` and *no* permissions gets `403` on `GET /graphs/{id}/nodes` but can read every graph through SHQL, and can list, read **and create** nodes through MCP. An API key is a full-admin credential by design. **HgNexus's MCP tools therefore also run unscoped** for any signed-in user.
+✅ **Verified live:** an account with role `readonly` whose permissions cover only `hello-world` gets `403` from SHQL on any other graph and from a multi-graph `from:` that includes one, and `PermissionDenied` from the MCP tools for other graphs, for write/delete without those operations, for every `hgai_mesh_*` tool, and sees only its own graphs in `hgai_hypergraph_list`. A refused SHQL query is refused whole, before it runs (the result cache is never consulted for an unauthorized caller). An API key is still a full-admin credential by design. **HgNexus calls MCP with the signed-in user's own token, so the agent is scoped exactly like the user.**
 
-**Design around it today:** isolate `/mcp/` (network policy or gateway), treat all MCP/SHQL-capable credentials as privileged, give sensitive data its own server and mesh only what should be shared, restrict HgNexus to trusted accounts.
-**Planned fix (🗺️, small and well-bounded):** resolve the caller's identity in the MCP middleware and the SHQL router and apply `can_access_graph` / `can_perform` before each engine call.
+**Operating guidance:** issue each agent a dedicated account limited to the graphs and operations it needs, and use its login token — not an API key — as its credential; keep API keys for trusted infrastructure only; give very sensitive data its own server and mesh only what should be shared.
+**Remaining limits (🗺️):** API keys are unscoped (no per-key scopes); a query naming a refused graph is refused rather than partially filtered; no per-tool allow-list inside the server (use account permissions, or a gateway for defence in depth).
 
 ---
 
@@ -448,7 +448,7 @@ Authorization uses global roles, per-graph permissions and **space membership** 
 | Content sharing | Notes: `private`, `protected`, `protected-edit`, `public`, `public-edit` + per-account viewer/editor grants | Owner/admin control scope and shares |
 | Change control | `status: draft` staging; `mutations[]` review; PIT to reconstruct | Convention-based (🛠️) |
 | Retention / erasure | Delete records and graphs; MongoDB TTL for cache | No built-in legal-hold or retention engine |
-| Audit | Per-record `mutations[]`, `audit_log` collection, provenance convention | ⚠️ MCP writes are stamped `mcp-agent` |
+| Audit | Per-record `mutations[]`, `audit_log` collection, provenance convention | MCP writes are stamped with the calling account |
 
 ---
 
@@ -478,12 +478,12 @@ Authorization uses global roles, per-graph permissions and **space membership** 
 | Server | Python MCP SDK (`FastMCP`), name `hgai`, mounted as an ASGI app at **`/mcp/`** |
 | Transport | **Streamable HTTP**, `stateless_http=True` — each request stands alone (no server-side session state), which suits load balancers and horizontal scale-out |
 | Framing | JSON-RPC over POST; responses as `event: message` SSE frames or JSON; clients send `Accept: application/json, text/event-stream` |
-| Authentication | ASGI middleware: `Authorization: Bearer <API key or JWT>`; missing/invalid → **401** before reaching a tool |
+| Authentication | ASGI middleware: `Authorization: Bearer <API key or JWT>`; missing, invalid or expired credentials, and JWTs for inactive accounts → **401** before reaching a tool. The resolved account is carried with the request into every tool |
 | Tool results | Text content (usually JSON); **errors are returned as tool output** (HTTP 200) so the model can read and recover |
 | Tool surface | **30 tools** — hypergraph (4), hypernode (5), hyperedge (4), query (2), inference (2), mesh (5), media (3), space (5) |
 | Discovery | `tools/list` returns names, descriptions and JSON-schema inputs; the server also ships usage `instructions` |
-| Audit stamp | Writes recorded as actor `mcp-agent` |
-| ⚠️ Authorization | Authentication only — see *Authorization — Exactly What Is Enforced Where* |
+| Audit stamp | Writes recorded under the caller's username (`api-key` for API keys) |
+| Authorization | Per tool, as the authenticated account — same rules as REST; denials returned as `{"type": "PermissionDenied"}` tool results. See *Authorization — Exactly What Is Enforced Where* |
 
 Client configuration is one JSON block:
 
@@ -529,9 +529,9 @@ Agent host (Claude / GPT / IDE / orchestrator)            HypergraphAI  /mcp/   
 | **Write (data)** | `hypernode_create/update`, `hyperedge_create`, `media_upload` | Creates/changes knowledge | Allow to designated agents; require `draft` + `provenance` convention |
 | **Destructive** | `hypernode_delete`, `hyperedge_delete`, `media_delete` | Deletes records | Human-in-the-loop or deny |
 | **Structure / admin** | `hypergraph_create`, `space_create`, `space_add_member` | Creates containers, changes membership | Deny to agents by default |
-| **Federation** | `mesh_ping/sync/query` | Outbound calls to other servers | Allow read-only; restrict `sync` |
+| **Federation** | `mesh_list/get/ping/sync/query` | Outbound calls to other servers with stored credentials | **Admin-only (enforced by the server)** |
 
-⚠️ Because authorization is not enforced inside the tools today, **this policy must be applied in front of the endpoint** (an API gateway or MCP proxy with per-tool allow-lists), or by running agents against a dedicated read-only server. 🗺️ Server-side per-caller tool and graph scoping.
+The server enforces the caller's permissions inside every tool, so this tiering can be expressed as **account permissions** — a dedicated account per agent, limited to the graphs and operations its tier allows (a `read`+`query`-only account cannot write or delete; mesh tools need the admin role). A gateway or MCP proxy with per-tool allow-lists, rate limits and request logging remains useful defence in depth. ⚠️ API keys bypass every check — don't hand them to agents. 🗺️ Per-key scopes and in-server per-tool allow-lists.
 
 ---
 
@@ -567,9 +567,9 @@ Agent host (Claude / GPT / IDE / orchestrator)            HypergraphAI  /mcp/   
 | Vendor-key protection | Encrypted at rest; never returned to non-admins |
 | SSRF protection | Web-fetch tool refuses private/internal addresses |
 
-**Recommended additions outside the platform:** an MCP gateway with per-tool allow-lists and rate limits, request logging with the caller's identity, and periodic review of `mcp-agent`-stamped changes.
+**Recommended additions outside the platform:** an MCP gateway with per-tool allow-lists and rate limits, request logging with the caller's identity, and periodic review of agent-account changes (`mutations[].by`).
 
-**Platform roadmap 🗺️:** per-caller authorization in MCP/SHQL; per-agent identity stamping; per-key scopes; usage metering; approval workflow for draft → active.
+**Platform roadmap 🗺️:** per-key scopes and in-server per-tool allow-lists; usage metering; approval workflow for draft → active.
 
 ---
 
@@ -747,7 +747,7 @@ The UI is served by the same process (no separate front-end deployment); it call
 | Multi-hop / temporal / inferred | Joins over shared variables, `at:`, transitive closure and expansion tools |
 | Write back safely | Convention-based drafts + provenance; read-back verification |
 | Scale across domains | `hgai_mesh_query` |
-| ⚠️ Control | Authentication only today: isolate the endpoint; per-agent scoping 🗺️ |
+| Control | Per-caller authorization on every tool (a dedicated account per agent); API keys are full-admin — per-key scopes 🗺️ |
 
 **Token economics (qualitative, unbenchmarked):** typed retrieval returns only matching rows/edges, so the model is not asked to filter large text dumps.
 
@@ -763,7 +763,7 @@ The UI is served by the same process (no separate front-end deployment); it call
 | Auditability | Every answer stored with vendor, model, timing, tokens; exportable to a Note |
 | Extensibility | Toolkits are per-turn objects (MCP, help, web); new toolkits are code changes in the module |
 | Failure isolation | Module can be disabled (`HGAI_AGENT_CHAT_ENABLED=false`); core unaffected |
-| ⚠️ Security | MCP tools inside a turn are not per-user scoped; restrict access to trusted accounts |
+| Security | MCP tools inside a turn run with the signed-in user's own permissions |
 | 🗺️ | Per-session model switching with context hand-off; tool-call trace panel; usage dashboards |
 
 ---
@@ -860,7 +860,7 @@ The UI is served by the same process (no separate front-end deployment); it call
 | Hub edges with ≤ 250 spokes | One mega-hub edge with 100k+ members | Document size and hyperkey cost |
 | Structured provenance object | Free-text lineage in `description` | Not queryable |
 | Vector store for similarity + hypergraph for structure | Expecting similarity search from the hypergraph | No embedding index today |
-| Separate servers for differently-sensitive data | Relying on MCP/SHQL to enforce tenant boundaries | Authorization gap today |
+| Separate servers for differently-sensitive data; a dedicated account per agent | Handing agents an API key | API keys bypass every authorization check |
 | Draft → review → active for agent writes | Letting agents write straight to `active` | Reviewability |
 
 ---
@@ -906,7 +906,7 @@ Use for: a team's ontology + data, agent pilots, analyst workbench. Docker Compo
         └── each with its own MongoDB, own RBAC, own backup ───────┘
  Analysts / agents query the hub:  from: enterprise-mesh   or   enterprise-mesh.risk.aml-graph
 ```
-Use for: data-mesh ownership, regional/regulatory separation, blast-radius control. Pair with a gateway to enforce per-domain access on MCP/SHQL (current gap).
+Use for: data-mesh ownership, regional/regulatory separation, blast-radius control. Per-domain access is enforced server-side on REST, SHQL and MCP through account permissions and space membership; a gateway is optional defence in depth.
 
 ---
 
@@ -938,8 +938,8 @@ Self-hosted, no outbound dependencies except optional AI vendor (omit HgNexus, o
 | **Availability** | Stateless app tier; MongoDB replica set provides DB HA | ⚠️ No HA reference architecture, no leader-elected background tasks (mesh sync runs in every instance) |
 | **Consistency** | Per-document atomic writes; counters maintained by the engine | No multi-document transactions across nodes/edges |
 | **Durability / DR** | MongoDB backups (`mongodump`), per-graph export files | No built-in PITR beyond MongoDB's |
-| **Security** | See Security section | ⚠️ MCP/SHQL authorization gap; no SSO |
-| **Observability** | Application logging; health endpoint; per-answer token stats (HgNexus); `mcp-agent` audit stamps | ⚠️ No metrics endpoint, tracing or dashboards |
+| **Security** | See Security section | ⚠️ No SSO; API keys are unscoped admin |
+| **Observability** | Application logging; health endpoint; per-answer token stats (HgNexus); caller-attributed audit stamps | ⚠️ No metrics endpoint, tracing or dashboards |
 | **Operability** | One image, environment-variable config, idempotent index creation, seed loader, verify script pattern | Modules fail soft |
 | **Portability** | MIT core; Docker; export/import files; MongoDB-compatible stores | Single backend implemented |
 | **Extensibility** | Module contract; storage ABC; ontology as data | Marketplace/packaging 🗺️ |
@@ -983,7 +983,7 @@ Self-hosted, no outbound dependencies except optional AI vendor (omit HgNexus, o
 |---|---|---|---|
 | **1 · Frame** | 0–2 | Pick one bounded use case (e.g. agent grounding for one domain); identify sources, ontology seeds, sensitivity | Use-case brief, data-classification decision, topology choice |
 | **2 · Prove** | 2–6 | Docker Compose; load a sample (seed + a generated build from one source); connect one MCP client; write 10 SHQL queries; measure | Working demo, provenance conventions, query cookbook |
-| **3 · Harden** | 6–10 | Secrets, TLS, CORS, network isolation of `/mcp/`, backups, gateway allow-lists, review process for agent drafts | Security review passed; runbook |
+| **3 · Harden** | 6–10 | Secrets, TLS, CORS, dedicated accounts (no API keys) for agents, backups, optional gateway allow-lists, review process for agent drafts | Security review passed; runbook |
 | **4 · Integrate** | 10–16 | Ingestion pipelines (bulk/merge), materialize inference, HgNexus for a pilot group, mesh a second domain | Two domains federated; pilot feedback |
 | **5 · Scale** | 16+ | Benchmark; decide consolidate-vs-federate; contribute connectors/ontology packs as modules | Reference architecture ratified |
 
@@ -995,8 +995,8 @@ Self-hosted, no outbound dependencies except optional AI vendor (omit HgNexus, o
 
 | Gap ⚠️ | Impact | Roadmap 🗺️ |
 |---|---|---|
-| **MCP and SHQL do not apply per-graph/space authorization** | Any authenticated caller reaches all graphs; API key = admin | Per-caller authorization in both paths (first item) |
-| MCP writes stamped `mcp-agent` | Weak agent attribution | Per-agent identity stamping / scoped keys |
+| **API keys are unscoped full-admin credentials** | Anyone holding a key bypasses all authorization | Use per-agent accounts today; per-key scopes 🗺️ |
+| Agents sharing one account are indistinguishable in the audit trail | Weak per-agent attribution | One account per agent; `provenance` convention; per-key identities 🗺️ |
 | No native vector/embedding search | Pair with a vector store | Embedding attributes + hybrid retrieval module |
 | Single storage backend (MongoDB) | Vendor concentration | Additional backends via the storage ABC |
 | Bounded `infer: true`; in-memory export | Large-graph limits | Streaming export; incremental / indexed inference |
@@ -1013,7 +1013,7 @@ Self-hosted, no outbound dependencies except optional AI vendor (omit HgNexus, o
 - **What:** a semantic knowledge hypergraph platform — n-ary hyperedges, rules-as-data inference, time, provenance — as one FastAPI process over MongoDB with a Web UI, shell, REST and **30 MCP tools**.
 - **Architecture:** stateless app tier · module system with fail-soft mounting · storage abstraction (10 store interfaces) · SHQL over binding sets with caching · mesh federation · optional S3 media.
 - **MCP:** streamable-HTTP, stateless, bearer-authenticated façade over the same engine; agents follow a discover → validate → query → infer → write-back loop.
-- **Security today:** solid REST-level RBAC and tenancy; **MCP and SHQL authenticate but do not authorize per graph** — isolate them or scope by topology until fixed.
+- **Security today:** per-graph and per-space authorization enforced identically on REST, SHQL and MCP; **API keys are full-admin** — give agents dedicated accounts; no SSO yet.
 - **Use cases:** enterprise store, semantic layer, analyst analytics, agent analytics, HgNexus, transient and persistent memory, fraud/AML and more — each mapped to features and gaps.
 - **Evidence:** a 5.5M-record, fully provenanced build with verified fidelity; 346 automated tests.
 

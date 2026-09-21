@@ -100,13 +100,14 @@ async def delete_parameterized_query(query_id: str) -> bool:
     return await get_storage().parameterized_queries.delete(query_id)
 
 
-async def execute_parameterized_query(query_id: str, values: dict, use_cache: bool = True):
+async def execute_parameterized_query(query_id: str, values: dict, use_cache: bool = True, *, account):
     """Render `query_id`'s template with `values` and run it through SHQL.
 
     Raises `QueryTemplateError` (from hgai.core.query_templates) if `values`
     doesn't satisfy the template's declared parameters — the caller (the API
     router) is expected to turn that into a 400, same as an SHQL parse error
-    already does for a malformed literal query.
+    already does for a malformed literal query. The rendered query runs with
+    `account`'s graph permissions (SHQLPermissionError -> 403 in the router).
     """
     from hgai_module_shql.engine import execute_shql
 
@@ -114,5 +115,5 @@ async def execute_parameterized_query(query_id: str, values: dict, use_cache: bo
     if not query:
         return None, None
     rendered = render_query(query.shql, values)
-    result = await execute_shql(rendered, use_cache=use_cache)
+    result = await execute_shql(rendered, use_cache=use_cache, account=account)
     return rendered, result

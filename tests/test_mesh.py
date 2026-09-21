@@ -62,6 +62,9 @@ def test_module_get_router():
 # ─── Engine tests (mocked MongoDB + HTTP) ────────────────────────────────────
 
 from hgai_module_mesh.engine import ping_server, federated_shql, sync_mesh_graphs
+from hgai.models.account import AccountInDB, AccountPermissions
+
+_ADMIN = AccountInDB(username="root", email=None, roles=["admin"], password_hash="")
 
 
 @pytest.mark.asyncio
@@ -152,7 +155,7 @@ async def test_federated_shql_merges_results():
 
     with patch("hgai_module_mesh.engine.get_storage", return_value=mock_storage), \
          patch("hgai_module_mesh.engine.get_http_client", return_value=mock_client):
-        result = await federated_shql("m1", "shql:\n  from: g1\n")
+        result = await federated_shql("m1", "shql:\n  from: g1\n", account=_ADMIN)
 
     assert result["mesh_id"] == "m1"
     assert result["count"] == 3
@@ -169,7 +172,7 @@ async def test_federated_shql_mesh_not_found():
     mock_storage.meshes = mock_mesh_store
     with patch("hgai_module_mesh.engine.get_storage", return_value=mock_storage):
         with pytest.raises(ValueError, match="Mesh not found"):
-            await federated_shql("nonexistent", "shql:\n  from: g1\n")
+            await federated_shql("nonexistent", "shql:\n  from: g1\n", account=_ADMIN)
 
 
 @pytest.mark.asyncio

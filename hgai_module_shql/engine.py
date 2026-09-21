@@ -29,7 +29,9 @@ from typing import Any, Dict, List, Optional, Set
 
 import yaml
 
+from hgai.core.auth import PermissionDeniedError, check_graph_permission
 from hgai.db.storage import get_storage
+from hgai.models.account import AccountInDB
 from hgai_module_storage.filters import HyperedgeSearchFilters, HypernodeSearchFilters
 
 _SKOS_FIELDS = ("skos_broader", "skos_narrower", "skos_related")
@@ -974,8 +976,68 @@ class SHQLResult:
         }
 
 
-async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
-    """Parse and execute an SHQL query string."""
+def _from_refs(shql: Dict[str, Any]) -> List[str]:
+    from_field = shql["from"]
+    return [str(r) for r in ([from_field] if isinstance(from_field, str) else list(from_field))]
+
+
+async def _authorize_query(shql: Dict[str, Any], account: AccountInDB) -> None:
+    """Raise SHQLPermissionError unless `account` may query every graph the query reads.
+
+    Runs BEFORE the result cache is consulted: the cache key does not include
+    the caller, so a hit must only ever be served to someone already
+    authorized for the same graphs. Rules (admins pass everything):
+
+      * each `from:` graph needs the `query` operation on it — direct
+        permissions.graphs for unowned graphs, space membership for
+        space-scoped ones ("space_id/graph_id");
+      * a logical graph additionally requires access to every graph it
+        composes, since composition reads their data;
+      * mesh references (dot-notation, or a bare mesh id) require the admin
+        role — federation runs with the mesh's stored server credentials, not
+        the caller's.
+    """
+    from .parser import SHQLPermissionError
+
+    if "admin" in account.roles:
+        return
+
+    async def _check(gid: str, space_id: Optional[str]) -> None:
+        try:
+            await check_graph_permission(account, gid, "query", space_id=space_id, unowned=space_id is None)
+        except PermissionDeniedError as e:
+            raise SHQLPermissionError(str(e))
+
+    for ref in _from_refs(shql):
+        if ref.count(".") in (2, 3):
+            raise SHQLPermissionError(
+                f"Mesh reference '{ref}' requires the admin role (federated queries use the mesh's own credentials)"
+            )
+        space_id, gid = ref.split("/", 1) if "/" in ref else (None, ref)
+        space_id = space_id or None
+        await _check(gid, space_id)
+
+        doc = await get_storage().hypergraphs.get(gid, space_id=space_id)
+        if doc is None:
+            if space_id is None and await get_storage().meshes.get(gid):
+                raise SHQLPermissionError(
+                    f"Mesh '{gid}' requires the admin role (federated queries use the mesh's own credentials)"
+                )
+            continue  # unknown graph: execution reports "not found" once access has been established
+        if doc.type == "logical" and doc.composition:
+            for member_id in doc.composition:
+                member = await get_storage().hypergraphs.find_composition_member(member_id)
+                if member:
+                    await _check(member.id, member.space_id)
+
+
+async def execute_shql(shql_text: str, use_cache: bool = True, *, account: AccountInDB) -> SHQLResult:
+    """Parse and execute an SHQL query string on behalf of `account`.
+
+    `account` is required and enforced: see `_authorize_query`. Callers acting
+    for the system itself (there are none today) must pass an explicit admin
+    account rather than skip the check.
+    """
     from .parser import parse_shql, validate_shql, SHQLError
     from hgai.core.cache import get_cached_result, set_cached_result
 
@@ -983,6 +1045,8 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
     errors = validate_shql(shql)
     if errors:
         raise SHQLError(f"SHQL validation errors: {'; '.join(errors)}")
+
+    await _authorize_query(shql, account)
 
     cache_key = "shql:" + hashlib.md5(
         json.dumps(shql, sort_keys=True, default=str).encode()
@@ -1022,7 +1086,7 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
     if dot_refs:
         try:
             from hgai_module_mesh.engine import execute_dot_refs
-            dot_result = await execute_dot_refs(dot_refs, shql_text, use_cache=use_cache)
+            dot_result = await execute_dot_refs(dot_refs, shql_text, use_cache=use_cache, account=account)
             dot_items = dot_result["items"]
         except ImportError:
             from .parser import SHQLError
@@ -1045,7 +1109,7 @@ async def execute_shql(shql_text: str, use_cache: bool = True) -> SHQLResult:
                 if mesh_doc:
                     try:
                         from hgai_module_mesh.engine import federated_shql
-                        fed = await federated_shql(gid, shql_text, use_cache=use_cache)
+                        fed = await federated_shql(gid, shql_text, use_cache=use_cache, account=account)
                         dot_items.extend(fed["items"])
                         continue
                     except ImportError:

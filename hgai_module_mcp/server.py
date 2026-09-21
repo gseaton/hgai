@@ -13,17 +13,32 @@ MCP tool groups:
   - hgai_media_*      : Media (binary file attachment) upload/download/delete
   - hgai_space_*      : Space (tenant namespace) management
   - hgai_admin_*      : Admin operations (requires admin role)
+
+Authorization: every tool runs as the authenticated caller and is checked with
+the same rules as the REST API — graph tools need the matching operation
+(read/write/delete) on the graph, hgai_query_execute needs `query` on every
+graph in `from:`, space tools need the matching space role, and mesh tools need
+the admin role. Denials come back as {"error": ..., "type": "PermissionDenied"}.
 """
 
 import json
 import logging
-from typing import Any
+from contextvars import ContextVar, Token
+from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
 
 from hgai.core import engine
+from hgai.core.auth import (
+    PermissionDeniedError,
+    check_graph_permission,
+    check_space_role,
+    filter_accessible_graphs,
+    require_admin_role,
+)
+from hgai.models.account import AccountInDB
 from hgai_module_shql.engine import execute_shql
-from hgai_module_shql.parser import parse_shql, validate_shql, SHQLError
+from hgai_module_shql.parser import parse_shql, validate_shql, SHQLError, SHQLPermissionError
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +48,69 @@ mcp = FastMCP(
         "HypergraphAI MCP Server. Provides tools for managing and querying semantic "
         "hypergraph knowledge stores. Use hgai_query_execute for flexible SHQL queries. "
         "Hyperedges are first-class entities and can connect n nodes. "
-        "All operations require a valid hypergraph_id context."
+        "All operations require a valid hypergraph_id context. Every call runs with the "
+        "permissions of the authenticated account; a call outside them returns a PermissionDenied error."
     ),
     streamable_http_path="/",
     stateless_http=True,
 )
+
+
+# ─── Caller identity and authorization ────────────────────────────────────────
+# The ASGI middleware in module.py authenticates the bearer credential and
+# publishes the resulting account here for the duration of the request; every
+# tool authorizes against it with the same rules the REST API uses
+# (hgai.core.auth). A tool that finds no caller refuses to run.
+
+_current_account: ContextVar[Optional[AccountInDB]] = ContextVar("hgai_mcp_account", default=None)
+
+
+def set_caller(account: AccountInDB) -> Token:
+    return _current_account.set(account)
+
+
+def reset_caller(token: Token) -> None:
+    _current_account.reset(token)
+
+
+def _caller() -> AccountInDB:
+    account = _current_account.get()
+    if account is None:
+        raise PermissionDeniedError("No authenticated caller")
+    return account
+
+
+def _denied(e: PermissionDeniedError) -> str:
+    return json.dumps({"error": str(e), "type": "PermissionDenied"})
+
+
+async def _guard_graph(graph_id: str, operation: str) -> Optional[str]:
+    """None when the caller may `operation` the graph, else the JSON error to return.
+
+    MCP graph tools address unowned graphs (space-owned graphs are reached
+    through hgai_query_execute with a 'space_id/graph_id' reference).
+    """
+    try:
+        await check_graph_permission(_caller(), graph_id, operation, unowned=True)
+    except PermissionDeniedError as e:
+        return _denied(e)
+    return None
+
+
+def _guard_admin(what: str) -> Optional[str]:
+    try:
+        require_admin_role(_caller(), what)
+    except PermissionDeniedError as e:
+        return _denied(e)
+    return None
+
+
+async def _guard_space(space_id: str, minimum_role: str) -> Optional[str]:
+    try:
+        await check_space_role(_caller(), space_id, minimum_role)
+    except PermissionDeniedError as e:
+        return _denied(e)
+    return None
 
 
 # ─── Hypergraph Tools ─────────────────────────────────────────────────────────
@@ -49,7 +122,16 @@ async def hgai_hypergraph_list(status: str = "active") -> str:
     Args:
         status: Filter by status ('active', 'archived', 'draft', or '' for all)
     """
-    total, graphs = await engine.list_hypergraphs(status=status or None, limit=200)
+    graphs = []
+    skip = 0
+    while True:
+        total, page = await engine.list_hypergraphs(status=status or None, skip=skip, limit=500)
+        graphs.extend(page)
+        skip += 500
+        if skip >= total or not page:
+            break
+    graphs = await filter_accessible_graphs(_caller(), graphs)
+    total, graphs = len(graphs), graphs[:200]
     return json.dumps({
         "total": total,
         "graphs": [{"id": g.id, "label": g.label, "type": g.type, "status": g.status,
@@ -64,6 +146,8 @@ async def hgai_hypergraph_get(graph_id: str) -> str:
     Args:
         graph_id: The hypergraph identifier
     """
+    if denied := await _guard_graph(graph_id, "read"):
+        return denied
     graph = await engine.get_hypergraph(graph_id)
     if not graph:
         return json.dumps({"error": f"Hypergraph '{graph_id}' not found"})
@@ -77,6 +161,8 @@ async def hgai_hypergraph_stats(graph_id: str) -> str:
     Args:
         graph_id: The hypergraph identifier
     """
+    if denied := await _guard_graph(graph_id, "read"):
+        return denied
     stats = await engine.get_hypergraph_stats(graph_id)
     return json.dumps(stats, indent=2, default=str)
 
@@ -106,7 +192,7 @@ async def hgai_hypergraph_create(
             id=id, label=label, description=description or None,
             type=GraphType(graph_type), tags=tag_list,
         )
-        graph = await engine.create_hypergraph(data, created_by="mcp-agent")
+        graph = await engine.create_hypergraph(data, created_by=_caller().username)
         return json.dumps({"success": True, "graph": graph.model_dump()}, indent=2, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)})
@@ -131,6 +217,8 @@ async def hgai_hypernode_list(
         skip: Pagination offset
         limit: Maximum results (max 500)
     """
+    if denied := await _guard_graph(graph_id, "read"):
+        return denied
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
     total, nodes = await engine.list_hypernodes(
         graph_id, node_type=node_type or None, tags=tag_list, skip=skip, limit=limit
@@ -150,6 +238,8 @@ async def hgai_hypernode_get(graph_id: str, node_id: str) -> str:
         graph_id: The hypergraph identifier
         node_id: The hypernode identifier
     """
+    if denied := await _guard_graph(graph_id, "read"):
+        return denied
     node = await engine.get_hypernode(graph_id, node_id)
     if not node:
         return json.dumps({"error": f"Node '{node_id}' not found in graph '{graph_id}'"})
@@ -181,6 +271,8 @@ async def hgai_hypernode_create(
             media_id from hgai_media_upload, e.g.
             '[{"media_id": "abc123", "role": "profile-photo"}]'
     """
+    if denied := await _guard_graph(graph_id, "write"):
+        return denied
     from hgai.models.hypernode import HypernodeCreate
     from hgai.models.media import MediaRef
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
@@ -191,7 +283,7 @@ async def hgai_hypernode_create(
             id=id, label=label, type=node_type, attributes=attributes,
             tags=tag_list, description=description or None, media=media,
         )
-        node = await engine.create_hypernode(graph_id, data, created_by="mcp-agent")
+        node = await engine.create_hypernode(graph_id, data, created_by=_caller().username)
         return json.dumps({"success": True, "node": node.model_dump()}, indent=2, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)})
@@ -221,6 +313,8 @@ async def hgai_hypernode_update(
             '[{"media_id": "abc123", "role": "profile-photo"}]'). Omit this
             argument entirely to leave existing media attachments untouched.
     """
+    if denied := await _guard_graph(graph_id, "write"):
+        return denied
     from hgai.models.hypernode import HypernodeUpdate
     from hgai.models.media import MediaRef
     update: dict = {}
@@ -237,7 +331,7 @@ async def hgai_hypernode_update(
 
     try:
         data = HypernodeUpdate(**update)
-        node = await engine.update_hypernode(graph_id, node_id, data, updated_by="mcp-agent")
+        node = await engine.update_hypernode(graph_id, node_id, data, updated_by=_caller().username)
         if not node:
             return json.dumps({"error": f"Node '{node_id}' not found"})
         return json.dumps({"success": True, "node": node.model_dump()}, indent=2, default=str)
@@ -253,6 +347,8 @@ async def hgai_hypernode_delete(graph_id: str, node_id: str) -> str:
         graph_id: The hypergraph identifier
         node_id: The hypernode identifier to delete
     """
+    if denied := await _guard_graph(graph_id, "delete"):
+        return denied
     deleted = await engine.delete_hypernode(graph_id, node_id)
     return json.dumps({"success": deleted, "deleted_id": node_id})
 
@@ -276,6 +372,8 @@ async def hgai_hyperedge_list(
         skip: Pagination offset
         limit: Maximum results
     """
+    if denied := await _guard_graph(graph_id, "read"):
+        return denied
     total, edges = await engine.list_hyperedges(
         graph_id,
         relation=relation or None,
@@ -300,6 +398,8 @@ async def hgai_hyperedge_get(graph_id: str, edge_id: str) -> str:
         graph_id: The hypergraph identifier
         edge_id: The hyperedge identifier (or hyperkey)
     """
+    if denied := await _guard_graph(graph_id, "read"):
+        return denied
     edge = await engine.get_hyperedge(graph_id, edge_id)
     if not edge:
         return json.dumps({"error": f"Edge '{edge_id}' not found in graph '{graph_id}'"})
@@ -337,6 +437,8 @@ async def hgai_hyperedge_create(
         '[{"node_id": "three-stooges", "seq": 0},
           {"node_id": "moe-howard", "seq": 1}]'
     """
+    if denied := await _guard_graph(graph_id, "write"):
+        return denied
     from hgai.models.hyperedge import HyperedgeCreate, EdgeFlavor, EdgeMember
     from hgai.models.media import MediaRef
     try:
@@ -356,7 +458,7 @@ async def hgai_hyperedge_create(
             tags=tag_list,
             media=media,
         )
-        edge = await engine.create_hyperedge(graph_id, data, created_by="mcp-agent")
+        edge = await engine.create_hyperedge(graph_id, data, created_by=_caller().username)
         return json.dumps({"success": True, "edge": edge.model_dump()}, indent=2, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)})
@@ -370,6 +472,8 @@ async def hgai_hyperedge_delete(graph_id: str, edge_id: str) -> str:
         graph_id: The hypergraph identifier
         edge_id: The hyperedge identifier to delete
     """
+    if denied := await _guard_graph(graph_id, "delete"):
+        return denied
     deleted = await engine.delete_hyperedge(graph_id, edge_id)
     return json.dumps({"success": deleted, "deleted_id": edge_id})
 
@@ -450,8 +554,10 @@ async def hgai_query_execute(query_yaml: str, use_cache: bool = True) -> str:
         return json.dumps({"error": "Query must be a YAML object with a top-level 'shql' key", "type": "ParseError"})
 
     try:
-        result = await execute_shql(query_yaml, use_cache=use_cache)
+        result = await execute_shql(query_yaml, use_cache=use_cache, account=_caller())
         return json.dumps(result.to_dict(), indent=2, default=str)
+    except SHQLPermissionError as e:
+        return json.dumps({"error": str(e), "type": "PermissionDenied"})
     except SHQLError as e:
         return json.dumps({"error": str(e), "type": "SHQLError"})
     except Exception as e:
@@ -511,6 +617,8 @@ async def hgai_infer_expand_edge(graph_id: str, edge_id: str) -> str:
         graph_id: The hypergraph identifier
         edge_id: The hyperedge to expand (id or hyperkey)
     """
+    if denied := await _guard_graph(graph_id, "read"):
+        return denied
     from hgai.core.inference import expand_edge_closure
     edge = await engine.get_hyperedge(graph_id, edge_id)
     if not edge:
@@ -546,6 +654,8 @@ async def hgai_infer_check_transitive(
             chain of hyperedge ids connecting start_id to end_id, so each
             hop can be hydrated the same way as any other edge)
     """
+    if denied := await _guard_graph(graph_id, "read"):
+        return denied
     from hgai.core.inference import check_transitive
     try:
         result = await check_transitive(
@@ -562,6 +672,8 @@ async def hgai_infer_check_transitive(
 @mcp.tool()
 async def hgai_mesh_list() -> str:
     """List all HypergraphAI meshes."""
+    if denied := _guard_admin("mesh operations"):
+        return denied
     from hgai.db.storage import get_storage
     from hgai_module_storage.filters import MeshFilters
     _, docs = await get_storage().meshes.list(MeshFilters(), skip=0, limit=200)
@@ -584,6 +696,8 @@ async def hgai_mesh_get(mesh_id: str) -> str:
     Args:
         mesh_id: The mesh identifier
     """
+    if denied := _guard_admin("mesh operations"):
+        return denied
     from hgai.db.storage import get_storage
     doc = await get_storage().meshes.get(mesh_id)
     if not doc:
@@ -598,6 +712,8 @@ async def hgai_mesh_ping(mesh_id: str) -> str:
     Args:
         mesh_id: The mesh identifier
     """
+    if denied := _guard_admin("mesh operations"):
+        return denied
     from hgai_module_mesh.engine import ping_mesh
     try:
         results = await ping_mesh(mesh_id)
@@ -619,6 +735,8 @@ async def hgai_mesh_sync(mesh_id: str) -> str:
     Args:
         mesh_id: The mesh identifier
     """
+    if denied := _guard_admin("mesh operations"):
+        return denied
     from hgai_module_mesh.engine import sync_mesh_graphs
     try:
         result = await sync_mesh_graphs(mesh_id)
@@ -639,6 +757,8 @@ async def hgai_mesh_query(mesh_id: str, query_yaml: str, use_cache: bool = True)
         query_yaml: SHQL query in YAML format
         use_cache: Whether to use query result cache (default True)
     """
+    if denied := _guard_admin("federated (mesh) queries"):
+        return denied
     import yaml as _yaml
     from hgai_module_mesh.engine import federated_shql
     try:
@@ -650,8 +770,10 @@ async def hgai_mesh_query(mesh_id: str, query_yaml: str, use_cache: bool = True)
         return json.dumps({"error": "Query must be a YAML object with a top-level 'shql' key"})
 
     try:
-        result = await federated_shql(mesh_id, query_yaml, use_cache=use_cache)
+        result = await federated_shql(mesh_id, query_yaml, use_cache=use_cache, account=_caller())
         return json.dumps(result, indent=2, default=str)
+    except SHQLPermissionError as e:
+        return json.dumps({"error": str(e), "type": "PermissionDenied"})
     except ValueError as e:
         return json.dumps({"error": str(e)})
     except Exception as e:
@@ -705,7 +827,7 @@ async def hgai_media_upload(
         media_id = uuid.uuid4().hex
         media = await get_storage().media.put(
             media_id, _BytesReader(data), content_type=content_type,
-            filename=filename or None, uploaded_by="mcp-agent",
+            filename=filename or None, uploaded_by=_caller().username,
         )
         return json.dumps({"success": True, "media": media.model_dump()}, indent=2, default=str)
     except Exception as e:
@@ -790,7 +912,8 @@ async def hgai_media_delete(media_id: str) -> str:
 async def hgai_space_list() -> str:
     """List all HypergraphAI spaces (tenant namespaces)."""
     from hgai.core.space_engine import list_spaces
-    total, spaces = await list_spaces(limit=200)
+    caller = _caller()
+    total, spaces = await list_spaces(username=None if "admin" in caller.roles else caller.username, limit=200)
     return json.dumps({
         "total": total,
         "spaces": [
@@ -813,6 +936,8 @@ async def hgai_space_get(space_id: str) -> str:
     Args:
         space_id: The space identifier
     """
+    if denied := await _guard_space(space_id, "viewer"):
+        return denied
     from hgai.core.space_engine import get_space
     space = await get_space(space_id)
     if not space:
@@ -840,7 +965,7 @@ async def hgai_space_create(
         if existing:
             return json.dumps({"error": f"Space '{id}' already exists"})
         data = SpaceCreate(id=id, label=label, description=description or None)
-        space = await create_space(data, created_by="mcp-agent")
+        space = await create_space(data, created_by=_caller().username)
         return json.dumps({"success": True, "space": space.model_dump()}, indent=2, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)})
@@ -855,6 +980,8 @@ async def hgai_space_add_member(space_id: str, username: str, role: str = "membe
         username: Account username to add
         role: Space role — 'owner', 'admin', 'member', or 'viewer' (default: 'member')
     """
+    if denied := await _guard_space(space_id, "admin"):
+        return denied
     from hgai.core.space_engine import add_member
     try:
         space = await add_member(space_id, username, role)
@@ -873,6 +1000,8 @@ async def hgai_space_list_graphs(space_id: str, limit: int = 100) -> str:
         space_id: The space identifier
         limit: Maximum number of graphs to return (default 100)
     """
+    if denied := await _guard_space(space_id, "viewer"):
+        return denied
     from hgai.core.space_engine import list_space_graphs
     try:
         total, graphs = await list_space_graphs(space_id, limit=limit)

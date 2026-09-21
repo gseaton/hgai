@@ -20,7 +20,7 @@ Administrators manage meshes in the **Meshes** screen or through `/api/v1/meshes
 | `POST /meshes/{id}/sync` | Refresh graph lists from the live servers |
 | `POST /meshes/{id}/query` | Run a federated [SHQL](help:help-shql-overview) query |
 
-The same operations are available as `hgai_mesh_*` [MCP tools](help:help-mcp-tools).
+The same operations are available as `hgai_mesh_*` [MCP tools](help:help-mcp-tools). Everything mesh-related is **admin-only**: because federation calls remote servers with the mesh's own stored credentials, a non-admin account cannot use a mesh id or dot-notation reference in an [SHQL](help:help-shql-overview) `from:` (it gets `403`), nor the `hgai_mesh_*` tools.
 
 ## Querying a whole mesh
 

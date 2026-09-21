@@ -8,7 +8,9 @@ import httpx
 import yaml
 
 from hgai.config import get_settings
+from hgai.core.auth import PermissionDeniedError, require_admin_role
 from hgai.db.storage import get_storage
+from hgai.models.account import AccountInDB
 from hgai.models.common import now_utc
 
 from .models import MeshServer
@@ -206,11 +208,23 @@ def _rewrite_from(query_text: str, graphs: List[str]) -> str:
         return query_text  # fall back to original on any parse error
 
 
+def _require_federation_admin(account: AccountInDB) -> None:
+    """Federated queries run with each mesh server's stored credentials (or, for the
+    local server, fan out over every local graph), so only admins may start them."""
+    from hgai_module_shql.parser import SHQLPermissionError
+
+    try:
+        require_admin_role(account, "federated (mesh) queries")
+    except PermissionDeniedError as e:
+        raise SHQLPermissionError(str(e))
+
+
 async def _query_server(
     server: MeshServer,
     graph_ids: List[str],
     query_text: str,
     use_cache: bool,
+    account: AccountInDB,
 ) -> Dict[str, Any]:
     """Execute an SHQL query on one server for specific graph IDs.
 
@@ -220,7 +234,7 @@ async def _query_server(
     rewritten = _rewrite_from(query_text, graph_ids)
     if _is_local(server):
         from hgai_module_shql.engine import execute_shql
-        result = await execute_shql(rewritten, use_cache=use_cache)
+        result = await execute_shql(rewritten, use_cache=use_cache, account=account)
         items = result.items
     else:
         body: Dict[str, Any] = {"shql": rewritten, "use_cache": use_cache}
@@ -366,11 +380,15 @@ async def execute_dot_refs(
     refs: List[str],
     query_text: str,
     use_cache: bool = True,
+    *,
+    account: AccountInDB,
 ) -> Dict[str, Any]:
     """Execute an SHQL query across dot-notation mesh refs concurrently and merge results.
 
+    Admin-only (see _require_federation_admin).
     Returns {'count': int, 'items': [...], 'errors': [...]}
     """
+    _require_federation_admin(account)
     _local_ids, routing = await resolve_dot_refs(refs)
 
     active = [(s, g) for s, g in routing if g]
@@ -378,7 +396,7 @@ async def execute_dot_refs(
         return {"count": 0, "items": [], "errors": []}
 
     results = await asyncio.gather(
-        *[_query_server(s, g, query_text, use_cache) for s, g in active],
+        *[_query_server(s, g, query_text, use_cache, account) for s, g in active],
         return_exceptions=True,
     )
 
@@ -394,8 +412,14 @@ async def execute_dot_refs(
     return {"count": len(all_items), "items": all_items, "errors": errors}
 
 
-async def federated_shql(mesh_id: str, shql_text: str, use_cache: bool = True) -> Dict[str, Any]:
-    """Fan out an SHQL query to all servers in a mesh concurrently and merge results."""
+async def federated_shql(
+    mesh_id: str, shql_text: str, use_cache: bool = True, *, account: AccountInDB
+) -> Dict[str, Any]:
+    """Fan out an SHQL query to all servers in a mesh concurrently and merge results.
+
+    Admin-only (see _require_federation_admin).
+    """
+    _require_federation_admin(account)
     doc = await get_storage().meshes.get(mesh_id)
     if not doc:
         raise ValueError(f"Mesh not found: {mesh_id}")
@@ -413,7 +437,7 @@ async def federated_shql(mesh_id: str, shql_text: str, use_cache: bool = True) -
         active.append((server, graphs))
 
     results = await asyncio.gather(
-        *[_query_server(s, g, shql_text, use_cache) for s, g in active],
+        *[_query_server(s, g, shql_text, use_cache, account) for s, g in active],
         return_exceptions=True,
     )
 
