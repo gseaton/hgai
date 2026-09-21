@@ -98,9 +98,10 @@ def _build_model(vendor: AgentVendorInDB, model: AgentModelInDB, api_key: str) -
 async def build_agent(vendor: AgentVendorInDB, model: AgentModelInDB, account: AccountInDB) -> Agent:
     """Construct a fresh per-turn Agent. A new JWT + MCP toolkit connection
     is minted for every call rather than cached/reused across turns — the
-    handshake is cheap (one local HTTP round-trip) and this keeps the
-    account's permissions always current instead of pinned to whatever they
-    were when a long-lived session started."""
+    handshake is cheap (one local HTTP round-trip). NOTE: the MCP server
+    only authenticates the JWT; it does not apply the account's per-graph
+    permissions to tool calls, so the JWT identifies the caller but does not
+    scope the tools' data access."""
     api_key = await store.get_decrypted_api_key(vendor.id)
     if not api_key:
         raise ValueError(f"Vendor '{vendor.label}' has no API key configured")

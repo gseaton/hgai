@@ -15,7 +15,7 @@ The **AI Chat** button in the top bar opens a chat panel on the right side of th
 
 | Capability | Used for |
 |---|---|
-| **hgai tools** (the server's own [MCP tools](help:help-mcp-tools)) | Reading and querying your hypergraphs — local ones, and federated ones through [meshes](help:help-meshes). It acts with **your** account's permissions. |
+| **hgai tools** (the server's own [MCP tools](help:help-mcp-tools)) | Reading and querying your hypergraphs — local ones, and federated ones through [meshes](help:help-meshes). **Important:** the MCP endpoint currently authenticates the caller but does **not** apply per-graph or per-space permissions to tool calls, so this part of the agent can read and change any graph on the server for any signed-in user. Restrict who can use HgNexus accordingly (see [MCP server](help:help-mcp-server)). |
 | **Help topics** | Questions about HypergraphAI — what a hyperedge is, how to write SHQL, how to configure the server. The agent searches this Help library and answers from it, citing the topic ids it used. |
 | **Web fetch** | Reading a specific web page you give it (private and internal network addresses are refused) |
 
@@ -34,7 +34,7 @@ Open **AI Agent** in the sidebar. A small default catalog of vendors (Anthropic,
 
 ## Notes
 
-- The agent only sees what your account may see. Note-backed help topics are also limited to notes you can open.
+- **Data access is not permission-scoped today.** The MCP tools and SHQL queries authenticate the caller but do not check per-graph / space permissions (REST CRUD, export/import and inference endpoints do). Only the help-topic tool honours the account: note-backed help topics are limited to notes the account can view. Until per-caller authorization is added to MCP, treat any account that can use HgNexus as able to reach all graphs.
 - Answers come from a language model; check important facts against the data (the agent is instructed to say when the data or the help topics don't contain an answer).
 
 See also: [MCP server](help:help-mcp-server), [Help authoring](help:help-authoring-help).

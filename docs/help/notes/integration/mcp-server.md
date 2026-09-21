@@ -32,6 +32,8 @@ For Claude Desktop or any MCP client that supports HTTP servers and headers:
 
 Use a login token or an [API key](help:help-authentication). Never commit a real key to source control.
 
+> **Authorization caveat.** The MCP endpoint authenticates the caller — any valid API key or login token is accepted — but tool calls are **not** checked against the account's roles, per-graph permissions or space memberships (an API key is a full-admin credential; a login token for even a `readonly` account can read and write every graph through MCP). The REST CRUD, export/import and inference endpoints do enforce permissions. Until per-caller authorization is added to MCP, expose `/mcp/` only to trusted callers (network isolation or a gateway), and treat every MCP credential as administrative.
+
 ## Discover the tools
 
 ```bash
