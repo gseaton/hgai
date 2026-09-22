@@ -3171,6 +3171,9 @@ const VIZ_LINK_FIRST_MEMBER_COLOR = '#3b82f6';
 const VIZ_DIM_NODE_COLOR = '#2a2a3d';
 const VIZ_DIM_LINK_COLOR = '#20202f';
 const VIZ_STRUCTURAL_COLOR = '#9ca3af';
+// The hyperedge node itself (the "edge:<id>" box, not the links feeding out
+// of it — those keep their existing flavor/relation colors unchanged).
+const VIZ_HYPEREDGE_NODE_COLOR = '#eab308';
 // A single distinct color for every node/link belonging to an inferred fact
 // (see hgai/core/inference.py) — deliberately not reusing any flavor/relation
 // color, so "this was computed live, never persisted" reads at a glance
@@ -3966,7 +3969,7 @@ async function renderViz() {
         nodesById.set(heid, {
           id: heid, kind: 'henode',
           label: e.label || (e._inferred ? e.relation : null) || e.id || e.hyperkey || '(hyperedge)',
-          flavor, color: e._inferred ? VIZ_INFERRED_COLOR : VIZ_STRUCTURAL_COLOR,
+          flavor, color: e._inferred ? VIZ_INFERRED_COLOR : VIZ_HYPEREDGE_NODE_COLOR,
           val: Math.min(6 + validMembers.length, 16),
           arity: validMembers.length, relation: e.relation, graphId: gid, raw: e,
           _inferred: !!e._inferred,
@@ -4027,7 +4030,7 @@ async function renderViz() {
               nodesById.set(hit.vizId, {
                 id: hit.vizId, kind: 'henode',
                 label: hit.raw.label || hit.raw.id || hit.raw.hyperkey || '(hyperedge)',
-                flavor: hit.raw.flavor || 'hub', color: VIZ_STRUCTURAL_COLOR, val: 6,
+                flavor: hit.raw.flavor || 'hub', color: VIZ_HYPEREDGE_NODE_COLOR, val: 6,
                 arity: 0, relation: hit.raw.relation, graphId: m.target.targetGid,
                 raw: hit.raw, crossGraph: true,
               });
