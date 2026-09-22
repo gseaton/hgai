@@ -193,14 +193,11 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
   color: #fff;
 }
 .brand-mark {
-  display: inline-flex; align-items: center; justify-content: center;
   width: 32px; height: 32px;
-  background: var(--hgai-primary);
   border-radius: 8px;
-  font-size: 0.9rem; font-weight: 900;
-  color: #fff; flex-shrink: 0;
+  object-fit: contain;
+  flex-shrink: 0;
 }
-.brand-mark sub { font-size: 0.5rem; }
 .brand-name { font-weight: 700; font-size: 0.95rem; white-space: nowrap; color: #fff; }
 
 .sidebar-section-label {
