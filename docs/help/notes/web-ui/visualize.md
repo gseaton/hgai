@@ -19,6 +19,7 @@ status: active
 | **Status** | Show active (default), all, archived or draft items |
 | **Search** | Filter by label |
 | **At (point-in-time)** | Render only hyperedges valid at that instant. Hypernodes always render ([Point-in-time](help:help-point-in-time)) |
+| **Max Nodes** | Caps the total number of nodes actually drawn — hypernodes, hyperedges and virtual member nodes combined, across every selected hypergraph — after everything else (focus, inferred edges, cross-graph references) has been resolved. Default 200; guards against selecting a graph too large for the scene to render smoothly. Raise it to see more, at the cost of performance; a focused element is always kept even if the cap would otherwise cut it. |
 | **Labels** | Toggle text labels |
 | **Media** | Show attached default media on nodes |
 | **Auto-rotate** | Slowly spin the scene |

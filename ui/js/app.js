@@ -3184,6 +3184,15 @@ const VIZ_INFERRED_COLOR = '#c084fc';
 // purple so the complex still reads as one unit.
 const VIZ_INFERRED_FIRST_MEMBER_COLOR = '#f472b6';
 const VIZ_FETCH_LIMIT = 500;
+const VIZ_MAX_NODES_DEFAULT = 200;
+
+// The "Max Nodes" input's value, clamped to a positive integer — falls back
+// to the default for empty/non-numeric/zero/negative input rather than
+// disabling the guard the control exists to provide.
+function vizGetMaxNodes() {
+  const raw = parseInt(document.getElementById('viz-max-nodes').value, 10);
+  return raw > 0 ? raw : VIZ_MAX_NODES_DEFAULT;
+}
 // Must match the .nodeRelSize() call in initViz3D() — kept as one constant so
 // thumbnail sizing (vizSphereRadius) can never drift out of sync with the
 // actual sphere size 3d-force-graph renders.
@@ -3742,9 +3751,7 @@ async function renderViz() {
   document.getElementById('viz-empty-state').classList.add('d-none');
   vizResizeCanvas();
 
-  const links = [];
-  const typeCount = {};
-  const flavorSeen = new Set();
+  let links = [];
   let truncated = false;
 
   const focusId = document.getElementById('viz-focus-id').value.trim();
@@ -3935,7 +3942,6 @@ async function renderViz() {
       rawNodes.forEach(n => {
         if (hideOrphanNodes && !referencedHypernodeIds.has(n.id)) return;
         const type = n.type || 'Entity';
-        typeCount[type] = (typeCount[type] || 0) + 1;
         nodesById.set(`${gid}::${n.id}`, {
           id: `${gid}::${n.id}`, kind: 'hnode', label: n.label || n.id, type,
           color: vizColorForType(type), val: 4, graphId: gid, raw: n,
@@ -3948,7 +3954,6 @@ async function renderViz() {
         const validMembers = members
           .map(m => ({ ...m, target: vizMemberTargetId(gid, m.node_id) }))
           .filter(m => m.target);
-        flavorSeen.add(flavor);
         const heid = `${gid}::he::${e.id || e.hyperkey}`;
         validMembersByHeid.set(heid, validMembers);
 
@@ -4026,10 +4031,8 @@ async function renderViz() {
                 arity: 0, relation: hit.raw.relation, graphId: m.target.targetGid,
                 raw: hit.raw, crossGraph: true,
               });
-              flavorSeen.add(hit.raw.flavor || 'hub');
             } else {
               const type = hit.raw.type || 'Entity';
-              typeCount[type] = (typeCount[type] || 0) + 1;
               nodesById.set(hit.vizId, {
                 id: hit.vizId, kind: 'hnode', label: hit.raw.label || hit.raw.id, type,
                 color: vizColorForType(type), val: 4, graphId: m.target.targetGid,
@@ -4053,7 +4056,26 @@ async function renderViz() {
       });
     }
 
-    const nodes = [...nodesById.values()];
+    let nodes = [...nodesById.values()];
+
+    // Guard against rendering more nodes than 3d-force-graph can keep up
+    // with: cap the FINAL node count — after every selected graph,
+    // cross-graph reference and inferred edge has already been merged in —
+    // to the user's Max Nodes setting. The focus element (if any) is kept
+    // regardless of where it falls in iteration order, since being cut by
+    // an unrelated node-count cap would defeat the point of focusing on it.
+    const maxNodes = vizGetMaxNodes();
+    let nodeCapped = false;
+    if (nodes.length > maxNodes) {
+      nodeCapped = true;
+      if (focusVizNodeId && nodesById.has(focusVizNodeId)) {
+        nodes = [nodesById.get(focusVizNodeId), ...nodes.filter(n => n.id !== focusVizNodeId)].slice(0, maxNodes);
+      } else {
+        nodes = nodes.slice(0, maxNodes);
+      }
+      const keptIds = new Set(nodes.map(n => n.id));
+      links = links.filter(l => keptIds.has(l.source) && keptIds.has(l.target));
+    }
 
     if (focusId && !focusFound) {
       toast(`No hyperedge or hypernode found with id "${focusId}" in the selected hypergraph(s)`, 'warning');
@@ -4071,13 +4093,29 @@ async function renderViz() {
       }
     }
 
+    // Legend and type counts are derived from the final, possibly-capped
+    // node set — never from what was merely considered — so they always
+    // describe what's actually on screen.
+    const typeCount = {};
+    const flavorSeen = new Set();
+    nodes.forEach(n => {
+      if (n.kind === 'hnode') typeCount[n.type] = (typeCount[n.type] || 0) + 1;
+      else if (n.kind === 'henode') flavorSeen.add(n.flavor || 'hub');
+    });
+
     vizAssignCurvature(links);
     State.viz3d.graphData({ nodes, links });
     vizBuildLabelLayer(nodes, links);
     buildVizLegend(typeCount, flavorSeen, nodes.some(n => n._inferred));
     document.getElementById('viz-stats').textContent =
       `${nodes.filter(n => n.kind === 'hnode').length} hypernodes · ${nodes.filter(n => n.kind === 'henode').length} hyperedges`;
-    if (truncated) toast(`Some graphs exceeded the display limit (${VIZ_FETCH_LIMIT}) — showing a partial view`, 'warning');
+    if (truncated && nodeCapped) {
+      toast(`Some graphs exceeded the display limit (${VIZ_FETCH_LIMIT}) and the view was capped at ${maxNodes} nodes (Max Nodes) — showing a partial view`, 'warning');
+    } else if (truncated) {
+      toast(`Some graphs exceeded the display limit (${VIZ_FETCH_LIMIT}) — showing a partial view`, 'warning');
+    } else if (nodeCapped) {
+      toast(`Showing the first ${maxNodes} nodes — raise Max Nodes to see more`, 'warning');
+    }
     if (!nodes.length) {
       const empty = document.getElementById('viz-empty-state');
       empty.classList.remove('d-none');

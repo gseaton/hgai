@@ -587,6 +587,10 @@
                 </div>
               </div>
               <div class="col-auto">
+                <label class="form-label small mb-1" title="Caps the total number of nodes rendered (hypernodes, hyperedges and virtual member nodes combined), across all selected hypergraphs — guards against an inadvertent render of too many nodes for the visualization to keep up with.">Max Nodes</label>
+                <input type="number" id="viz-max-nodes" class="form-control form-control-sm" value="200" min="1" step="1" style="width:90px"/>
+              </div>
+              <div class="col-auto">
                 <div class="form-check form-switch mb-1">
                   <input class="form-check-input" type="checkbox" id="viz-show-labels" checked/>
                   <label class="form-check-label small" for="viz-show-labels">Labels</label>
