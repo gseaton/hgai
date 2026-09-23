@@ -28,10 +28,16 @@ so every triple becomes one two-member hyperedge, not a fused hyperedge):
     hypernodes.py`, `f"attributes.{k}"`) — a key containing '.' would make
     that filter address the wrong (nonexistent, nested) path and silently
     stop matching. This is the one deliberate exception to "expand every
-    prefix." Attribute value(s) are converted to native Python where the
-    XSD datatype maps unambiguously to a JSON/BSON-safe type (integer,
-    float, boolean, dateTime) — otherwise kept as the literal's lexical
-    string, never a type BSON can't store (e.g. `decimal.Decimal`, a bare
+    prefix." The attribute *value* is classified by the literal's own
+    lexical form, not its RDF/XSD datatype: a value whose lexical string
+    starts with an ASCII digit is always stored as a number (int if it
+    parses as one, else float; -1 if neither parse succeeds) — even a
+    literal RDF typed as a string, e.g. `"12345"` with no datatype at all,
+    still becomes numeric. Everything else is stored as text. Booleans and
+    dates/timestamps (`xsd:boolean`, `xsd:date`, `xsd:dateTime`) are the
+    exception to the digit rule: a boolean stays a native bool, a
+    `dateTime` converts to a native Python `datetime.datetime`, and a bare
+    `date` falls back to its lexical string (BSON can't store a
     `datetime.date`). Multiple values for the same predicate become a list.
   * Every **IRI/blank-node**-valued predicate becomes a `hub` hyperedge:
     relation = the predicate's full expanded IRI, members = [subject, object]
@@ -167,16 +173,52 @@ _LABEL_PREDICATES = [RDFS.label, SKOS.prefLabel, FOAF.name, DC.title, DCTERMS.ti
 # form for the real predicate would be "owl:inverseOf", not "owl:inverse-of").
 _AXIOM_RELATION_OVERRIDES = {OWL.inverseOf: "owl:inverse-of"}
 
-# XSD datatypes whose .toPython() value is a type BSON/JSON can store as-is.
-# Anything else (xsd:date, xsd:duration, xsd:decimal, ...) falls back to the
-# literal's lexical string — the RDF-typed value is not lost, just not
-# converted, since e.g. a bare datetime.date or decimal.Decimal isn't BSON-safe.
+# Text-vs-numeric attribute-value classification, driven by the literal's
+# own LEXICAL form (its first character) rather than its RDF/XSD datatype —
+# a lexical value starting with an ASCII digit is always parsed as a number
+# (int if it parses as one, else float; -1 if neither parse succeeds), even
+# when RDF typed it as a plain string (e.g. `"12345"` with no datatype, a
+# zip code written as a quoted string, still becomes numeric). Anything else
+# — a letter, punctuation, the contents of a quoted string — is text. This
+# is why `ex:Eve ex:rating 12.2` (Turtle's default xsd:decimal, whose
+# .toPython() gives a non-BSON-safe decimal.Decimal) still becomes a native
+# float 12.2: the lexical string "12.2" is parsed directly, sidestepping
+# toPython() for the digit-led case entirely.
+#
+# Two RDF/XSD types are exempt from the digit-led rule even though their
+# lexical form usually starts with a digit, because "parse it as a number"
+# would destroy them rather than convert them: booleans (RDF's "true"/
+# "false" don't start with a digit anyway, but are matched first for
+# clarity) and dates/timestamps (xsd:date, xsd:dateTime) — those keep their
+# pre-existing handling: a dateTime converts to a native datetime.datetime,
+# a bare date (BSON can't store datetime.date) falls back to its lexical
+# string, same as before this change.
 def _literal_value(lit: "Literal") -> Any:
     try:
         v = lit.toPython()
     except Exception:
-        return str(lit)
-    if isinstance(v, (bool, int, float)) or type(v) is datetime.datetime:
+        v = None
+
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, datetime.date):
+        return v if type(v) is datetime.datetime else str(lit)
+
+    s = str(lit)
+    if s[:1].isdigit():
+        try:
+            return int(s)
+        except ValueError:
+            pass
+        try:
+            return float(s)
+        except ValueError:
+            return -1
+
+    # Not digit-led: an already-native (RDF-typed) int/float — e.g. a
+    # negative number, whose lexical form starts with '-' — still passes
+    # through as-is rather than falling to text.
+    if isinstance(v, (int, float)):
         return v
     if isinstance(v, str):
         # An invalid lexical value (e.g. "abc"^^xsd:integer) makes toPython()

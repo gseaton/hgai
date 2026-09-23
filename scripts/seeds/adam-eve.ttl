@@ -24,3 +24,8 @@ ex:Cain ex:sibling ex:Seth .
 ex:Cain ex:sex "male" .
 
 ex:Eve ex:sex "female" .
+
+ex:Eve ex:rank 2 .
+
+ex:Adam ex:rank 1 .
+ex:Adam ex:tau 3.234 .

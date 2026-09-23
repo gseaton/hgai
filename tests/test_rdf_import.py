@@ -322,20 +322,94 @@ def test_literal_conversion_safe_types():
     assert attrs["ex:plain"] == "hello"
 
 
-def test_literal_conversion_unsafe_types_fall_back_to_lexical_string():
+def test_literal_conversion_digit_led_decimal_becomes_native_float():
+    # xsd:decimal's .toPython() gives a non-BSON-safe decimal.Decimal, but
+    # the lexical form "19.99" starts with a digit, so it's parsed directly
+    # into a native float rather than falling back to lexical text.
     doc = _doc(LITERAL_TTL, graph_id="g")
     attrs = _node(doc, "http://example.org/a")["attributes"]
-    # decimal.Decimal and a bare datetime.date are not BSON-safe — kept as strings.
-    assert attrs["ex:price"] == "19.99" and isinstance(attrs["ex:price"], str)
+    assert attrs["ex:price"] == 19.99 and isinstance(attrs["ex:price"], float)
+
+
+def test_literal_conversion_bare_date_still_falls_back_to_lexical_string():
+    # A bare xsd:date is exempt from digit-led numeric parsing (it would
+    # otherwise fail to cast and become -1) — it keeps its pre-existing
+    # fallback to lexical text, since BSON can't store a datetime.date.
+    doc = _doc(LITERAL_TTL, graph_id="g")
+    attrs = _node(doc, "http://example.org/a")["attributes"]
     assert attrs["ex:dob"] == "2026-09-23" and isinstance(attrs["ex:dob"], str)
 
 
 def test_malformed_literal_does_not_raise():
     # An out-of-range integer literal: toPython() may raise internally — must
     # still fall back to the lexical string rather than crash the import.
+    # "not-a-number" isn't digit-led, so the digit-sniffing rule doesn't apply.
     ttl = '@prefix ex: <http://example.org/> . @prefix xsd: <http://www.w3.org/2001/XMLSchema#> . ex:a ex:n "not-a-number"^^xsd:integer .'
     doc = _doc(ttl, graph_id="g")
     assert _node(doc, "http://example.org/a")["attributes"]["ex:n"] == "not-a-number"
+
+
+# ─── Digit/quote lexical sniffing (text vs. numeric attribute values) ───────────
+
+def test_user_example_quoted_string_becomes_text_bare_decimal_becomes_numeric():
+    ttl = """
+    @prefix ex: <http://example.com/> .
+    ex:Eve ex:sex "female" .
+    ex:Eve ex:rating 12.2 .
+    """
+    doc = _doc(ttl, graph_id="g")
+    attrs = _node(doc, "http://example.com/Eve")["attributes"]
+    assert attrs["ex:sex"] == "female" and isinstance(attrs["ex:sex"], str)
+    assert attrs["ex:rating"] == 12.2 and isinstance(attrs["ex:rating"], float)
+
+
+def test_digit_led_value_wins_even_when_rdf_typed_as_a_plain_string():
+    # A quoted string that happens to look like a number is still numeric —
+    # classification is driven by the lexical form's first character, not
+    # by the RDF-declared datatype (here, an untyped/xsd:string literal).
+    ttl = '@prefix ex: <http://example.com/> . ex:Eve ex:zip "12345" .'
+    doc = _doc(ttl, graph_id="g")
+    attrs = _node(doc, "http://example.com/Eve")["attributes"]
+    assert attrs["ex:zip"] == 12345 and isinstance(attrs["ex:zip"], int)
+
+
+def test_digit_led_value_that_fails_to_cast_falls_back_to_negative_one():
+    ttl = '@prefix ex: <http://example.com/> . ex:Eve ex:code "12.2abc" .'
+    doc = _doc(ttl, graph_id="g")
+    attrs = _node(doc, "http://example.com/Eve")["attributes"]
+    assert attrs["ex:code"] == -1 and isinstance(attrs["ex:code"], int)
+
+
+def test_negative_typed_number_still_passes_through_natively():
+    # Not digit-led (starts with '-'), but still an RDF-typed number — keeps
+    # passing through as a native int rather than falling back to text.
+    ttl = '@prefix ex: <http://example.com/> . @prefix xsd: <http://www.w3.org/2001/XMLSchema#> . ex:Eve ex:balance "-5"^^xsd:integer .'
+    doc = _doc(ttl, graph_id="g")
+    attrs = _node(doc, "http://example.com/Eve")["attributes"]
+    assert attrs["ex:balance"] == -5 and isinstance(attrs["ex:balance"], int)
+
+
+def test_resource_valued_object_is_never_swept_into_an_attribute():
+    # A digit-led or quote-led lexical rule only applies to LITERAL objects.
+    # An IRI/blank-node object — never starting with a digit or a quote in
+    # this sense — still becomes an ordinary hyperedge reference, not an
+    # attribute, regardless of anything in the digit/quote value rule above.
+    ttl = """
+    @prefix ex: <http://example.com/> .
+    ex:Eve ex:sex "female" .
+    ex:Eve ex:sibling ex:Cain .
+    """
+    doc = _doc(ttl, graph_id="g")
+    eve = _node(doc, "http://example.com/Eve")
+    assert "ex:sibling" not in eve["attributes"]
+    assert any(
+        e["relation"] == "http://example.com/sibling"
+        and e["members"] == [
+            {"node_id": "http://example.com/Eve", "seq": 0},
+            {"node_id": "http://example.com/Cain", "seq": 1},
+        ]
+        for e in doc["edges"]
+    )
 
 
 # ─── Blank nodes ─────────────────────────────────────────────────────────────────
