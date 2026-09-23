@@ -35,6 +35,8 @@ status: active
 | **Virtual folder** | A `//Folder/Sub` tag shown as a folder in the Notes and Help trees |
 | **Parameterized query** | A saved SHQL template with `/$name$/` placeholders ([more](help:help-parameterized-queries)) |
 | **Export file** | `hgai-hypergraph-<id>-<timestamp>.export.yml` — a portable copy of one hypergraph ([more](help:help-export-import)) |
+| **RDF import** | Loading a Turtle/RDF-XML/JSON-LD/N3 file, mapped onto hypernodes and hyperedges — every id fully expanded, `owl:transitive`/`owl:inverseOf`/`owl:SymmetricProperty` synthesizing axiom edges ([more](help:help-rdf-import)) |
+| **CURIE** | A compact `prefix:local` form of an IRI (e.g. `ex:adam` for `http://example.com/adam`) — used for RDF-imported attribute keys only; every id is expanded instead ([more](help:help-rdf-import)) |
 | **Media** | An uploaded file attachable to nodes, edges and notes ([more](help:help-media)) |
 | **Help topic** | A markdown file (or `system:help` note) shown in this Help tab ([more](help:help-authoring-help)) |
 | **Module** | A pluggable `hgai_module_<name>` subsystem ([more](help:help-modules)) |

@@ -33,6 +33,7 @@ delete node|edge <id>           Delete
 shql                            Run SHQL (paste YAML, finish with EOF)
 shql -f <file>                  Run SHQL from a file
 import -f <file> [-g id] [--merge]  Import a hypergraph from an export file
+import-rdf -f <file> [-g id] [--format ttl|n3|rdf|xml|jsonld] [--merge]  Import an RDF file
 export [-o <file>] [-g id]          Export the active (or -g) hypergraph to a file
 
 help [command]                  Show help
@@ -40,5 +41,7 @@ exit                            Leave the shell
 ```
 
 `export` writes `hgai-hypergraph-<id>-<timestamp>.export.yml` (or the name you give with `-o`); `import` creates a hypergraph from such a file, or loads into an existing one with `--merge`. See [Exporting and importing hypergraphs](help:help-export-import).
+
+`import-rdf` loads a Turtle/RDF-XML/JSON-LD/Notation3 file instead — format is inferred from the file extension if `--format` is omitted. See [Importing RDF](help:help-rdf-import) for the full mapping model, worked examples, and caveats.
 
 Queries run in the shell use the same engine as the [Query screen](help:help-query-screen); see [SHQL overview](help:help-shql-overview).

@@ -127,17 +127,19 @@ const HGAI_API = (() => {
     return { blob: await resp.blob(), filename: match ? match[1] : `hgai-hypergraph-${id}.export.yml` };
   }
   // text = the export file's contents. mode: 'create' (fail if it exists) | 'merge'.
-  async function importGraphFile(text, { spaceId = null, graphId = null, mode = 'create' } = {}) {
+  // stripAttributePrefixes: rewrite every node/edge attribute key to its local
+  // name ('ex:sex' -> 'sex', 'http://example.org/description' -> 'description').
+  async function importGraphFile(text, { spaceId = null, graphId = null, mode = 'create', stripAttributePrefixes = false } = {}) {
     const path = spaceId ? `/spaces/${encodeURIComponent(spaceId)}/graphs/import` : '/graphs/import';
-    const resp = await _fileRequest('POST', path, { graph_id: graphId, mode }, text, 'application/x-yaml');
+    const resp = await _fileRequest('POST', path, { graph_id: graphId, mode, strip_attribute_prefixes: stripAttributePrefixes || undefined }, text, 'application/x-yaml');
     return resp.json();
   }
   // text = an RDF file's contents (Turtle/RDF-XML/JSON-LD/N3). format: one of
   // 'ttl'|'n3'|'rdf'|'xml'|'jsonld'. Unlike a native export file, RDF has no
   // embedded hypergraph id, so graphId is required.
-  async function importRdfFile(text, { spaceId = null, graphId, label = null, format, mode = 'create' } = {}) {
+  async function importRdfFile(text, { spaceId = null, graphId, label = null, format, mode = 'create', stripAttributePrefixes = false } = {}) {
     const path = spaceId ? `/spaces/${encodeURIComponent(spaceId)}/graphs/import/rdf` : '/graphs/import/rdf';
-    const resp = await _fileRequest('POST', path, { graph_id: graphId, label, format, mode }, text, 'text/plain');
+    const resp = await _fileRequest('POST', path, { graph_id: graphId, label, format, mode, strip_attribute_prefixes: stripAttributePrefixes || undefined }, text, 'text/plain');
     return resp.json();
   }
 

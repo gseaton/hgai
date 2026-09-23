@@ -238,13 +238,15 @@ async def import_new_space_graph(
     graph_id: Optional[str] = Query(default=None, description="Target id; defaults to the id stored in the file"),
     mode: str = Query(default="create", pattern="^(create|merge)$",
                       description="create: fail if the graph exists in the space; merge: load into it (creating it if missing), skipping items already present"),
+    strip_attribute_prefixes: bool = Query(default=False,
+                      description="Rewrite every node/edge attribute key to its local name — 'ex:sex' -> 'sex', 'http://example.org/description' -> 'description'"),
     account: AccountInDB = Depends(require_space_role(SpaceRole.member)),
 ):
     """Import an export file (raw YAML/JSON request body) as a hypergraph owned by this space."""
     if not await space_engine.get_space(space_id):
         raise HTTPException(status_code=404, detail=f"Space '{space_id}' not found")
     doc = await read_export_body(request)
-    return await run_import(doc, account.username, graph_id, space_id, mode)
+    return await run_import(doc, account.username, graph_id, space_id, mode, strip_attribute_prefixes=strip_attribute_prefixes)
 
 
 @router.post("/{space_id}/graphs/import/rdf")
@@ -256,6 +258,8 @@ async def import_rdf_space_graph(
     format: str = Query(..., description=f"RDF serialization of the request body — one of: {', '.join(SUPPORTED_FORMATS)}"),
     mode: str = Query(default="create", pattern="^(create|merge)$",
                       description="create: fail if the graph exists in the space; merge: load into it (creating it if missing), skipping items already present"),
+    strip_attribute_prefixes: bool = Query(default=False,
+                      description="Rewrite every node/edge attribute key to its local name — 'ex:sex' -> 'sex', 'http://example.org/description' -> 'description'"),
     account: AccountInDB = Depends(require_space_role(SpaceRole.member)),
 ):
     """Import an RDF file (Turtle, RDF/XML, JSON-LD or Notation3 — raw request body) as a
@@ -263,7 +267,7 @@ async def import_rdf_space_graph(
     if not await space_engine.get_space(space_id):
         raise HTTPException(status_code=404, detail=f"Space '{space_id}' not found")
     doc = await read_rdf_body(request, graph_id, format, label)
-    return await run_import(doc, account.username, graph_id, space_id, mode)
+    return await run_import(doc, account.username, graph_id, space_id, mode, strip_attribute_prefixes=strip_attribute_prefixes)
 
 
 @router.post("/{space_id}/graphs/{graph_id}/import")

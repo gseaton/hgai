@@ -1355,6 +1355,10 @@
             <label class="form-check-label" for="graph-import-mode-merge">Merge into the hypergraph <span class="text-muted small">— adds what is missing, never overwrites (created if absent)</span></label>
           </div>
         </div>
+        <div class="form-check mt-2">
+          <input class="form-check-input" type="checkbox" id="graph-import-strip-prefixes"/>
+          <label class="form-check-label" for="graph-import-strip-prefixes">Suppress Attribute Prefixes <span class="text-muted small">— rewrite every attribute name to its local name (<code>ex:sex</code> → <code>sex</code>, <code>http://example.org/description</code> → <code>description</code>); a name left ambiguous by this is kept as-is</span></label>
+        </div>
         <div id="graph-import-result" class="mt-3"></div>
       </div>
       <div class="modal-footer">

@@ -43,7 +43,8 @@ Open **Hypergraphs**.
 - **Import** — click **Import**, choose a file, then optionally:
   - a **Space** to own the new hypergraph ([Spaces](help:help-spaces)) — default none;
   - a **Hypergraph ID** to use instead of the one stored in the file;
-  - the mode: **Create a new hypergraph** (fails if the ID is already taken) or **Merge into the hypergraph** (adds what is missing; creates the graph if absent).
+  - the mode: **Create a new hypergraph** (fails if the ID is already taken) or **Merge into the hypergraph** (adds what is missing; creates the graph if absent);
+  - **Suppress Attribute Prefixes** — rewrite every node/edge attribute key to its local name (`ex:sex` → `sex`, `http://example.org/description` → `description`). A key whose local name would collide with another key's — its own or another's — is left as-is rather than silently merged. Most useful on an RDF import, since those attribute keys are always CURIEs (see [Importing RDF](help:help-rdf-import)), but applies to a native export file's attribute keys too.
   The result panel shows how many nodes and edges were imported, how many already existed, and any per-item errors.
 
 ## Merge never overwrites
@@ -58,6 +59,7 @@ export -g eden -o my-copy.yml
 import -f hgai-hypergraph-eden-20260920161601.export.yml
 import -f file.export.yml -g eden-v2      # under a different id
 import -f file.export.yml --merge          # into an existing hypergraph
+import-rdf -f data.ttl -g my-graph        # import RDF instead (format inferred from the extension)
 ```
 
 See [The hgsh shell](help:help-shell).
@@ -73,7 +75,7 @@ curl -X POST "http://other-server:8357/api/v1/graphs/import?mode=create" \
   -H "Authorization: Bearer $OTHER_TOKEN" --data-binary @hgai-hypergraph-eden-20260920161601.export.yml
 ```
 
-Add `graph_id=<id>` to rename, `mode=merge` to merge; space-scoped graphs use `/spaces/{space_id}/graphs/{id}/export` and `/spaces/{space_id}/graphs/import`. Details in [REST API](help:help-rest-api).
+Add `graph_id=<id>` to rename, `mode=merge` to merge, `strip_attribute_prefixes=true` for the same local-name rewrite as the Web UI's checkbox; space-scoped graphs use `/spaces/{space_id}/graphs/{id}/export` and `/spaces/{space_id}/graphs/import`. Details in [REST API](help:help-rest-api).
 
 ## The example hypergraphs are export files too
 
@@ -81,7 +83,7 @@ The seeds shipped in `scripts/seeds/` (`hello-world` and `eden`) are ordinary ex
 
 ## Importing RDF
 
-An existing **RDF** file — Turtle (`.ttl`), RDF/XML (`.rdf`, `.xml`), JSON-LD (`.jsonld`) or Notation3 (`.n3`) — can be imported the same way, mapped into hypernodes and hyperedges:
+An existing **RDF** file — Turtle (`.ttl`), RDF/XML (`.rdf`, `.xml`), JSON-LD (`.jsonld`) or Notation3 (`.n3`) — can be imported the same way, mapped into hypernodes and hyperedges. This is the condensed reference; for the full mapping model, worked examples (including OWL axioms feeding `infer: true`), and every documented caveat, see [Importing RDF (concepts, examples, caveats)](help:help-rdf-import).
 
 | RDF | Becomes |
 |---|---|

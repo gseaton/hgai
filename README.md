@@ -23,6 +23,7 @@
     - [Get a Hypernode](#get-a-hypernode)
 - [hgai Shell](#hgai-shell)
 - [Web UI](#web-ui)
+- [RDF Import](#rdf-import)
 - [Inferencing](#inferencing)
 - [SHQL — Semantic Hypergraph Query Language](#shql--semantic-hypergraph-query-language)
 - [Module Development](#module-development)
@@ -1231,6 +1232,7 @@ shql                            Run SHQL query (paste YAML, end with EOF)
 shql -f <file>                  Run SHQL query from file
 
 import -f <file> [-g id] [--merge]  Import a hypergraph from an export file
+import-rdf -f <file> [-g id] [--format ttl|n3|rdf|xml|jsonld] [--merge]  Import an RDF file (Turtle/RDF-XML/JSON-LD/N3)
 export [-o <file>] [-g id]          Export a hypergraph to hgai-hypergraph-<id>-<timestamp>.export.yml
 
 help [command]                  Show help
@@ -1245,12 +1247,47 @@ The web UI is served at `http://localhost:8357/ui/` (local dev) or `http://local
 
 - **Login** — secure authentication
 - **Dashboard** — graph overview with counts and activity
-- **Hypergraphs** — list and manage hypergraphs; **Export** any hypergraph to a `hgai-hypergraph-<id>-<timestamp>.export.yml` file and **Import** such a file into this or another instance (optionally into a space, under a new id, or merged into an existing graph)
+- **Hypergraphs** — list and manage hypergraphs; **Export** any hypergraph to a `hgai-hypergraph-<id>-<timestamp>.export.yml` file and **Import** such a file — or an RDF file (Turtle/RDF-XML/JSON-LD/N3, see [RDF Import](#rdf-import)) — into this or another instance (optionally into a space, under a new id, or merged into an existing graph)
 - **Hypernodes** — full CRUD with attribute editing
 - **Hyperedges** — full CRUD with member management
 - **Query** — interactive SHQL query editor with results visualization
 - **Help** — searchable documentation with tag-based virtual folders, landing on `docs/help/notes/home.md`; built from markdown files with front matter under `docs/help/notes/` and from any Note tagged `system:help`. The AI Chat agent reads the same topics to answer questions about HypergraphAI. See [docs/help](docs/help/notes/home.md) and the *Adding your own help topics* topic.
 - **Admin** — account management, server info (admin role only)
+
+---
+
+## RDF Import
+
+HypergraphAI can import an existing RDF file — **Turtle** (`.ttl`), **RDF/XML** (`.rdf`, `.xml`), **JSON-LD** (`.jsonld`) or **Notation3** (`.n3`) — mapping every triple onto hypernodes and hyperedges. RDF has no native n-ary relationships, so the mapping is deliberately simple: every triple becomes one two-member hyperedge.
+
+```bash
+curl -X POST "http://localhost:8357/api/v1/graphs/import/rdf?graph_id=my-graph&format=ttl" \
+  -H "Authorization: Bearer $TOKEN" --data-binary @data.ttl
+```
+
+```bash
+./hgsh.sh
+> import-rdf -f data.ttl -g my-graph   # format inferred from the extension if omitted
+```
+
+### Mapping model
+
+| RDF | Becomes |
+|---|---|
+| A subject, or a resource-valued object (IRI or blank node, never a literal) | A **hypernode**; id = the term's **full, expanded IRI** (`ex:adam` with `@prefix ex: <http://example.com/>` becomes `http://example.com/adam` — never left as the compact CURIE). A blank node's id is `bnode:<label>` |
+| `rdf:type` | The hypernode's `type` (first type's short local name) and the full expanded-IRI list in `attributes.rdf_type` |
+| A label (`rdfs:label`, `skos:prefLabel`, `foaf:name`, `dc:title`, `dcterms:title`, in that order) | The hypernode's `label`, else the IRI's local name |
+| Any other literal-valued triple | An attribute keyed by a compact `prefix:local` CURIE (`attributes["foaf:age"]`) — **not** expanded (an attribute key is a MongoDB field name; expanding it would break SHQL's `attributes: {key: value}` dot-path filter). The **value** is classified by its own lexical text: starts with a digit → a number (`int` if it parses as one, else `float`; `-1` if neither parses — even for a value RDF typed as a plain string, e.g. `"12345"`); anything else → text. Booleans and dates/timestamps keep native conversion regardless |
+| A resource-valued triple | A `hub` hyperedge: `relation` = the predicate's full expanded IRI, `members` = `[subject (seq 0), object (seq 1)]` |
+| `<P> a owl:TransitiveProperty` | *(additional to `rdf:type` above)* a `hub` hyperedge: `relation` = `owl:transitive`, `members` = `[<P> (seq 0)]` — recognized by `infer: true` exactly like a hand-asserted axiom edge |
+| `<P> owl:inverseOf <Q>` | A `hub` hyperedge: `relation` = `owl:inverse-of` (HypergraphAI's own spelling — not the real predicate's CURIE `owl:inverseOf`), `members` = `[<P> (seq 0), <Q> (seq 1)]` |
+| `<P> a owl:SymmetricProperty` | Two things: every data triple using `<P>` gets flavor `symmetric` instead of `hub` (reads both directions with no `infer: true` needed), plus a `hub` axiom hyperedge: `relation` = `owl:symmetric`, `members` = `[<P> (seq 0)]`, recognized by `infer: true` |
+
+**Not handled** (round-trips as ordinary triples/attributes instead): RDF Collections (`rdf:first`/`rdf:rest`), JSON-LD named graphs (merged into one triple set), RDF reification, and OWL/RDFS axioms other than the three above (`rdfs:subPropertyOf`, `owl:equivalentClass`, …).
+
+Attribute keys stay CURIEs (`ex:sex`), never expanded — pass `strip_attribute_prefixes=true` (or check **Suppress Attribute Prefixes** in the Web UI's Import window) to rewrite them to their local name (`ex:sex` → `sex`, `http://example.org/description` → `description`); a key whose local name would collide with another's is left untouched. Same option works on a native export import too.
+
+Same `create`/`merge` modes, per-item error handling, and 100 MB size limit as a native export import — see the Web UI's [Help](#web-ui) → *Importing RDF (concepts, examples, caveats)* topic for the full worked-example gallery and every documented gotcha (e.g. a quoted numeric-looking string like `"12345"` still becomes a number, not text).
 
 ---
 

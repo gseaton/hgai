@@ -661,6 +661,7 @@ async function openGraphImportModal() {
   document.getElementById('graph-import-id').placeholder = 'ID stored in the file';
   graphImportSetIdRequired(false);
   document.getElementById('graph-import-mode-create').checked = true;
+  document.getElementById('graph-import-strip-prefixes').checked = false;
   document.getElementById('btn-graph-import-run').disabled = true;
   document.getElementById('btn-graph-import-close').textContent = 'Cancel';
   graphImportResetResult();
@@ -744,9 +745,10 @@ document.getElementById('btn-graph-import-run').addEventListener('click', async 
   try {
     const spaceId = document.getElementById('graph-import-space').value || null;
     const mode = document.querySelector('input[name="graph-import-mode"]:checked').value;
+    const stripAttributePrefixes = document.getElementById('graph-import-strip-prefixes').checked;
     const r = graphImportFormat.kind === 'rdf'
-      ? await HGAI_API.importRdfFile(graphImportText, { spaceId, graphId, format: graphImportFormat.rdfFormat, mode })
-      : await HGAI_API.importGraphFile(graphImportText, { spaceId, graphId, mode });
+      ? await HGAI_API.importRdfFile(graphImportText, { spaceId, graphId, format: graphImportFormat.rdfFormat, mode, stripAttributePrefixes })
+      : await HGAI_API.importGraphFile(graphImportText, { spaceId, graphId, mode, stripAttributePrefixes });
     const skipped = (r.skipped_nodes || r.skipped_edges)
       ? `, skipped ${r.skipped_nodes} existing node(s) and ${r.skipped_edges} existing edge(s)` : '';
     const media = r.media_references_dropped

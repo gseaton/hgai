@@ -127,6 +127,8 @@ async def import_new_graph(
     graph_id: Optional[str] = Query(default=None, description="Target id; defaults to the id stored in the file"),
     mode: str = Query(default="create", pattern="^(create|merge)$",
                       description="create: fail if the hypergraph exists; merge: load into it (creating it if missing), skipping items already present"),
+    strip_attribute_prefixes: bool = Query(default=False,
+                      description="Rewrite every node/edge attribute key to its local name — 'ex:sex' -> 'sex', 'http://example.org/description' -> 'description'"),
     account: AccountInDB = Depends(get_current_active_account),
 ):
     """Import an export file (raw YAML/JSON request body) as an unowned hypergraph,
@@ -136,7 +138,7 @@ async def import_new_graph(
     if target and mode == "merge" and await engine.get_hypergraph(target, space_id=None):
         if not await can_access_graph(account, target) or not await can_perform(account, "write", graph_id=target):
             raise HTTPException(status_code=403, detail=f"Write access to graph '{target}' not permitted")
-    return await run_import(doc, account.username, target, None, mode)
+    return await run_import(doc, account.username, target, None, mode, strip_attribute_prefixes=strip_attribute_prefixes)
 
 
 @router.post("/import/rdf")
@@ -147,6 +149,8 @@ async def import_rdf_graph(
     format: str = Query(..., description=f"RDF serialization of the request body — one of: {', '.join(SUPPORTED_FORMATS)}"),
     mode: str = Query(default="create", pattern="^(create|merge)$",
                       description="create: fail if the hypergraph exists; merge: load into it (creating it if missing), skipping items already present"),
+    strip_attribute_prefixes: bool = Query(default=False,
+                      description="Rewrite every node/edge attribute key to its local name — 'ex:sex' -> 'sex', 'http://example.org/description' -> 'description'"),
     account: AccountInDB = Depends(get_current_active_account),
 ):
     """Import an RDF file (Turtle, RDF/XML, JSON-LD or Notation3 — raw request body) as an
@@ -157,7 +161,7 @@ async def import_rdf_graph(
     if mode == "merge" and await engine.get_hypergraph(graph_id, space_id=None):
         if not await can_access_graph(account, graph_id) or not await can_perform(account, "write", graph_id=graph_id):
             raise HTTPException(status_code=403, detail=f"Write access to graph '{graph_id}' not permitted")
-    return await run_import(doc, account.username, graph_id, None, mode)
+    return await run_import(doc, account.username, graph_id, None, mode, strip_attribute_prefixes=strip_attribute_prefixes)
 
 
 @router.post("/{graph_id}/import")
