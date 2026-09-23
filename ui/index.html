@@ -1318,13 +1318,20 @@
       <div class="modal-body">
         <p class="small text-muted mb-3">
           Load a <code>hgai-hypergraph-….export.yml</code> file exported from this or another HypergraphAI
-          instance. The hypergraph is created from the definition stored in the file.
-          Media files are not part of an export, so media attachments are not imported.
+          instance, or an <strong>RDF</strong> file — Turtle (<code>.ttl</code>), RDF/XML (<code>.rdf</code>,
+          <code>.xml</code>), JSON-LD (<code>.jsonld</code>) or Notation3 (<code>.n3</code>). Media files are
+          not part of an export, so media attachments are not imported.
         </p>
         <div class="mb-3">
-          <label class="form-label">Export file <span class="text-danger">*</span></label>
-          <input type="file" id="graph-import-file" class="form-control" accept=".yml,.yaml,.json"/>
+          <label class="form-label">File <span class="text-danger">*</span></label>
+          <input type="file" id="graph-import-file" class="form-control" accept=".yml,.yaml,.json,.ttl,.rdf,.xml,.jsonld,.n3"/>
           <div class="form-text" id="graph-import-file-info"></div>
+        </div>
+        <div id="graph-import-rdf-note" class="alert alert-info small py-2 d-none">
+          RDF has no hypergraph id of its own — every triple's subject and every resource-valued object
+          becomes a hypernode; literal-valued triples become attributes; resource-valued triples become
+          <code>hub</code> hyperedges (subject first, object second). Give it a <strong>Hypergraph ID</strong> below.
+          See <a href="#" id="graph-import-rdf-help-link">Exporting and importing hypergraphs</a>.
         </div>
         <div class="row g-3 mb-3">
           <div class="col-md-6">
@@ -1334,7 +1341,7 @@
             </select>
           </div>
           <div class="col-md-6">
-            <label class="form-label">Hypergraph ID <span class="text-muted fw-normal small">(optional)</span></label>
+            <label class="form-label" id="graph-import-id-label">Hypergraph ID <span class="text-muted fw-normal small">(optional)</span></label>
             <input type="text" id="graph-import-id" class="form-control font-monospace" placeholder="ID stored in the file"/>
           </div>
         </div>

@@ -59,7 +59,7 @@ async def create_node(
     return HypernodeResponse(**node.model_dump())
 
 
-@router.get("/{node_id}", response_model=HypernodeResponse)
+@router.get("/{node_id:path}", response_model=HypernodeResponse)
 async def get_node(
     graph_id: str,
     node_id: str,
@@ -71,7 +71,7 @@ async def get_node(
     return HypernodeResponse(**node.model_dump())
 
 
-@router.put("/{node_id}", response_model=HypernodeResponse)
+@router.put("/{node_id:path}", response_model=HypernodeResponse)
 async def update_node(
     graph_id: str,
     node_id: str,
@@ -84,7 +84,7 @@ async def update_node(
     return HypernodeResponse(**node.model_dump())
 
 
-@router.delete("/{node_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{node_id:path}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_node(
     graph_id: str,
     node_id: str,

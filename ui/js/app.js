@@ -627,17 +627,39 @@ window.exportGraphFile = async (id, spaceId) => {
 };
 
 let graphImportText = null;
+let graphImportFormat = null; // null = native hgai_export; else one of RDF_EXTENSION_FORMATS' values
+
+// Extension -> RDF format alias the server's resolve_format() recognizes
+// (hgai/core/rdf_import.py). '.rdf' and '.xml' both mean RDF/XML.
+const RDF_EXTENSION_FORMATS = { '.ttl': 'ttl', '.n3': 'n3', '.rdf': 'rdf', '.xml': 'xml', '.jsonld': 'jsonld' };
+const NATIVE_EXPORT_EXTENSIONS = ['.yml', '.yaml', '.json'];
+
+function graphImportDetectFormat(filename) {
+  const ext = ('.' + (filename.split('.').pop() || '')).toLowerCase();
+  if (NATIVE_EXPORT_EXTENSIONS.includes(ext)) return { kind: 'export' };
+  if (ext in RDF_EXTENSION_FORMATS) return { kind: 'rdf', rdfFormat: RDF_EXTENSION_FORMATS[ext] };
+  return null;
+}
 
 function graphImportResetResult() {
   document.getElementById('graph-import-result').innerHTML = '';
 }
 
+function graphImportSetIdRequired(required) {
+  document.getElementById('graph-import-rdf-note').classList.toggle('d-none', !required);
+  document.getElementById('graph-import-id-label').innerHTML = required
+    ? 'Hypergraph ID <span class="text-danger">*</span>'
+    : 'Hypergraph ID <span class="text-muted fw-normal small">(optional)</span>';
+}
+
 async function openGraphImportModal() {
   graphImportText = null;
+  graphImportFormat = null;
   document.getElementById('graph-import-file').value = '';
   document.getElementById('graph-import-file-info').textContent = '';
   document.getElementById('graph-import-id').value = '';
   document.getElementById('graph-import-id').placeholder = 'ID stored in the file';
+  graphImportSetIdRequired(false);
   document.getElementById('graph-import-mode-create').checked = true;
   document.getElementById('btn-graph-import-run').disabled = true;
   document.getElementById('btn-graph-import-close').textContent = 'Cancel';
@@ -646,8 +668,10 @@ async function openGraphImportModal() {
   bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-graph-import')).show();
 }
 
-// The hypergraph's id/label are read out of the file only to show what it
-// contains; the server does the real parsing and validation on import.
+// The hypergraph's id/label are read out of a native export file only to show
+// what it contains; the server does the real parsing and validation on import.
+// RDF files have no embedded id (graphImportDetectFormat routes those away
+// from this function entirely), so this never runs for them.
 function graphImportPeek(text, filename) {
   try {
     if (filename.toLowerCase().endsWith('.json')) {
@@ -665,38 +689,64 @@ function graphImportPeek(text, filename) {
 
 document.getElementById('btn-import-graph').addEventListener('click', openGraphImportModal);
 
+document.getElementById('graph-import-rdf-help-link').addEventListener('click', e => {
+  e.preventDefault();
+  bootstrap.Modal.getInstance(document.getElementById('modal-graph-import'))?.hide();
+  showScreen('help');
+  openHelpTopic('help-export-import');
+});
+
 document.getElementById('graph-import-file').addEventListener('change', async e => {
   const file = e.target.files[0];
   const info = document.getElementById('graph-import-file-info');
   const run = document.getElementById('btn-graph-import-run');
   graphImportResetResult();
   graphImportText = null;
+  graphImportFormat = null;
+  document.getElementById('graph-import-id').placeholder = 'ID stored in the file';
+  graphImportSetIdRequired(false);
   run.disabled = true;
   if (!file) { info.textContent = ''; return; }
+  const detected = graphImportDetectFormat(file.name);
+  if (!detected) {
+    info.textContent = 'Unsupported file type — use .yml/.yaml/.json (export) or .ttl/.rdf/.xml/.jsonld/.n3 (RDF)';
+    return;
+  }
   try {
     graphImportText = await file.text();
   } catch {
     info.textContent = 'Could not read the file';
     return;
   }
-  const { id, label } = graphImportPeek(graphImportText, file.name);
-  info.textContent = `${file.name} — ${(file.size / 1024).toFixed(1)} KB` + (id ? ` — hypergraph "${id}"${label ? ` (${label})` : ''}` : '');
-  if (id) document.getElementById('graph-import-id').placeholder = id;
+  graphImportFormat = detected;
+  if (detected.kind === 'rdf') {
+    graphImportSetIdRequired(true);
+    info.textContent = `${file.name} — ${(file.size / 1024).toFixed(1)} KB — RDF (${detected.rdfFormat})`;
+  } else {
+    const { id, label } = graphImportPeek(graphImportText, file.name);
+    info.textContent = `${file.name} — ${(file.size / 1024).toFixed(1)} KB` + (id ? ` — hypergraph "${id}"${label ? ` (${label})` : ''}` : '');
+    if (id) document.getElementById('graph-import-id').placeholder = id;
+  }
   run.disabled = false;
 });
 
 document.getElementById('btn-graph-import-run').addEventListener('click', async () => {
   const run = document.getElementById('btn-graph-import-run');
   const out = document.getElementById('graph-import-result');
-  if (!graphImportText) return;
+  if (!graphImportText || !graphImportFormat) return;
+  const graphId = document.getElementById('graph-import-id').value.trim() || null;
+  if (graphImportFormat.kind === 'rdf' && !graphId) {
+    out.innerHTML = '<div class="alert alert-danger mb-0">RDF files have no embedded id — enter a Hypergraph ID above.</div>';
+    return;
+  }
   run.disabled = true;
   out.innerHTML = '<div class="d-flex align-items-center gap-2"><div class="spinner-border spinner-border-sm"></div> Importing…</div>';
   try {
-    const r = await HGAI_API.importGraphFile(graphImportText, {
-      spaceId: document.getElementById('graph-import-space').value || null,
-      graphId: document.getElementById('graph-import-id').value.trim() || null,
-      mode: document.querySelector('input[name="graph-import-mode"]:checked').value,
-    });
+    const spaceId = document.getElementById('graph-import-space').value || null;
+    const mode = document.querySelector('input[name="graph-import-mode"]:checked').value;
+    const r = graphImportFormat.kind === 'rdf'
+      ? await HGAI_API.importRdfFile(graphImportText, { spaceId, graphId, format: graphImportFormat.rdfFormat, mode })
+      : await HGAI_API.importGraphFile(graphImportText, { spaceId, graphId, mode });
     const skipped = (r.skipped_nodes || r.skipped_edges)
       ? `, skipped ${r.skipped_nodes} existing node(s) and ${r.skipped_edges} existing edge(s)` : '';
     const media = r.media_references_dropped

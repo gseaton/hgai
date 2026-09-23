@@ -5,11 +5,12 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
-from hgai.api.transfer_http import export_response, read_export_body, run_import
+from hgai.api.transfer_http import export_response, read_export_body, read_rdf_body, run_import
 from hgai.api.deps import get_current_active_account, parse_sort_param, require_graph_access, require_space_role
 from hgai.api.routers.hyperedges import EDGE_SORT_FIELDS
 from hgai.api.routers.hypernodes import NODE_SORT_FIELDS
 from hgai.core import engine, space_engine
+from hgai.core.rdf_import import SUPPORTED_FORMATS
 from hgai.models.account import AccountInDB
 from hgai.models.common import PaginatedResponse
 from hgai.models.hyperedge import HyperedgeCreate, HyperedgeResponse, HyperedgeUpdate
@@ -246,6 +247,25 @@ async def import_new_space_graph(
     return await run_import(doc, account.username, graph_id, space_id, mode)
 
 
+@router.post("/{space_id}/graphs/import/rdf")
+async def import_rdf_space_graph(
+    space_id: str,
+    request: Request,
+    graph_id: str = Query(..., description="Target hypergraph id (RDF files have no embedded id, unlike an hgai_export file)"),
+    label: Optional[str] = Query(default=None, description="Display label for a newly-created hypergraph; defaults to graph_id"),
+    format: str = Query(..., description=f"RDF serialization of the request body — one of: {', '.join(SUPPORTED_FORMATS)}"),
+    mode: str = Query(default="create", pattern="^(create|merge)$",
+                      description="create: fail if the graph exists in the space; merge: load into it (creating it if missing), skipping items already present"),
+    account: AccountInDB = Depends(require_space_role(SpaceRole.member)),
+):
+    """Import an RDF file (Turtle, RDF/XML, JSON-LD or Notation3 — raw request body) as a
+    hypergraph owned by this space. See POST /graphs/import/rdf for the triple mapping."""
+    if not await space_engine.get_space(space_id):
+        raise HTTPException(status_code=404, detail=f"Space '{space_id}' not found")
+    doc = await read_rdf_body(request, graph_id, format, label)
+    return await run_import(doc, account.username, graph_id, space_id, mode)
+
+
 @router.post("/{space_id}/graphs/{graph_id}/import")
 async def import_space_graph(
     space_id: str,
@@ -303,7 +323,7 @@ async def create_space_node(
     return HypernodeResponse(**node.model_dump())
 
 
-@router.get("/{space_id}/graphs/{graph_id}/nodes/{node_id}", response_model=HypernodeResponse)
+@router.get("/{space_id}/graphs/{graph_id}/nodes/{node_id:path}", response_model=HypernodeResponse)
 async def get_space_node(
     space_id: str,
     graph_id: str,
@@ -316,7 +336,7 @@ async def get_space_node(
     return HypernodeResponse(**node.model_dump())
 
 
-@router.put("/{space_id}/graphs/{graph_id}/nodes/{node_id}", response_model=HypernodeResponse)
+@router.put("/{space_id}/graphs/{graph_id}/nodes/{node_id:path}", response_model=HypernodeResponse)
 async def update_space_node(
     space_id: str,
     graph_id: str,
@@ -330,7 +350,7 @@ async def update_space_node(
     return HypernodeResponse(**node.model_dump())
 
 
-@router.delete("/{space_id}/graphs/{graph_id}/nodes/{node_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{space_id}/graphs/{graph_id}/nodes/{node_id:path}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_space_node(
     space_id: str,
     graph_id: str,
@@ -400,7 +420,7 @@ async def create_space_edge(
     return HyperedgeResponse(**edge.model_dump())
 
 
-@router.get("/{space_id}/graphs/{graph_id}/edges/{edge_id}", response_model=HyperedgeResponse)
+@router.get("/{space_id}/graphs/{graph_id}/edges/{edge_id:path}", response_model=HyperedgeResponse)
 async def get_space_edge(
     space_id: str,
     graph_id: str,
@@ -413,7 +433,7 @@ async def get_space_edge(
     return HyperedgeResponse(**edge.model_dump())
 
 
-@router.put("/{space_id}/graphs/{graph_id}/edges/{edge_id}", response_model=HyperedgeResponse)
+@router.put("/{space_id}/graphs/{graph_id}/edges/{edge_id:path}", response_model=HyperedgeResponse)
 async def update_space_edge(
     space_id: str,
     graph_id: str,
@@ -427,7 +447,7 @@ async def update_space_edge(
     return HyperedgeResponse(**edge.model_dump())
 
 
-@router.delete("/{space_id}/graphs/{graph_id}/edges/{edge_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{space_id}/graphs/{graph_id}/edges/{edge_id:path}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_space_edge(
     space_id: str,
     graph_id: str,

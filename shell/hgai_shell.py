@@ -178,6 +178,17 @@ class HgaiClient:
         self._raise_for_export_status(resp)
         return resp.json()
 
+    def import_rdf_file(self, text, graph_id, fmt, mode="create"):
+        """POST raw RDF text (Turtle/RDF-XML/JSON-LD/N3); graph_id is required — RDF has no embedded id."""
+        headers = dict(self._headers(), **{"Content-Type": "text/plain"})
+        resp = self._client.post(
+            f"{self.base_url}/api/v1/graphs/import/rdf",
+            params={"graph_id": graph_id, "format": fmt, "mode": mode},
+            content=text.encode("utf-8"), headers=headers,
+        )
+        self._raise_for_export_status(resp)
+        return resp.json()
+
     @staticmethod
     def _raise_for_export_status(resp):
         if resp.status_code == 401:
@@ -232,7 +243,7 @@ COMMANDS = [
     "use", "ls", "get", "create", "update", "delete",
     "delete-node", "delete-edge",
     "shql", "shql-validate",
-    "import", "export",
+    "import", "import-rdf", "export",
     "ping", "sync", "mesh-query",
     "cls", "help", "exit", "quit",
 ]
@@ -292,6 +303,7 @@ HELP_TEXT = {
         shql-validate -f <file>  Validate an SHQL query from a file
         Alias: sv"""),
     "import": "import -f <file> [-g <graph-id>] [--merge]  —  Import a hypergraph from an export file (creates it; --merge loads into an existing one)",
+    "import-rdf": "import-rdf -f <file> -g <graph-id> [--format ttl|n3|rdf|xml|jsonld] [--merge]  —  Import a Turtle/RDF-XML/JSON-LD/N3 file (format inferred from the extension if omitted)",
     "export": "export [-o <file>] [-g <graph-id>]  —  Export a hypergraph to hgai-hypergraph-<id>-<timestamp>.export.yml (or -o <file>)",
     "help": "help [command]  —  Show help for a command or list all commands",
     "exit": "exit  —  Exit the shell",
@@ -432,6 +444,7 @@ class HgaiShell:
             "sq": self.cmd_shql,
             "sv": self.cmd_shql_validate,
             "import": self.cmd_import,
+            "import-rdf": self.cmd_import_rdf,
             "export": self.cmd_export,
             "ping": self.cmd_ping,
             "sync": self.cmd_sync,
@@ -855,6 +868,35 @@ class HgaiShell:
             print(f"    - {detail}")
         if result.get("media_references_dropped"):
             print(f"    (media attachments are not part of an export: {result['media_references_dropped']} reference(s) not imported)")
+
+    def cmd_import_rdf(self, args):
+        self._require_connection()
+        filepath = None; graph_id = None; fmt = None
+        merge = "--merge" in args
+
+        for i, a in enumerate(args):
+            if a == "-f" and i+1 < len(args): filepath = args[i+1]
+            if a == "-g" and i+1 < len(args): graph_id = args[i+1]
+            if a == "--format" and i+1 < len(args): fmt = args[i+1]
+
+        if not filepath or not graph_id:
+            error("Usage: import-rdf -f <file> -g <graph-id> [--format ttl|n3|rdf|xml|jsonld] [--merge]"); return
+
+        if not fmt:
+            ext = os.path.splitext(filepath)[1].lower()
+            fmt = {".ttl": "ttl", ".n3": "n3", ".rdf": "rdf", ".xml": "xml", ".jsonld": "jsonld"}.get(ext)
+            if not fmt:
+                error(f"Can't infer the RDF format from '{filepath}' — pass --format explicitly"); return
+
+        with open(filepath, encoding="utf-8") as f:
+            text = f.read()
+
+        result = self.client.import_rdf_file(text, graph_id, fmt, mode="merge" if merge else "create")
+        verb = "Merged into" if not result.get("graph_created") else "Created"
+        success(f"{verb} hypergraph '{result.get('graph_id')}': {result.get('nodes',0)} nodes, {result.get('edges',0)} edges imported "
+                f"({result.get('skipped_nodes',0)} nodes / {result.get('skipped_edges',0)} edges already present, {result.get('errors',0)} errors)")
+        for detail in result.get("error_details", []):
+            print(f"    - {detail}")
 
     def cmd_export(self, args):
         self._require_connection()

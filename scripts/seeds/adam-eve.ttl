@@ -1,0 +1,26 @@
+@prefix ex: <http://example.org/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+
+# Generation 1 & 2
+ex:Cain ex:hasParent ex:Adam, ex:Eve .
+ex:Abel ex:hasParent ex:Adam, ex:Eve .
+ex:Seth ex:hasParent ex:Adam, ex:Eve .
+
+# Generation 3
+ex:Enoch ex:hasParent ex:Cain .
+ex:Enosh ex:hasParent ex:Seth .
+
+# Semantics
+ex:hasParent a owl:TransitiveProperty .
+ex:hasChild a owl:TransitiveProperty .
+ex:hasParent owl:inverseOf ex:hasChild .
+
+# Siblings
+ex:sibling a owl:SymmetricProperty .
+ex:Cain ex:sibling ex:Abel .
+ex:Cain ex:sibling ex:Seth .
+
+# Attributes
+ex:Cain ex:sex "male" .
+
+ex:Eve ex:sex "female" .

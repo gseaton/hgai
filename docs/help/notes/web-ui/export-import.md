@@ -2,14 +2,14 @@
 id: help-export-import
 label: Exporting and importing hypergraphs
 name: export-import
-description: Save a hypergraph to an hgai-hypergraph-<id>-<timestamp>.export.yml file and load it into this or another HypergraphAI instance — UI, shell and REST.
-tags: ["//Using the Web UI", export, import, migrate, backup, yaml, hypergraph]
+description: Save a hypergraph to an hgai-hypergraph-<id>-<timestamp>.export.yml file and load it into this or another HypergraphAI instance — UI, shell and REST. Also import RDF (Turtle, RDF/XML, JSON-LD, Notation3).
+tags: ["//Using the Web UI", export, import, migrate, backup, yaml, hypergraph, rdf, turtle, jsonld]
 status: active
 ---
 
 # Exporting and importing hypergraphs
 
-A hypergraph can be saved to a single file and imported into another HypergraphAI instance — to move data between servers, share a knowledge base, seed a new environment, or keep a portable copy of one graph. (For whole-database backups see [Backup and restore](help:help-backup).)
+A hypergraph can be saved to a single file and imported into another HypergraphAI instance — to move data between servers, share a knowledge base, seed a new environment, or keep a portable copy of one graph. (For whole-database backups see [Backup and restore](help:help-backup).) You can also import an existing **RDF** file — Turtle, RDF/XML, JSON-LD or Notation3 — see "Importing RDF" further down this topic.
 
 ## The export file
 
@@ -79,9 +79,35 @@ Add `graph_id=<id>` to rename, `mode=merge` to merge; space-scoped graphs use `/
 
 The seeds shipped in `scripts/seeds/` (`hello-world` and `eden`) are ordinary export files, loaded by `python scripts/seed_data.py`. Adding your own is as simple as dropping an `hgai-hypergraph-<id>.export.yml` file into that folder ([Quick Start](help:help-quick-start)).
 
+## Importing RDF
+
+An existing **RDF** file — Turtle (`.ttl`), RDF/XML (`.rdf`, `.xml`), JSON-LD (`.jsonld`) or Notation3 (`.n3`) — can be imported the same way, mapped into hypernodes and hyperedges:
+
+| RDF | Becomes |
+|---|---|
+| A subject, or a resource-valued object (an IRI or blank node — never a literal) | A **hypernode**. Its id is the term's **full, expanded IRI** — a `prefix:local` shorthand (`ex:adam`, with `@prefix ex: <http://example.com/>`) always expands to the complete IRI (`http://example.com/adam`), never left compacted. A blank node's id is `bnode:<label>` (it has no IRI to expand) |
+| `rdf:type` | The hypernode's `type` (first type's short local name, if several — a display category, not an identifier) and the full expanded-IRI list in `attributes.rdf_type` |
+| A label (`rdfs:label`, `skos:prefLabel`, `foaf:name`, `dc:title` or `dcterms:title`, in that order) | The hypernode's `label` — falling back to the IRI's own local name |
+| Any other **literal**-valued triple | An **attribute** on the subject. Unlike every id above, the attribute *key* is kept as a compact `prefix:local` CURIE (`attributes["foaf:age"]`), not expanded — an attribute key becomes a database field name, and expanding it would break SHQL's `attributes: {key: value}` pattern filter. Several values for the same predicate become a list; numbers, booleans and datetimes convert to native types, anything else keeps its lexical string |
+| A **resource**-valued triple | A `hub` **hyperedge**: relation = the predicate's full expanded IRI, members = `[subject (seq 0), object (seq 1)]` |
+| `<P> a owl:TransitiveProperty` | *(in addition to* `rdf:type` *above)* a `hub` hyperedge: relation `owl:transitive`, single member (seq 0) `<P>` — recognized by [Inferencing](help:help-inferencing)'s `infer: true` exactly like one hand-asserted in a seed file |
+| `<P> owl:inverseOf <Q>` | A `hub` hyperedge: relation `owl:inverse-of` (HypergraphAI's own hyphenated spelling — never the real predicate's own CURIE `owl:inverseOf`), members `[<P> (seq 0), <Q> (seq 1)]` |
+| `<P> a owl:SymmetricProperty` | *(in addition to* `rdf:type` *above)* two things: every **data** triple using `<P>` as its predicate gets a `symmetric`-flavored hyperedge instead of `hub` (relation stays `<P>`'s own full IRI; members stay `[subject (seq 0), object (seq 1)]`) — a `symmetric` edge already reads both directions without `infer: true`, see [Hyperedges](help:help-hyperedges) — and also a `hub` axiom hyperedge: relation `owl:symmetric`, single member (seq 0) `<P>`, recognized by [Inferencing](help:help-inferencing)'s `infer: true` the same way as the `owl:transitive` axiom edge above |
+
+Not handled: RDF Collections (`rdf:first`/`rdf:rest` lists) import as plain triples rather than a native list; JSON-LD named graphs are merged into one triple set; RDF reification imports as plain triples, not edge-level provenance. Other OWL/RDFS axioms (`rdfs:subPropertyOf`, ...) are not specially recognized — they round-trip as ordinary triples/attributes, not as [Inferencing](help:help-inferencing) axiom edges.
+
+In the Web UI, click **Import** and choose the RDF file — since RDF has no hypergraph id of its own, the **Hypergraph ID** field becomes required. Over REST:
+
+```bash
+curl -X POST "http://localhost:8357/api/v1/graphs/import/rdf?graph_id=my-graph&format=ttl" \
+  -H "Authorization: Bearer $TOKEN" --data-binary @data.ttl
+```
+
+`format` is one of `ttl`, `n3`, `rdf` (or `xml`), `jsonld`; `label`, `mode` (`create`/`merge`) and `graph_id` work the same as a native import. Space-scoped graphs use `/spaces/{space_id}/graphs/import/rdf`. Same per-item error handling, merge behavior and permissions as a native export import (below).
+
 ## Good to know
 
 - One bad item doesn't abort an import: it is counted as an error (the first 25 messages are shown) and everything else loads.
 - Edge references to nodes that are not in the file (for example, cross-graph references) are kept as-is.
-- Very large graphs export completely — there is no row cap — but the file is limited to 100 MB on import.
+- Very large graphs export completely — there is no row cap — but the file is limited to 100 MB on import (RDF files too).
 - Exporting needs *read* access to the graph; importing a new hypergraph needs only a signed-in account (like creating one), while merging into an existing one needs *write* access. Space imports need space membership.

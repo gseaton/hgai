@@ -84,7 +84,7 @@ async def create_edge(
     return HyperedgeResponse(**edge.model_dump())
 
 
-@router.get("/{edge_id}", response_model=HyperedgeResponse)
+@router.get("/{edge_id:path}", response_model=HyperedgeResponse)
 async def get_edge(
     graph_id: str,
     edge_id: str,
@@ -96,7 +96,7 @@ async def get_edge(
     return HyperedgeResponse(**edge.model_dump())
 
 
-@router.put("/{edge_id}", response_model=HyperedgeResponse)
+@router.put("/{edge_id:path}", response_model=HyperedgeResponse)
 async def update_edge(
     graph_id: str,
     edge_id: str,
@@ -109,7 +109,7 @@ async def update_edge(
     return HyperedgeResponse(**edge.model_dump())
 
 
-@router.delete("/{edge_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{edge_id:path}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_edge(
     graph_id: str,
     edge_id: str,

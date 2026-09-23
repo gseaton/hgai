@@ -28,6 +28,9 @@ python-dotenv==1.0.1
 # YAML
 pyyaml==6.0.2
 
+# RDF import (Turtle, RDF/XML, JSON-LD, Notation3) — hgai/core/rdf_import.py
+rdflib==7.6.0
+
 # HTTP client (for mesh/remote graph queries)
 httpx==0.28.1
 

@@ -139,6 +139,34 @@ One bad item does not abort the import — it is counted in `errors` (first 25 m
 
 Import an export document (JSON body) into an **existing** hypergraph, skipping items already present. Same response as above; `404` if the hypergraph doesn't exist. Space-scoped: `/spaces/{space_id}/graphs/{id}/import`.
 
+### POST /graphs/import/rdf
+
+Import an RDF file — Turtle, RDF/XML, JSON-LD or Notation3 — as a **new hypergraph**. The request body is the **raw RDF text** (e.g. `curl --data-binary @data.ttl`).
+
+| Query Param | Type | Default | Description |
+|-------------|------|---------|-------------|
+| `graph_id` | string | *(required)* | Target hypergraph id — RDF has no embedded id, unlike an `hgai_export` file |
+| `format` | string | *(required)* | `ttl`/`turtle`, `n3`, `rdf`/`xml` (RDF/XML), `jsonld`/`json-ld` |
+| `label` | string | `graph_id` | Display label for a newly-created hypergraph |
+| `mode` | string | `create` | Same as `POST /graphs/import` |
+
+Mapping into hypernodes and hyperedges:
+
+| RDF | Becomes |
+|---|---|
+| A subject, or a resource-valued object (IRI or blank node, never a literal) | A **hypernode**; id = the term's **full, expanded IRI** (`ex:adam` with `@prefix ex: <http://example.com/>` becomes `http://example.com/adam` — never left as the compact CURIE). A blank node's id is `bnode:<label>` |
+| `rdf:type` | The hypernode's `type` (first type's short local name) and the full expanded-IRI list in `attributes.rdf_type` |
+| A label (`rdfs:label`, `skos:prefLabel`, `foaf:name`, `dc:title`, `dcterms:title`, in that order) | The hypernode's `label`, else the IRI's local name |
+| Any other literal-valued triple | An attribute keyed by a compact `prefix:local` CURIE (`attributes["foaf:age"]`) — **not** expanded, unlike every id above: an attribute key is a database field name, and expanding it would break SHQL's `attributes: {key: value}` pattern filter (`f"attributes.{k}"` as a MongoDB path). Multiple values become a list; numbers/booleans/datetimes convert to native types, else the lexical string |
+| A resource-valued triple | A `hub` hyperedge: `relation` = the predicate's full expanded IRI, `members` = `[subject (seq 0), object (seq 1)]` |
+| `<P> a owl:TransitiveProperty` | *(additional to `rdf:type` above)* a `hub` hyperedge: `relation` = `owl:transitive`, `members` = `[<P> (seq 0)]` — recognized by `infer: true` (see [Inferencing](help:help-inferencing)) exactly like a hand-asserted axiom edge |
+| `<P> owl:inverseOf <Q>` | A `hub` hyperedge: `relation` = `owl:inverse-of` (HypergraphAI's own spelling — not the real predicate's CURIE `owl:inverseOf`), `members` = `[<P> (seq 0), <Q> (seq 1)]` |
+| `<P> a owl:SymmetricProperty` | *(additional to `rdf:type` above)* two things: every data triple using `<P>` gets flavor `symmetric` instead of `hub` (`relation` stays `<P>`'s own full IRI, `members` stay `[subject (seq 0), object (seq 1)]` — a `symmetric` edge reads both directions with no `infer: true` needed), plus a `hub` axiom hyperedge: `relation` = `owl:symmetric`, `members` = `[<P> (seq 0)]` — recognized by `infer: true` exactly like the `owl:transitive` axiom edge above |
+
+Not handled: RDF Collections (`rdf:first`/`rdf:rest`) import as plain triples, not a native list; JSON-LD named graphs are merged into one triple set; RDF reification imports as plain triples, not edge-level provenance. Other OWL/RDFS axioms (`rdfs:subPropertyOf`, ...) are not specially recognized.
+
+Same response shape, per-item error handling, and 100 MB body limit as `POST /graphs/import`. Space-scoped: `POST /spaces/{space_id}/graphs/import/rdf` (requires space membership). `400` for an unknown `format` or a file that fails to parse.
+
 ---
 
 ## Hypernodes

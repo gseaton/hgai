@@ -132,6 +132,14 @@ const HGAI_API = (() => {
     const resp = await _fileRequest('POST', path, { graph_id: graphId, mode }, text, 'application/x-yaml');
     return resp.json();
   }
+  // text = an RDF file's contents (Turtle/RDF-XML/JSON-LD/N3). format: one of
+  // 'ttl'|'n3'|'rdf'|'xml'|'jsonld'. Unlike a native export file, RDF has no
+  // embedded hypergraph id, so graphId is required.
+  async function importRdfFile(text, { spaceId = null, graphId, label = null, format, mode = 'create' } = {}) {
+    const path = spaceId ? `/spaces/${encodeURIComponent(spaceId)}/graphs/import/rdf` : '/graphs/import/rdf';
+    const resp = await _fileRequest('POST', path, { graph_id: graphId, label, format, mode }, text, 'text/plain');
+    return resp.json();
+  }
 
   // ── Hypernodes ────────────────────────────────────────────────────────────
   async function listNodes(graphId, params = {}) { return request('GET', `/graphs/${graphId}/nodes`, null, params); }
@@ -385,7 +393,7 @@ const HGAI_API = (() => {
     // server
     getServerInfo,
     // graphs
-    listGraphs, getGraph, createGraph, updateGraph, deleteGraph, getGraphStats, exportGraph, importGraph, downloadGraphExport, importGraphFile,
+    listGraphs, getGraph, createGraph, updateGraph, deleteGraph, getGraphStats, exportGraph, importGraph, downloadGraphExport, importGraphFile, importRdfFile,
     // nodes
     listNodes, getNode, createNode, updateNode, deleteNode,
     listSpaceNodes, getSpaceNode, createSpaceNode, updateSpaceNode, deleteSpaceNode,

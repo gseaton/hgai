@@ -539,6 +539,7 @@ PUT    /api/v1/graphs/{id}             # Update hypergraph
 DELETE /api/v1/graphs/{id}             # Delete hypergraph
 GET    /api/v1/graphs/{id}/export?format=yaml   # Export to hgai-hypergraph-<id>-<timestamp>.export.yml
 POST   /api/v1/graphs/import?mode=create|merge  # Import an export file (raw body) as a new/merged hypergraph
+POST   /api/v1/graphs/import/rdf?graph_id=&format=&mode=  # Import RDF (Turtle/RDF-XML/JSON-LD/N3) — mapped to hypernodes + hyperedges
 ```
 
 ### Hypernodes

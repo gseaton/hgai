@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException, Request
 from fastapi.responses import Response
 
-from hgai.core import transfer
+from hgai.core import rdf_import, transfer
 
 MAX_IMPORT_BYTES = 100 * 1024 * 1024  # 100 MB of export text
 
@@ -37,6 +37,28 @@ async def read_export_body(request: Request) -> Dict[str, Any]:
     try:
         return transfer.parse_export(body)
     except transfer.ExportFormatError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+async def read_rdf_body(
+    request: Request, graph_id: str, fmt: Optional[str], label: Optional[str],
+) -> Dict[str, Any]:
+    """The request body is the raw text of an RDF file (Turtle, RDF/XML,
+    JSON-LD or Notation3); converted to the same in-memory shape as a native
+    export document so it can go through the same `run_import` as one."""
+    body = await request.body()
+    if len(body) > MAX_IMPORT_BYTES:
+        raise HTTPException(status_code=413, detail=f"RDF file exceeds the {MAX_IMPORT_BYTES // (1024 * 1024)} MB limit")
+    if not body.strip():
+        raise HTTPException(status_code=400, detail="The request body is empty — send the RDF file's text")
+    try:
+        text = body.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="The file is not UTF-8 text")
+    try:
+        resolved = rdf_import.resolve_format(fmt)
+        return rdf_import.rdf_to_export_document(text, resolved, graph_id, label=label)
+    except rdf_import.RdfFormatError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 

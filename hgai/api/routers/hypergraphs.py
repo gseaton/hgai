@@ -4,10 +4,11 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
-from hgai.api.transfer_http import export_response, read_export_body, run_import
+from hgai.api.transfer_http import export_response, read_export_body, read_rdf_body, run_import
 from hgai.api.deps import get_current_active_account, parse_sort_param, require_graph_access
 from hgai.core import engine
 from hgai.core.auth import can_access_graph, can_perform, require_admin
+from hgai.core.rdf_import import SUPPORTED_FORMATS
 from hgai.models.account import AccountInDB
 from hgai.models.common import PaginatedResponse
 from hgai.models.hypergraph import (
@@ -136,6 +137,27 @@ async def import_new_graph(
         if not await can_access_graph(account, target) or not await can_perform(account, "write", graph_id=target):
             raise HTTPException(status_code=403, detail=f"Write access to graph '{target}' not permitted")
     return await run_import(doc, account.username, target, None, mode)
+
+
+@router.post("/import/rdf")
+async def import_rdf_graph(
+    request: Request,
+    graph_id: str = Query(..., description="Target hypergraph id (RDF files have no embedded id, unlike an hgai_export file)"),
+    label: Optional[str] = Query(default=None, description="Display label for a newly-created hypergraph; defaults to graph_id"),
+    format: str = Query(..., description=f"RDF serialization of the request body — one of: {', '.join(SUPPORTED_FORMATS)}"),
+    mode: str = Query(default="create", pattern="^(create|merge)$",
+                      description="create: fail if the hypergraph exists; merge: load into it (creating it if missing), skipping items already present"),
+    account: AccountInDB = Depends(get_current_active_account),
+):
+    """Import an RDF file (Turtle, RDF/XML, JSON-LD or Notation3 — raw request body) as an
+    unowned hypergraph. Every subject and every resource-valued object becomes a hypernode;
+    every literal-valued triple becomes an attribute on its subject; every resource-valued
+    triple becomes a `hub` hyperedge (relation = predicate, members = [subject, object])."""
+    doc = await read_rdf_body(request, graph_id, format, label)
+    if mode == "merge" and await engine.get_hypergraph(graph_id, space_id=None):
+        if not await can_access_graph(account, graph_id) or not await can_perform(account, "write", graph_id=graph_id):
+            raise HTTPException(status_code=403, detail=f"Write access to graph '{graph_id}' not permitted")
+    return await run_import(doc, account.username, graph_id, None, mode)
 
 
 @router.post("/{graph_id}/import")

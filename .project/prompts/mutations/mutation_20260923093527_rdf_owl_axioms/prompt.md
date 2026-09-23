@@ -1,0 +1,3 @@
+# Prompt
+
+Please during RDF import, convert OWL transitive properties to HypergraphAI transitive hyperedges (e.g. ex:hasParent a owl:TransitiveProperty -> hyperedge: flavor of 'hub', relation of 'owl:transitive' and single member (0) ex:hasParent (fully prefix expanded to HypergraphAI reference).  Please also during RDF import, convert OWL inverseOf to HypergraphAI hyperedge (e.g. ex:hasParent owl:inverseOf ex:hasChild -> hyperedge: flavor of 'hub', relation of 'owl:inverse-of', and primary member (0) of ex:hasParent and second member (1) of ex:hasChild (fully expanded prefixed HypergraphAI reference)).
