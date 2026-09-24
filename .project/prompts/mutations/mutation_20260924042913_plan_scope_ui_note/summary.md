@@ -1,0 +1,14 @@
+# Mutation Summary
+
+## Intent
+The user first asked whether any code had been written for the SPARQL-to-SHQL conversion plan yet (answered directly in chat: no — a repo search and `git status` check confirmed everything so far is documentation only, no `hgai_module_sparql_shql` module, no endpoint, no tests). The natural follow-up was whether the plan's scope even *includes* anything beyond backend code — i.e., does it cover the Web UI, shell, or MCP surfaces a person or agent would actually use to run a SPARQL query, or only the REST/engine plumbing underneath. Checking the plan directly (grepping for any UI/shell/frontend mention) showed it names none of them — Phase 7 ships a REST endpoint only. The user asked for that finding to be written into the plan.
+
+## Context
+This continues the same pattern established across the last several turns in this session: a factual question about the plan gets verified against the actual document (not answered from memory), and once confirmed, the finding is written into the plan itself as a clearly marked note rather than left only in chat. This is the sixth such propagation in this session, following the `VALUES`/`id:`-list note that was added to the plan, the gaps doc, and three Help topics.
+
+## What Changed and Why
+The note was placed immediately after Phase 7 — the phase that actually defines the plan's only client-facing deliverable (the REST endpoint) — so a reader hits the scope caveat at exactly the point where they'd otherwise assume the plan was complete. It was deliberately framed as an *omission*, not a documented decision: nothing in either architecture document argues for "backend first, UI later" as a considered phasing choice, so the note says so plainly rather than retroactively inventing a justification for a gap that was simply never addressed. The note names the three most plausible missing surfaces specifically (Web UI SPARQL input mode, an `hgsh` shell command, and MCP tool exposure) rather than a vague "and so on," and reasons briefly about which is likely most important (MCP and/or a Web UI input mode, given SPARQL is most likely to be hand-written by a developer evaluating the platform or by an AI agent — the same two audiences `hgai_query_execute`'s existing MCP exposure already serves for SHQL).
+
+## Key Decisions
+- Did not attempt to scope out *what* the UI/shell/MCP phases would actually look like (e.g. sketching a Query screen mockup or a new MCP tool signature) — the user asked for a note flagging the gap, not a design for filling it, and inventing that design unprompted would be scope creep beyond what was asked.
+- Left §6 (Recommendation & next steps) unchanged, since it doesn't make any claim about UI/shell/MCP scope that would now contradict the new note — the gap only needed stating once, at the phase list where a reader would otherwise reasonably assume "Phase 7 packaging" meant the whole delivery was done.

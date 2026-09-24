@@ -2267,7 +2267,13 @@
         <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Confirm Delete</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-body" id="modal-confirm-body">Are you sure?</div>
+      <div class="modal-body">
+        <div id="modal-confirm-body">Are you sure?</div>
+        <div id="modal-confirm-match-group" class="mt-3 d-none">
+          <label class="form-label small text-muted mb-1" id="modal-confirm-match-label">Type the name to confirm</label>
+          <input type="text" class="form-control font-monospace" id="modal-confirm-match-input" autocomplete="off" spellcheck="false"/>
+        </div>
+      </div>
       <div class="modal-footer border-0">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-danger" id="btn-confirm-delete">Delete</button>

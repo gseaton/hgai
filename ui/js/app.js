@@ -21,6 +21,7 @@ const State = {
   graphsPageSize: 50,
   pqPageSize: 20,
   confirmCallback: null,
+  confirmRequireText: null, // when set, btn-confirm-delete stays disabled until the match input equals this exactly
   graphsCache: {},       // id -> graph object (includes space_id)
   mediaCache: {},        // id -> media object, from the last list load
   pqCache: {},           // id -> parameterized query object, from the last list load
@@ -157,9 +158,28 @@ function showDetail(title, obj) {
   new bootstrap.Modal(document.getElementById('modal-detail')).show();
 }
 
-function confirmDelete(msg, cb) {
+// requireText: when given, the Delete button stays disabled until the user
+// types this exact string into the match input — extra protection against an
+// inadvertent click on a highly destructive delete (e.g. a whole hypergraph).
+function confirmDelete(msg, cb, requireText = null) {
   document.getElementById('modal-confirm-body').textContent = msg;
   State.confirmCallback = cb;
+  State.confirmRequireText = requireText;
+
+  const group = document.getElementById('modal-confirm-match-group');
+  const input = document.getElementById('modal-confirm-match-input');
+  const label = document.getElementById('modal-confirm-match-label');
+  const btn = document.getElementById('btn-confirm-delete');
+  input.value = '';
+  if (requireText) {
+    label.textContent = `Type "${requireText}" to confirm`;
+    group.classList.remove('d-none');
+    btn.disabled = true;
+  } else {
+    group.classList.add('d-none');
+    btn.disabled = false;
+  }
+
   new bootstrap.Modal(document.getElementById('modal-confirm')).show();
 }
 
@@ -290,12 +310,28 @@ function initThemeSwitcher() {
   applyTheme(getSavedTheme() || 'light');
 }
 
+document.getElementById('modal-confirm-match-input').addEventListener('input', e => {
+  document.getElementById('btn-confirm-delete').disabled = e.target.value !== State.confirmRequireText;
+});
+
 document.getElementById('btn-confirm-delete').addEventListener('click', () => {
+  if (State.confirmRequireText !== null) {
+    const typed = document.getElementById('modal-confirm-match-input').value;
+    if (typed !== State.confirmRequireText) return; // defensive — button should already be disabled
+  }
   if (State.confirmCallback) {
     State.confirmCallback();
     State.confirmCallback = null;
   }
   bootstrap.Modal.getInstance(document.getElementById('modal-confirm'))?.hide();
+});
+
+document.getElementById('modal-confirm').addEventListener('hidden.bs.modal', () => {
+  State.confirmCallback = null;
+  State.confirmRequireText = null;
+  document.getElementById('modal-confirm-match-group').classList.add('d-none');
+  document.getElementById('modal-confirm-match-input').value = '';
+  document.getElementById('btn-confirm-delete').disabled = false;
 });
 
 window.addEventListener('hgai:unauthorized', () => {
@@ -777,7 +813,7 @@ window.viewGraph = async (id, spaceId) => {
   showDetail(`Hypergraph: ${id}`, stats ? { ...g, stats } : g);
 };
 window.deleteGraph = (id, spaceId) => {
-  confirmDelete(`Delete hypergraph "${id}" and ALL its nodes and edges?`, async () => {
+  confirmDelete(`Delete hypergraph "${id}" and ALL its nodes and edges? This cannot be undone.`, async () => {
     try {
       if (spaceId) {
         await HGAI_API.deleteSpaceGraph(spaceId, id);
@@ -788,7 +824,7 @@ window.deleteGraph = (id, spaceId) => {
       loadGraphs();
       populateGraphSelector();
     } catch (err) { toast(err.message, 'danger'); }
-  });
+  }, id);
 };
 
 document.getElementById('btn-save-graph').addEventListener('click', async () => {
