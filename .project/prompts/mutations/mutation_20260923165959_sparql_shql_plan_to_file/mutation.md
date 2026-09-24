@@ -1,0 +1,7 @@
+# Mutation Log
+
+## Created
+- **docs/architecture/sparql-to-shql-conversion-plan.md** — The "SPARQL to SHQL Conversion Plan" content, read back from its live Claude Docs artifact (https://claude.ai/artifact/GgW8WUM9GkSyyPVc3faQCs) via the Claude Docs connector and transcribed into plain markdown matching this folder's existing style (no frontmatter). Includes all six original sections (conceptual differences, feature comparison table, pros/cons, the RDF-to-hypergraph mapping bridge, the phased conversion plan, recommendation), with `VALUES` and `SUM`/`AVG`/`MIN`/`MAX` aggregate support newly folded in throughout: the lead's supported-subset list, the comparison table's `VALUES` and `GROUP BY`+aggregate rows, the SHQL-cons paragraph, a new Phase 2.5 (`VALUES` unrolling), an expanded Phase 4 (client-side `SUM`/`AVG`/`MIN`/`MAX` computed by the transpiler over a broad SHQL fetch, with the 2,000-candidate-per-pattern internal search cap documented as a real limitation), an added Phase 6 validation case for both, and an updated §6 recommendation reflecting the new v1 scope.
+
+## Modified
+- **docs/architecture/sparql-vs-shql-gaps.md** — Updated the opening cross-reference from the ephemeral Claude Docs artifact link to the new local file (`sparql-to-shql-conversion-plan.md`), and added a one-line note that this document's own Tier 1 recommendations (`VALUES`, numeric aggregates) have since been folded back into the conversion plan's Phase 2.5 and Phase 4.

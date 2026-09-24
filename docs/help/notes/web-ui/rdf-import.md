@@ -157,6 +157,15 @@ Because the data edge is already `symmetric`-flavored, `cain`↔`abel` reads in 
 - **A class referenced only by `rdf:type` triples gets no node of its own.** `rdf:type`'s *object* (the class) is folded into the subject's `type`/`attributes.rdf_type` fields, not turned into a hyperedge — so a class with no other use in the file (no `rdfs:label`, no `rdfs:subClassOf`, …) never becomes a disconnected node. A class that *is* also used as an ordinary subject or object elsewhere still gets one.
 - **Merge mode never overwrites**, same as a native export import: a node whose id already exists, or an edge whose identity (relation + members + validity window) already exists, is skipped. To replace previously-imported RDF data, delete the graph first or import under a new id.
 
+## Coming from SPARQL?
+
+If you're used to writing SPARQL against this data and reach for `VALUES` to match a field against a list of candidates, SHQL already covers the common case today — no translation layer needed:
+
+- `filter: "?var.field IN [a, b, c]"` in an SHQL query's `where:` list
+- `attributes: {field: {$in: [a, b, c]}}` inside a `node:`/`edge:` pattern (raw MongoDB operators pass straight through)
+
+Neither is full SPARQL `VALUES` — SPARQL's version can bind several variables at once per row, and can inject a binding for a variable with no backing pattern at all, which nothing in SHQL does — but for "does this field match one of these values," both of the above already work against RDF-imported attributes and ids exactly as described above (CURIE-keyed attribute names, digit/quote-led value typing, and all). A fuller SPARQL-to-SHQL conversion plan, including translating `VALUES` itself for the general case, is tracked separately in `docs/architecture/sparql-to-shql-conversion-plan.md` and `docs/architecture/sparql-vs-shql-gaps.md`.
+
 ## See also
 
 - [Exporting and importing hypergraphs](help:help-export-import) — the shared create/merge mechanics, REST/shell/UI entry points, and the condensed mapping table

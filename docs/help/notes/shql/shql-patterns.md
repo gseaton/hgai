@@ -92,4 +92,12 @@ A variable used in several patterns must agree everywhere. Bound ids can be reus
 
 Inside `attributes:` you may use standard operators (`$lt`, `$lte`, `$gt`, `$gte`, `$ne`, `$in`, `$all`, `$regex`, …), and top-level `$or`/`$and`/`$nor`/`$not` pass through unchanged — any unrecognized key maps straight to the underlying MongoDB query. For expressions over an already-bound variable use a [filter](help:help-shql-filters).
 
+## `id:` takes one value, not a list
+
+Unlike `attributes:`, a node pattern's `id:` (and an edge member's `node_id:`) accepts only a single literal or `?var` — not a list of candidate ids, and `$in` doesn't apply there. To match against several known ids today, write a `union:` branch per id ([OPTIONAL and UNION](help:help-shql-advanced)), or bind the id from an edge/other pattern first and filter it with `?var.id IN [...]` ([filters](help:help-shql-filters)). The underlying storage search already supports matching several ids in one query internally; `id:` just doesn't expose a list on the YAML surface yet.
+
+## Coming from SPARQL?
+
+The `union:`-per-id technique above is exactly what a SPARQL `VALUES` clause enumerating candidate ids would translate to. Full `VALUES` does more than that, though — binding several variables per row, or injecting a binding with no backing pattern at all — which no combination of the patterns on this page can do directly. A fuller SPARQL-to-SHQL conversion, including translating `VALUES` for the general case, is tracked in `docs/architecture/sparql-to-shql-conversion-plan.md` and `docs/architecture/sparql-vs-shql-gaps.md`.
+
 See also: [Worked examples](help:help-shql-examples), [Hyperedges](help:help-hyperedges).
