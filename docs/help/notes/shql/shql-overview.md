@@ -37,13 +37,14 @@ shql:
     - ?var.label          # a single field
     - ?var.attributes.city  # a nested attribute
   order_by: ?var.field    # or a list; each may end in asc/desc
-  limit: 100              # default 500
+  limit: 100              # default 500 (0 is allowed with aggregate: rows omitted)
   offset: 0
   distinct: true          # remove duplicate rows
   infer: true             # opt-in axiom expansion (see Inferencing)
   aggregate:
     count: true
     group_by: var.field
+    sum: var.field          # also avg, min, max
   as: result_alias
 ```
 

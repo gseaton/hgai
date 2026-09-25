@@ -33,6 +33,33 @@ def parse_shql(shql_text: str) -> Dict[str, Any]:
     return data["shql"]
 
 
+AGGREGATE_MEASURE_KEYS = ("sum", "avg", "min", "max", "count_numeric")
+
+
+def _validate_aggregate(aggregate: Any) -> List[str]:
+    """Check the `aggregate:` block. `count`/`group_by` keep their historical leniency."""
+    if aggregate is None or aggregate == {}:
+        return []
+    if not isinstance(aggregate, dict):
+        return ["'aggregate' must be a mapping (count, group_by, sum, avg, min, max, count_numeric)"]
+    errors: List[str] = []
+    for key in AGGREGATE_MEASURE_KEYS:
+        if key not in aggregate:
+            continue
+        val = aggregate[key]
+        fields = [val] if isinstance(val, str) else val
+        if not isinstance(fields, list) or not fields or not all(isinstance(f, str) and f for f in fields):
+            errors.append(f"'aggregate.{key}' must be a projected row key or a list of them")
+            continue
+        for f in fields:
+            if f.startswith("?"):
+                errors.append(
+                    f"'aggregate.{key}': {f!r} must be the projected row key without the leading '?' "
+                    f"(e.g. {f[1:]!r})"
+                )
+    return errors
+
+
 def validate_shql(shql: Dict) -> List[str]:
     """Validate an SHQL query dict. Returns a list of error strings."""
     errors = []
@@ -49,8 +76,15 @@ def validate_shql(shql: Dict) -> List[str]:
         errors.append("'select' must be a list of variable expressions")
 
     limit = shql.get("limit")
-    if limit is not None and (not isinstance(limit, int) or limit < 1):
-        errors.append("'limit' must be a positive integer")
+    # `limit: 0` is allowed alongside `aggregate` — "aggregates only, no rows".
+    min_limit = 0 if shql.get("aggregate") else 1
+    if limit is not None and (not isinstance(limit, int) or limit < min_limit):
+        errors.append(
+            "'limit' must be a positive integer (0 is allowed only together with 'aggregate')"
+            if min_limit == 0 else "'limit' must be a positive integer"
+        )
+
+    errors.extend(_validate_aggregate(shql.get("aggregate")))
 
     offset = shql.get("offset")
     if offset is not None and (not isinstance(offset, int) or offset < 0):

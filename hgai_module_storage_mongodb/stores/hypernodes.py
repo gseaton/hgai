@@ -5,8 +5,15 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from hgai.models.hypernode import HypernodeInDB
 from hgai_module_storage.backend import HypernodeStore
-from hgai_module_storage.filters import HypernodeFilters, HypernodePatch, HypernodeSearchFilters
+from hgai_module_storage.filters import (
+    AggregateSpec,
+    HypernodeFilters,
+    HypernodePatch,
+    HypernodeSearchFilters,
+)
+from hgai_module_storage.ordering import normalise_order
 
+from ..aggregation import run_aggregate
 from ..connection import get_db
 
 
@@ -21,7 +28,32 @@ def _pit_clause(pit: datetime) -> List[Dict[str, Any]]:
     ]
 
 
+def _build_search_query(filters: HypernodeSearchFilters) -> Dict[str, Any]:
+    query: Dict[str, Any] = {
+        "hypergraph_id": {"$in": filters.hypergraph_ids},
+    }
+    if filters.status:
+        query["status"] = filters.status
+    if filters.node_type:
+        query["type"] = filters.node_type
+    if filters.tags:
+        query["tags"] = {"$all": filters.tags}
+    if filters.search:
+        query["label"] = {"$regex": filters.search, "$options": "i"}
+    if filters.node_ids_in:
+        query["id"] = {"$in": filters.node_ids_in}
+    if filters.attributes:
+        for k, v in filters.attributes.items():
+            query[f"attributes.{k}"] = v
+    if filters.pit:
+        query["$and"] = _pit_clause(filters.pit)
+    return query
+
+
 class MongoHypernodeStore(HypernodeStore):
+
+    supports_aggregate_pushdown = True
+    supports_ordered_search = True
 
     async def create(self, doc: Dict[str, Any]) -> HypernodeInDB:
         await _col().insert_one(doc)
@@ -103,24 +135,7 @@ class MongoHypernodeStore(HypernodeStore):
         skip: int = 0,
         limit: int = 500,
     ) -> List[Dict[str, Any]]:
-        query: Dict[str, Any] = {
-            "hypergraph_id": {"$in": filters.hypergraph_ids},
-        }
-        if filters.status:
-            query["status"] = filters.status
-        if filters.node_type:
-            query["type"] = filters.node_type
-        if filters.tags:
-            query["tags"] = {"$all": filters.tags}
-        if filters.search:
-            query["label"] = {"$regex": filters.search, "$options": "i"}
-        if filters.node_ids_in:
-            query["id"] = {"$in": filters.node_ids_in}
-        if filters.attributes:
-            for k, v in filters.attributes.items():
-                query[f"attributes.{k}"] = v
-        if filters.pit:
-            query["$and"] = _pit_clause(filters.pit)
+        query = _build_search_query(filters)
 
         cursor = _col().find(query).skip(skip).limit(limit)
         docs = []
@@ -128,6 +143,27 @@ class MongoHypernodeStore(HypernodeStore):
             doc.pop("_id", None)
             docs.append(doc)
         return docs
+
+    async def search_ordered(
+        self, filters: HypernodeSearchFilters, order_by, skip: int = 0, limit: int = 500,
+    ) -> List[Dict[str, Any]]:
+        sort = [(p, -1 if desc else 1) for p, desc in normalise_order(order_by)]
+        if limit <= 0:   # Mongo treats limit(0) as "no limit"
+            return []
+        cursor = (
+            _col().find(_build_search_query(filters))
+            .sort(sort).skip(skip).limit(limit).allow_disk_use(True)
+        )
+        docs = []
+        async for doc in cursor:
+            doc.pop("_id", None)
+            docs.append(doc)
+        return docs
+
+    async def aggregate(
+        self, filters: HypernodeSearchFilters, spec: AggregateSpec
+    ) -> List[Dict[str, Any]]:
+        return await run_aggregate(_col(), _build_search_query(filters), spec)
 
     async def get_distinct_types(self, hypergraph_id: str) -> List[str]:
         return await _col().distinct("type", {"hypergraph_id": hypergraph_id})

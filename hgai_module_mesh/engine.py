@@ -198,11 +198,18 @@ async def _graphs_for_server(server: MeshServer) -> List[str]:
 
 
 def _rewrite_from(query_text: str, graphs: List[str]) -> str:
-    """Parse an SHQL YAML document, replace the 'from' field with graphs, re-serialize."""
+    """Parse an SHQL YAML document, replace the 'from' field with graphs, re-serialize.
+
+    An `aggregate:` block is also widened (`partial_aggregate`) so each server
+    reports what merging its result with the others needs (e.g. `avg` parts).
+    """
     try:
         doc = yaml.safe_load(query_text)
         if isinstance(doc, dict) and "shql" in doc:
             doc["shql"]["from"] = graphs[0] if len(graphs) == 1 else graphs
+            if isinstance(doc["shql"].get("aggregate"), dict):
+                from hgai_module_shql.aggregate_merge import partial_aggregate
+                doc["shql"]["aggregate"] = partial_aggregate(doc["shql"]["aggregate"])
         return yaml.dump(doc, default_flow_style=False, allow_unicode=True)
     except Exception:
         return query_text  # fall back to original on any parse error
@@ -228,7 +235,8 @@ async def _query_server(
 ) -> Dict[str, Any]:
     """Execute an SHQL query on one server for specific graph IDs.
 
-    Returns {'server_id': ..., 'items': [...]} on success.
+    Returns {'server_id': ..., 'items': [...], 'meta': {...}} on success (`meta` is the
+    server's own result meta, carrying its aggregate partials).
     Raises on failure so the caller can handle via return_exceptions=True.
     """
     rewritten = _rewrite_from(query_text, graph_ids)
@@ -236,6 +244,7 @@ async def _query_server(
         from hgai_module_shql.engine import execute_shql
         result = await execute_shql(rewritten, use_cache=use_cache, account=account)
         items = result.items
+        meta = result.meta
     else:
         body: Dict[str, Any] = {"shql": rewritten, "use_cache": use_cache}
         r = await get_http_client().post(
@@ -244,12 +253,14 @@ async def _query_server(
             json=body,
         )
         r.raise_for_status()
-        items = r.json().get("items", [])
+        payload = r.json()
+        items = payload.get("items", [])
+        meta = payload.get("meta") or {}
 
     for item in items:
         item["_mesh_server_id"] = server.server_id
         qualify_media_ids(item, server.server_id)
-    return {"server_id": server.server_id, "items": items}
+    return {"server_id": server.server_id, "items": items, "meta": meta}
 
 
 def _parse_dot_ref(ref: str) -> Optional[tuple]:
@@ -386,14 +397,15 @@ async def execute_dot_refs(
     """Execute an SHQL query across dot-notation mesh refs concurrently and merge results.
 
     Admin-only (see _require_federation_admin).
-    Returns {'count': int, 'items': [...], 'errors': [...]}
+    Returns {'count': int, 'items': [...], 'errors': [...], 'partials': [...]} where each
+    partial is {'server_id', 'meta'} from a server that answered.
     """
     _require_federation_admin(account)
     _local_ids, routing = await resolve_dot_refs(refs)
 
     active = [(s, g) for s, g in routing if g]
     if not active:
-        return {"count": 0, "items": [], "errors": []}
+        return {"count": 0, "items": [], "errors": [], "partials": []}
 
     results = await asyncio.gather(
         *[_query_server(s, g, query_text, use_cache, account) for s, g in active],
@@ -402,14 +414,34 @@ async def execute_dot_refs(
 
     all_items: List[Dict] = []
     errors: List[Dict] = []
+    partials: List[Dict] = []
     for (server, _), result in zip(active, results):
         if isinstance(result, Exception):
             errors.append({"server_id": server.server_id, "error": str(result)})
             logger.warning(f"Dot-ref SHQL query failed on {server.server_id}: {result}")
         else:
             all_items.extend(result["items"])
+            partials.append({"server_id": server.server_id, "meta": result["meta"]})
 
-    return {"count": len(all_items), "items": all_items, "errors": errors}
+    return {"count": len(all_items), "items": all_items, "errors": errors, "partials": partials}
+
+
+def merged_aggregate(query_text: str, partials: List[Dict]) -> Optional[Dict[str, Any]]:
+    """The query's `aggregate:` merged across every server that answered, or None.
+
+    None when the query has no aggregate, nothing answered, or a server's
+    result lacked what the merge needs (an older server, say).
+    """
+    from hgai_module_shql.aggregate_merge import merge_aggregate_meta
+
+    try:
+        doc = yaml.safe_load(query_text)
+        aggregate = doc["shql"].get("aggregate") if isinstance(doc, dict) else None
+    except Exception:
+        return None
+    if not isinstance(aggregate, dict) or not aggregate or not partials:
+        return None
+    return merge_aggregate_meta([p["meta"] for p in partials], aggregate)
 
 
 async def federated_shql(
@@ -443,19 +475,26 @@ async def federated_shql(
 
     all_items: List[Dict] = []
     errors: List[Dict] = []
+    partials: List[Dict] = []
     for (server, _), result in zip(active, results):
         if isinstance(result, Exception):
             errors.append({"server_id": server.server_id, "error": str(result)})
             logger.warning(f"Federated SHQL failed on {server.server_id}: {result}")
         else:
             all_items.extend(result["items"])
+            partials.append({"server_id": server.server_id, "meta": result["meta"]})
 
-    return {
+    response: Dict[str, Any] = {
         "mesh_id": mesh_id,
         "count": len(all_items),
         "items": all_items,
         "errors": errors,
+        "partials": partials,
     }
+    aggregate = merged_aggregate(shql_text, partials)
+    if aggregate is not None:
+        response["aggregate"] = aggregate
+    return response
 
 
 async def proxy_request(

@@ -6,12 +6,15 @@ from typing import Any, Dict, List, Optional, Tuple
 from hgai.models.hyperedge import HyperedgeInDB
 from hgai_module_storage.backend import HyperedgeStore
 from hgai_module_storage.filters import (
+    AggregateSpec,
     HyperedgeFilters,
     HyperedgePatch,
     HyperedgeSearchFilters,
     TransitiveSearchFilter,
 )
+from hgai_module_storage.ordering import normalise_order
 
+from ..aggregation import run_aggregate
 from ..connection import get_db
 
 
@@ -26,7 +29,39 @@ def _pit_clause(pit: datetime) -> List[Dict[str, Any]]:
     ]
 
 
+def _build_search_query(filters: HyperedgeSearchFilters) -> Dict[str, Any]:
+    query: Dict[str, Any] = {
+        "hypergraph_id": {"$in": filters.hypergraph_ids},
+    }
+    if filters.status:
+        query["status"] = filters.status
+    if filters.relation:
+        query["relation"] = filters.relation
+    if filters.flavor:
+        query["flavor"] = filters.flavor
+    if filters.tags:
+        query["tags"] = {"$all": filters.tags}
+    if filters.member_node_id:
+        query["members.node_id"] = filters.member_node_id
+    if filters.member_node_ids_all:
+        query["members.node_id"] = {"$all": filters.member_node_ids_all}
+    if filters.member_node_ids_any:
+        query["members.node_id"] = {"$in": filters.member_node_ids_any}
+    if filters.attributes:
+        for k, v in filters.attributes.items():
+            query[f"attributes.{k}"] = v
+    if filters.extra_filters:
+        query.update(filters.extra_filters)
+    if filters.pit:
+        existing_and = query.pop("$and", [])
+        query["$and"] = existing_and + _pit_clause(filters.pit)
+    return query
+
+
 class MongoHyperedgeStore(HyperedgeStore):
+
+    supports_aggregate_pushdown = True
+    supports_ordered_search = True
 
     async def create(self, doc: Dict[str, Any]) -> HyperedgeInDB:
         await _col().insert_one(doc)
@@ -124,31 +159,7 @@ class MongoHyperedgeStore(HyperedgeStore):
         skip: int = 0,
         limit: int = 500,
     ) -> List[Dict[str, Any]]:
-        query: Dict[str, Any] = {
-            "hypergraph_id": {"$in": filters.hypergraph_ids},
-        }
-        if filters.status:
-            query["status"] = filters.status
-        if filters.relation:
-            query["relation"] = filters.relation
-        if filters.flavor:
-            query["flavor"] = filters.flavor
-        if filters.tags:
-            query["tags"] = {"$all": filters.tags}
-        if filters.member_node_id:
-            query["members.node_id"] = filters.member_node_id
-        if filters.member_node_ids_all:
-            query["members.node_id"] = {"$all": filters.member_node_ids_all}
-        if filters.member_node_ids_any:
-            query["members.node_id"] = {"$in": filters.member_node_ids_any}
-        if filters.attributes:
-            for k, v in filters.attributes.items():
-                query[f"attributes.{k}"] = v
-        if filters.extra_filters:
-            query.update(filters.extra_filters)
-        if filters.pit:
-            existing_and = query.pop("$and", [])
-            query["$and"] = existing_and + _pit_clause(filters.pit)
+        query = _build_search_query(filters)
 
         cursor = _col().find(query).skip(skip).limit(limit)
         docs = []
@@ -156,6 +167,27 @@ class MongoHyperedgeStore(HyperedgeStore):
             doc.pop("_id", None)
             docs.append(doc)
         return docs
+
+    async def search_ordered(
+        self, filters: HyperedgeSearchFilters, order_by, skip: int = 0, limit: int = 500,
+    ) -> List[Dict[str, Any]]:
+        sort = [(p, -1 if desc else 1) for p, desc in normalise_order(order_by)]
+        if limit <= 0:   # Mongo treats limit(0) as "no limit"
+            return []
+        cursor = (
+            _col().find(_build_search_query(filters))
+            .sort(sort).skip(skip).limit(limit).allow_disk_use(True)
+        )
+        docs = []
+        async for doc in cursor:
+            doc.pop("_id", None)
+            docs.append(doc)
+        return docs
+
+    async def aggregate(
+        self, filters: HyperedgeSearchFilters, spec: AggregateSpec
+    ) -> List[Dict[str, Any]]:
+        return await run_aggregate(_col(), _build_search_query(filters), spec)
 
     async def get_distinct_relations(self, hypergraph_id: str) -> List[str]:
         return await _col().distinct("relation", {"hypergraph_id": hypergraph_id})

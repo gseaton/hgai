@@ -25,6 +25,7 @@ The **Query (SHQL)** screen is an editor for [SHQL](help:help-shql-overview) —
 
 - Start with `from:` (a graph id, `space/graph`, a list of them, or a [mesh](help:help-meshes) reference) and one `where:` pattern, then add patterns and a `select:`.
 - Results are limited to 500 rows unless you set `limit:`.
+- Each `node:`/`edge:` pattern reads at most a configurable number of candidates (default 2,000; see [Configuration](help:help-configuration)). If a pattern hits that cap, the result's `meta.truncated` is `true` and `meta.truncated_by` says which pattern — `items` then cover only the fetched candidates (unless `meta.paging_pushdown` is `true`, when storage sorted and paged the rows exactly), and so do aggregates unless `meta.aggregate_pushdown` is `true` (see [aggregation](help:help-shql-advanced)).
 - Use **Validate** first to catch syntax problems without running anything.
 
 The same query can be run through the API (`POST /api/v1/shql/query`) or MCP (`hgai_query_execute`). Learn the language in [SHQL overview](help:help-shql-overview) and the [worked examples](help:help-shql-examples).

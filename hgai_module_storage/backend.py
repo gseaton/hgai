@@ -5,8 +5,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple
 
+from .aggregate import aggregate_via_search
+from .ordering import OrderBy, search_ordered_via_search
 from .filters import (
     AccountFilters,
+    AggregateMeasure,
+    AggregateSpec,
     AccountPatch,
     HyperedgeFilters,
     HyperedgePatch,
@@ -159,6 +163,32 @@ class HypernodeStore(ABC):
     ) -> List[Any]:
         """Return a list of raw node dicts matching the search filters (used by HQL/SHQL)."""
 
+    # Aggregation. Not abstract: the default streams `search` through the
+    # reference reducer (correct on any backend, but moves every matching
+    # document). Backends that can aggregate natively override `aggregate` and
+    # set `supports_aggregate_pushdown = True`. Semantics: hgai_module_storage/aggregate.py.
+    supports_aggregate_pushdown: bool = False
+
+    async def aggregate(self, filters: HypernodeSearchFilters, spec: AggregateSpec) -> List[Dict[str, Any]]:
+        """Group and reduce the hypernodes matching `filters` per `spec`; returns result rows."""
+        return await aggregate_via_search(self.search, filters, spec)
+
+    async def count(self, filters: HypernodeSearchFilters) -> int:
+        """Number of hypernodes matching `filters` (ignores any candidate cap)."""
+        rows = await self.aggregate(filters, AggregateSpec(measures=[AggregateMeasure("count")]))
+        return rows[0]["count"]
+
+    # Ordered paging. Not abstract: the default streams `search` and keeps the best
+    # page (correct anywhere, but scans every match). Backends that can sort natively
+    # override it and set `supports_ordered_search = True`. Semantics: hgai_module_storage/ordering.py.
+    supports_ordered_search: bool = False
+
+    async def search_ordered(
+        self, filters: HypernodeSearchFilters, order_by: OrderBy, skip: int = 0, limit: int = 500,
+    ) -> List[Any]:
+        """One page of matching hypernodes sorted by `order_by` [(field path, descending), ...]."""
+        return await search_ordered_via_search(self.search, filters, order_by, skip, limit)
+
     @abstractmethod
     async def get_distinct_types(self, hypergraph_id: str) -> List[str]:
         """Return all distinct 'type' values for nodes in the graph."""
@@ -225,6 +255,32 @@ class HyperedgeStore(ABC):
         limit: int = 500,
     ) -> List[Any]:
         """Return a list of raw edge dicts matching the search filters (used by HQL/SHQL)."""
+
+    # Aggregation. Not abstract: the default streams `search` through the
+    # reference reducer (correct on any backend, but moves every matching
+    # document). Backends that can aggregate natively override `aggregate` and
+    # set `supports_aggregate_pushdown = True`. Semantics: hgai_module_storage/aggregate.py.
+    supports_aggregate_pushdown: bool = False
+
+    async def aggregate(self, filters: HyperedgeSearchFilters, spec: AggregateSpec) -> List[Dict[str, Any]]:
+        """Group and reduce the hyperedges matching `filters` per `spec`; returns result rows."""
+        return await aggregate_via_search(self.search, filters, spec)
+
+    async def count(self, filters: HyperedgeSearchFilters) -> int:
+        """Number of hyperedges matching `filters` (ignores any candidate cap)."""
+        rows = await self.aggregate(filters, AggregateSpec(measures=[AggregateMeasure("count")]))
+        return rows[0]["count"]
+
+    # Ordered paging. Not abstract: the default streams `search` and keeps the best
+    # page (correct anywhere, but scans every match). Backends that can sort natively
+    # override it and set `supports_ordered_search = True`. Semantics: hgai_module_storage/ordering.py.
+    supports_ordered_search: bool = False
+
+    async def search_ordered(
+        self, filters: HyperedgeSearchFilters, order_by: OrderBy, skip: int = 0, limit: int = 500,
+    ) -> List[Any]:
+        """One page of matching hyperedges sorted by `order_by` [(field path, descending), ...]."""
+        return await search_ordered_via_search(self.search, filters, order_by, skip, limit)
 
     @abstractmethod
     async def get_distinct_relations(self, hypergraph_id: str) -> List[str]:

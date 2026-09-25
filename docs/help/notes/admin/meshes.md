@@ -39,6 +39,19 @@ shql:
 
 All servers are queried **concurrently** — total latency is the slowest server, not the sum. Unreachable servers are skipped and reported in the response's `errors`.
 
+### Aggregates across servers
+
+`aggregate:` (`count`, `group_by`, `sum`, `avg`, `min`, `max`, `count_numeric`) works over a whole mesh. Each server aggregates **its own graphs** — using storage-side aggregation where the query allows — and returns just its partial result; the partials are then merged exactly:
+
+| Measure | Merged by |
+|---|---|
+| `count`, `sum`, `count_numeric` | adding |
+| `min`, `max` | taking the smallest / largest |
+| `avg` | merged `sum` ÷ merged `count_numeric` (never an average of averages) |
+| `groups` / `group_measures` | union of groups, merged per group |
+
+To make `avg` mergeable, each server is also asked for `sum` and `count_numeric` of the averaged fields; they don't appear in the result unless you requested them. With `limit: 0` no rows travel at all. The result's `meta.federation` lists the servers that answered (`servers`), the ones that failed (`errors` — their data is missing from **both** rows and aggregates) and whether the merge was used (`aggregate_merged`). `meta.truncated_by` includes each server's own truncation, prefixed with its id, and `meta.aggregate_pushdown` is `true` only if every server computed its part in storage. If a server cannot supply partials (an older version) or the query uses `distinct`, the aggregate is computed from the merged rows instead, as it always was. `POST /meshes/{id}/query` returns the merged result as `aggregate` in its response.
+
 ## Dot-notation references
 
 | Format | Meaning |

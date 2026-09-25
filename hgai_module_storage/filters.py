@@ -117,6 +117,39 @@ class HyperedgeSearchFilters:
     extra_filters: Optional[Dict[str, Any]] = None  # pass-through arbitrary mongo-style filters
 
 
+AGGREGATE_FUNCTIONS = ("count", "sum", "avg", "min", "max", "count_distinct", "count_numeric")
+
+
+@dataclass
+class AggregateMeasure:
+    """One aggregate column: `fn` applied to `field` (None = whole documents, count only).
+
+    `alias` is the result-row key; it defaults to `fn` (no field) or
+    `<fn>_<field with dots as underscores>`.
+    """
+    fn: str
+    field: Optional[str] = None
+    alias: Optional[str] = None
+
+
+@dataclass
+class AggregateSpec:
+    """Backend-neutral aggregation request for `HypernodeStore.aggregate` /
+    `HyperedgeStore.aggregate`. See `hgai_module_storage.aggregate` for the
+    exact semantics every backend must honour.
+
+    group_by:  field paths (see `validate_field_path`); empty = one global row.
+    measures:  aggregate columns; defaults to a single document `count`.
+    order_by:  (key, descending) pairs; key is a group_by path or a measure alias.
+               Default: ascending by group_by paths, in order.
+    limit:     max rows returned (after ordering).
+    """
+    group_by: List[str] = field(default_factory=list)
+    measures: List[AggregateMeasure] = field(default_factory=lambda: [AggregateMeasure("count")])
+    order_by: Optional[List[Tuple[str, bool]]] = None
+    limit: Optional[int] = None
+
+
 @dataclass
 class TransitiveSearchFilter:
     """Used by inference engine for transitive closure traversal."""

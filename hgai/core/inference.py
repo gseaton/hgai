@@ -19,11 +19,37 @@ wired into SHQL behind the same `infer: true` flag; `expand_edge_closure`
 is what a general, open-ended SHQL/Visualize query actually runs.
 """
 
+import logging
+from contextvars import ContextVar
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
+from hgai.config import get_settings
 from hgai.db.storage import get_storage
 from hgai_module_storage.filters import HyperedgeSearchFilters, TransitiveSearchFilter
+
+logger = logging.getLogger(__name__)
+
+# Callers (e.g. the SHQL engine) install a list here to learn when a candidate
+# fetch hit its cap and dropped documents. Unset = truncation is only logged.
+truncation_sink: ContextVar[Optional[List[str]]] = ContextVar("truncation_sink", default=None)
+
+
+def note_truncation(what: str) -> None:
+    logger.warning("candidate cap reached: %s truncated", what)
+    sink = truncation_sink.get()
+    if sink is not None and what not in sink:
+        sink.append(what)
+
+
+async def fetch_fact_edges(filters: HyperedgeSearchFilters) -> Tuple[List[Dict[str, Any]], bool]:
+    """Fetch up to `inference_max_fact_edges` edges; returns (edges, truncated)."""
+    cap = get_settings().inference_max_fact_edges
+    docs = await get_storage().hyperedges.search(filters, skip=0, limit=cap + 1)
+    if len(docs) > cap:
+        note_truncation(f"inference fact edges (cap {cap})")
+        return docs[:cap], True
+    return docs, False
 
 
 def atomic_pairs(members: List[Dict[str, Any]], flavor: str) -> List[Tuple[str, str]]:
@@ -403,7 +429,7 @@ async def _expand_transitive_relation(
     axiom_id = axiom_edges[0].get("id")
 
     filters = HyperedgeSearchFilters(hypergraph_ids=graph_ids, relation=relation, pit=pit)
-    fact_edges = await get_storage().hyperedges.search(filters, skip=0, limit=5000)
+    fact_edges, _ = await fetch_fact_edges(filters)
     subjects = {
         s for e in fact_edges
         for s, _o in atomic_pairs(e.get("members", []), e.get("flavor", "hub"))
@@ -646,14 +672,18 @@ async def project_inference(
         raise ValueError(f"project_inference: mode={mode!r} requires relation")
 
     candidates: List[Dict[str, Any]] = []
+    truncated_by: List[str] = []
+    sink_token = truncation_sink.set(truncated_by)
+    try:
+        if mode in ("expand", "both"):
+            filters = HyperedgeSearchFilters(hypergraph_ids=source_graph_ids, relation=relation, pit=pit)
+            fact_edges, _ = await fetch_fact_edges(filters)
+            candidates.extend(await expand_edge_closure(fact_edges, source_graph_ids, pit=pit))
 
-    if mode in ("expand", "both"):
-        filters = HyperedgeSearchFilters(hypergraph_ids=source_graph_ids, relation=relation, pit=pit)
-        fact_edges = await get_storage().hyperedges.search(filters, skip=0, limit=5000)
-        candidates.extend(await expand_edge_closure(fact_edges, source_graph_ids, pit=pit))
-
-    if mode in ("transitive", "both"):
-        candidates.extend(await _expand_transitive_relation(relation, source_graph_ids, pit=pit))
+        if mode in ("transitive", "both"):
+            candidates.extend(await _expand_transitive_relation(relation, source_graph_ids, pit=pit))
+    finally:
+        truncation_sink.reset(sink_token)
 
     created, skipped, errors = 0, 0, 0
     created_edge_ids: List[str] = []
@@ -766,4 +796,6 @@ async def project_inference(
         "edges": created_edge_ids,
         "preview": preview,
         "dry_run": dry_run,
+        "truncated": bool(truncated_by),
+        "truncated_by": truncated_by,
     }

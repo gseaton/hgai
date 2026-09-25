@@ -371,6 +371,10 @@ All configuration is via environment variables (or `.env` file):
 | `HGAI_LOG_LEVEL` | `info` | Log level |
 | `HGAI_CACHE_TTL_SECONDS` | `300` | Query cache TTL |
 | `HGAI_CACHE_ENABLED` | `true` | Enable query caching |
+| `HGAI_SHQL_MAX_NODE_CANDIDATES` | `2000` | Max hypernodes fetched per SHQL `node:` pattern; overflow sets `meta.truncated` |
+| `HGAI_SHQL_MAX_EDGE_CANDIDATES` | `2000` | Max hyperedges fetched per SHQL `edge:` pattern; overflow sets `meta.truncated` |
+| `HGAI_INFERENCE_MAX_FACT_EDGES` | `5000` | Max fact edges fetched for inference expansion / transitive closure |
+| `HGAI_SHQL_JOIN_BATCH_SIZE` | `200` | Max distinct bound values (node ids / member-id sets) resolved per storage query when a SHQL pattern joins against many earlier matches; `1` = one query per match |
 | `HGAI_SERVER_ID` | `hgai-local` | Server identifier (for meshes) |
 | `HGAI_SERVER_NAME` | `HypergraphAI Local` | Server display name |
 | `HGAI_HELP_DIR` | `<project>/docs/help` | Root of the built-in Help content (`notes/` markdown topics, `media/` files) |

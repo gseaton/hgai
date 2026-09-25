@@ -300,3 +300,40 @@ def test_apply_order_by_multi_field_mixed_directions():
         ("b", "y"),
         ("b", "w"),
     ]
+
+
+# ── Candidate caps / truncated flag ───────────────────────────────────────────
+
+class _CountingNodeStore:
+    def __init__(self, n):
+        self.docs = [{"id": f"n{i}"} for i in range(n)]
+        self.limits_seen = []
+
+    async def search(self, filters, skip=0, limit=50):
+        self.limits_seen.append(limit)
+        return [dict(d) for d in self.docs[skip: skip + limit]]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("n, expect_truncated", [(3, False), (4, True)])
+async def test_node_pattern_cap_sets_truncated(n, expect_truncated, monkeypatch):
+    from hgai.config import get_settings
+    from hgai.core.inference import truncation_sink
+    from hgai_module_shql.engine import _eval_node_pattern
+
+    monkeypatch.setattr(get_settings(), "shql_max_node_candidates", 3)
+    store = _CountingNodeStore(n)
+    sink = []
+    token = truncation_sink.set(sink)
+    try:
+        with patch("hgai_module_shql.engine.get_storage",
+                   return_value=type("S", (), {"hypernodes": store})()):
+            result = await _eval_node_pattern(
+                {"bind": "?n"}, graph_ids=["g"], pit=None, bindings=[{}],
+            )
+    finally:
+        truncation_sink.reset(token)
+
+    assert len(result) == min(n, 3)
+    assert store.limits_seen == [4]          # cap + 1 probe
+    assert bool(sink) is expect_truncated

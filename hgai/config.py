@@ -55,6 +55,30 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = Field(default=300)
     cache_max_size: int = Field(default=1000)
 
+    # SHQL / inference candidate caps. A pattern (or inference pass) fetches at
+    # most this many documents from storage; anything beyond is dropped and the
+    # result is flagged `truncated`.
+    shql_max_node_candidates: int = Field(
+        default=2000, ge=1,
+        description="Max hypernodes fetched per SHQL node pattern. Env: HGAI_SHQL_MAX_NODE_CANDIDATES",
+    )
+    shql_max_edge_candidates: int = Field(
+        default=2000, ge=1,
+        description="Max hyperedges fetched per SHQL edge pattern. Env: HGAI_SHQL_MAX_EDGE_CANDIDATES",
+    )
+    inference_max_fact_edges: int = Field(
+        default=5000, ge=1,
+        description="Max fact edges fetched for inference expansion / transitive closure. "
+                    "Env: HGAI_INFERENCE_MAX_FACT_EDGES",
+    )
+
+    shql_join_batch_size: int = Field(
+        default=200, ge=1,
+        description="Max distinct bound values (node ids / member-id sets) resolved by one storage "
+                    "query when a SHQL pattern is evaluated against many bindings; 1 = one query per "
+                    "binding. Env: HGAI_SHQL_JOIN_BATCH_SIZE",
+    )
+
     # Mesh
     mesh_sync_interval_seconds: int = Field(default=300, description="Background mesh graph-list sync interval (0 = disabled)")
 

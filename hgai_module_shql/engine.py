@@ -25,18 +25,35 @@ import hashlib
 import json
 from copy import deepcopy
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import yaml
 
+from hgai.config import get_settings
 from hgai.core.auth import PermissionDeniedError, check_graph_permission
 from hgai.db.storage import get_storage
 from hgai.models.account import AccountInDB
 from hgai_module_storage.filters import HyperedgeSearchFilters, HypernodeSearchFilters
 
+from .aggregate_merge import MEASURE_FNS, measure_requests, merge_aggregate_meta, partial_aggregate
+
 _SKOS_FIELDS = ("skos_broader", "skos_narrower", "skos_related")
 
 BindingSet = Dict[str, Any]
+
+
+async def _search_capped(store, filters, cap: int, what: str) -> List[Dict[str, Any]]:
+    """Run `store.search` with a candidate cap, recording truncation.
+
+    Fetches cap+1 so an overflow is detectable without a count query; the
+    extra document is discarded.
+    """
+    from hgai.core.inference import note_truncation
+    docs = await store.search(filters, skip=0, limit=cap + 1)
+    if len(docs) > cap:
+        note_truncation(f"{what} (cap {cap})")
+        return docs[:cap]
+    return docs
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -77,19 +94,17 @@ def _parse_order_by(order_by: Any) -> List[tuple]:
 
 
 def _order_by_value(row: Dict, field: str) -> Any:
-    """Resolve one `order_by` field against a projected result row, falling
-    back to "" (sorts first) for a missing or null value — same fallback
-    `_project_select` rows already use for an unselected field."""
+    """Resolve one `order_by` field against a projected result row; None when
+    missing or null (which sorts first — see `_apply_order_by`)."""
     if field in row:
-        v = row[field]
-        return v if v is not None else ""
+        return row[field]
     parts = field.split(".", 1)
     if parts[0] in row:
         v = row[parts[0]]
         if len(parts) > 1 and isinstance(v, dict):
             v = _get_nested(v, parts[1])
-        return v if v is not None else ""
-    return ""
+        return v
+    return None
 
 
 def _apply_order_by(items: List[Dict], order_by: Any) -> List[Dict]:
@@ -101,8 +116,13 @@ def _apply_order_by(items: List[Dict], order_by: Any) -> List[Dict]:
     rows that tied on every pass before it, which is the standard technique
     for composing a multi-key sort out of single-key ones.
     """
+    # Values are compared with the storage layer's `sort_key` (missing/null first,
+    # numbers < strings < ...), the same total order storage-side ordering uses,
+    # so the two paths agree — and mixed-type columns no longer raise TypeError.
+    from hgai_module_storage.aggregate import sort_key
+
     for field, descending in reversed(_parse_order_by(order_by)):
-        items = sorted(items, key=lambda row, f=field: _order_by_value(row, f), reverse=descending)
+        items = sorted(items, key=lambda row, f=field: sort_key(_order_by_value(row, f)), reverse=descending)
     return items
 
 
@@ -326,6 +346,124 @@ def _match_members_expand(
 
 # ── Pattern evaluators ────────────────────────────────────────────────────────
 
+def _node_filters(
+    pattern: Dict,
+    graph_ids: List[str],
+    pit: Optional[datetime],
+    node_ids_in: Optional[List[str]] = None,
+) -> HypernodeSearchFilters:
+    """Storage filters for a node pattern — shared by matching and aggregate pushdown."""
+    tags = pattern.get("tags")
+    attributes = pattern.get("attributes") or {}
+    return HypernodeSearchFilters(
+        hypergraph_ids=graph_ids,
+        node_type=pattern.get("type"),
+        status=pattern.get("status", "active"),
+        tags=tags if not tags or isinstance(tags, list) else [tags],
+        pit=pit,
+        node_ids_in=node_ids_in,
+        attributes=attributes if attributes else None,
+    )
+
+
+def _edge_filters(
+    pattern: Dict,
+    graph_ids: List[str],
+    pit: Optional[datetime],
+    *,
+    relation: Optional[str],
+    member_node_ids_all: Optional[List[str]] = None,
+    member_node_ids_any: Optional[List[str]] = None,
+    edge_id: Optional[str] = None,
+) -> HyperedgeSearchFilters:
+    """Storage filters for an edge pattern — shared by matching and aggregate pushdown.
+
+    `relation` and `member_node_ids_all` are passed in because matching
+    deliberately widens them under `infer: true`.
+    """
+    tags = pattern.get("tags")
+    attributes = pattern.get("attributes") or {}
+    return HyperedgeSearchFilters(
+        hypergraph_ids=graph_ids,
+        relation=relation,
+        flavor=pattern.get("flavor"),
+        status=pattern.get("status", "active"),
+        tags=tags if not tags or isinstance(tags, list) else [tags],
+        pit=pit,
+        member_node_ids_all=member_node_ids_all,
+        member_node_ids_any=member_node_ids_any,
+        attributes=attributes if attributes else None,
+        extra_filters={"id": edge_id} if edge_id is not None else None,
+    )
+
+
+_RESOLVE_CHUNK = 5000   # node ids per `find_by_ids` when resolving bound variables
+
+
+def _chunks(items: List[Any], size: int):
+    for i in range(0, len(items), size):
+        yield items[i: i + size]
+
+
+# Joins: a pattern is evaluated against every binding produced so far. Rather
+# than one storage query per binding, bindings are first reduced to the
+# distinct *search keys* they imply (a resolved node id; a relation / edge id /
+# set of already-bound member ids), each distinct key is fetched once — many
+# keys per query where the store can filter by "any of these ids" — and the
+# documents are then handed back to the bindings in their original order.
+# `HGAI_SHQL_JOIN_BATCH_SIZE` bounds keys per query; a batch that might have
+# lost documents to the candidate cap is retried key by key, so results and
+# truncation reporting are identical to the one-query-per-binding behaviour.
+
+async def _fetch_node_docs(
+    pattern: Dict,
+    graph_ids: List[str],
+    pit: Optional[datetime],
+    keys: List[Tuple],
+) -> Dict[Tuple, List[Dict]]:
+    """Documents for each node search key: ("any",) or ("id", <resolved id>)."""
+    store = get_storage().hypernodes
+    cap = get_settings().shql_max_node_candidates
+    out: Dict[Tuple, List[Dict]] = {}
+
+    async def single(key: Tuple) -> List[Dict]:
+        ids = [key[1]] if key[0] == "id" else None
+        docs = await _search_capped(
+            store, _node_filters(pattern, graph_ids, pit, ids), cap, "node pattern candidates",
+        )
+        return docs
+
+    id_keys: List[Tuple] = []
+    for key in keys:
+        if key[0] == "id":
+            id_keys.append(key)
+        else:
+            out[key] = await single(key)
+
+    batch = get_settings().shql_join_batch_size
+    for chunk in _chunks(id_keys, batch):
+        if len(chunk) == 1:
+            out[chunk[0]] = await single(chunk[0])
+            continue
+        ids = [k[1] for k in chunk]
+        # (id, hypergraph_id) is unique, so a lookup by ids can return at most
+        # len(ids) * len(graph_ids) documents — this limit can never truncate.
+        docs = await store.search(
+            _node_filters(pattern, graph_ids, pit, ids), skip=0, limit=len(ids) * len(graph_ids),
+        )
+        by_id: Dict[Any, List[Dict]] = {}
+        for doc in docs:
+            by_id.setdefault(doc.get("id"), []).append(doc)
+        for key in chunk:
+            out[key] = by_id.get(key[1], [])
+
+    for docs in out.values():
+        for doc in docs:
+            for _f in _SKOS_FIELDS:
+                doc.pop(_f, None)
+    return out
+
+
 async def _eval_node_pattern(
     pattern: Dict,
     graph_ids: List[str],
@@ -335,12 +473,11 @@ async def _eval_node_pattern(
     bind_var  = pattern.get("bind")
     node_id   = pattern.get("id")
     node_type = pattern.get("type")
-    tags      = pattern.get("tags")
-    attributes = pattern.get("attributes") or {}
-    status    = pattern.get("status", "active")
 
-    result: List[BindingSet] = []
-
+    # Phase 1: classify each binding (pass through / drop / needs a search key).
+    entries: List[Tuple[BindingSet, Optional[Tuple]]] = []
+    keys: List[Tuple] = []
+    seen_keys: Set[Tuple] = set()
     for binding in bindings:
         # If bind_var is already bound, just verify the conditions hold
         if bind_var and bind_var in binding:
@@ -352,31 +489,29 @@ async def _eval_node_pattern(
                     req = _resolve_var(node_id, binding) if _is_var(str(node_id)) else node_id
                     if req and existing.get("id") != req:
                         continue
-            result.append(binding)
+            entries.append((binding, None))
             continue
 
-        # Build node search filters
-        node_ids_in = None
+        key: Tuple = ("any",)
         if node_id is not None:
             resolved_id = _resolve_var(node_id, binding) if _is_var(str(node_id)) else node_id
             if resolved_id is None:
                 continue
-            node_ids_in = [resolved_id]
+            key = ("id", resolved_id)
+        entries.append((binding, key))
+        if key not in seen_keys:
+            seen_keys.add(key)
+            keys.append(key)
 
-        filters = HypernodeSearchFilters(
-            hypergraph_ids=graph_ids,
-            node_type=node_type,
-            status=status,
-            tags=tags if not tags or isinstance(tags, list) else [tags],
-            pit=pit,
-            node_ids_in=node_ids_in,
-            attributes=attributes if attributes else None,
-        )
-        docs = await get_storage().hypernodes.search(filters, skip=0, limit=2000)
+    # Phase 2: one fetch per distinct key (batched); phase 3: expand in binding order.
+    docs_by_key = await _fetch_node_docs(pattern, graph_ids, pit, keys) if keys else {}
 
-        for doc in docs:
-            for _f in _SKOS_FIELDS:
-                doc.pop(_f, None)
+    result: List[BindingSet] = []
+    for binding, key in entries:
+        if key is None:
+            result.append(binding)
+            continue
+        for doc in docs_by_key[key]:
             new_binding = dict(binding)
             if bind_var:
                 new_binding[bind_var] = doc
@@ -385,109 +520,48 @@ async def _eval_node_pattern(
     return result
 
 
-async def _eval_edge_pattern(
+def _bound_member_ids(member_patterns: List[Any], binding: BindingSet) -> List[Any]:
+    """Member node ids already fixed for this binding, to narrow the edge query."""
+    bound_node_ids: List[Any] = []
+    for pat in member_patterns:
+        np = (
+            pat if isinstance(pat, str)
+            else (pat.get("node", pat) if isinstance(pat, dict) else {})
+        )
+        bv  = np.get("bind") if isinstance(np, dict) else (pat if _is_var(pat) else None)
+        rid = np.get("id") if isinstance(np, dict) else None
+
+        if bv and bv in binding:
+            existing = binding[bv]
+            nid = existing.get("id") if isinstance(existing, dict) else existing
+            if nid:
+                bound_node_ids.append(nid)
+        elif rid and not _is_var(str(rid)):
+            bound_node_ids.append(rid)
+        elif rid and _is_var(str(rid)):
+            resolved = _resolve_var(rid, binding)
+            if resolved:
+                bound_node_ids.append(resolved)
+    return bound_node_ids
+
+
+async def _fetch_edge_docs(
     pattern: Dict,
     graph_ids: List[str],
     pit: Optional[datetime],
-    bindings: List[BindingSet],
-    infer: bool = False,
-) -> List[BindingSet]:
-    bind_var       = pattern.get("bind")
-    edge_id        = pattern.get("id")
-    relation       = pattern.get("relation")
-    flavor         = pattern.get("flavor")
-    tags           = pattern.get("tags")
-    attributes     = pattern.get("attributes") or {}
-    member_patterns = pattern.get("members") or []
-    status         = pattern.get("status", "active")
+    infer: bool,
+    keys: List[Tuple],
+    ids_of: Dict[Tuple, List[Any]],
+) -> Dict[Tuple, List[Dict]]:
+    """Documents for each edge search key `(relation, member-id set, edge id)`.
 
-    result: List[BindingSet] = []
+    `ids_of[key]` holds the (unsorted) already-bound member ids behind a key.
+    """
+    store = get_storage().hyperedges
+    cap = get_settings().shql_max_edge_candidates
+    out: Dict[Tuple, List[Dict]] = {}
 
-    for binding in bindings:
-        # Already bound: verify relation/flavor/id match
-        if bind_var and bind_var in binding:
-            existing = binding[bind_var]
-            if isinstance(existing, dict):
-                if relation and existing.get("relation") != relation:
-                    continue
-                if flavor and existing.get("flavor") != flavor:
-                    continue
-                if edge_id:
-                    req = _resolve_var(edge_id, binding) if _is_var(str(edge_id)) else edge_id
-                    if req and existing.get("id") != req:
-                        continue
-            result.append(binding)
-            continue
-
-        # Resolve relation variable if needed
-        resolved_rel = None
-        if relation:
-            resolved_rel = _resolve_var(relation, binding) if _is_var(str(relation)) else relation
-
-        # Resolve edge id variable if needed
-        resolved_id = None
-        if edge_id is not None:
-            resolved_id = _resolve_var(edge_id, binding) if _is_var(str(edge_id)) else edge_id
-            if resolved_id is None:
-                continue
-
-        # Add member constraints from already-bound variables to narrow the query
-        bound_node_ids: List[str] = []
-        for pat in member_patterns:
-            np = (
-                pat if isinstance(pat, str)
-                else (pat.get("node", pat) if isinstance(pat, dict) else {})
-            )
-            bv  = np.get("bind") if isinstance(np, dict) else (pat if _is_var(pat) else None)
-            rid = np.get("id") if isinstance(np, dict) else None
-
-            if bv and bv in binding:
-                existing = binding[bv]
-                nid = existing.get("id") if isinstance(existing, dict) else existing
-                if nid:
-                    bound_node_ids.append(nid)
-            elif rid and not _is_var(str(rid)):
-                bound_node_ids.append(rid)
-            elif rid and _is_var(str(rid)):
-                resolved = _resolve_var(rid, binding)
-                if resolved:
-                    bound_node_ids.append(resolved)
-
-        filters = HyperedgeSearchFilters(
-            hypergraph_ids=graph_ids,
-            # When inferring, a `relation:` filter names the relation the
-            # CALLER wants — which may only ever exist as something
-            # synthesized (e.g. `rel:member-of`, derived from `rel:member`
-            # via an `owl:inverse-of` axiom). Filtering the literal search
-            # by it would starve expand_edge_closure of anything to derive
-            # from, since it only ever expands edges it's handed. So the
-            # literal fetch stays relation-agnostic here, and `resolved_rel`
-            # is applied as a post-filter below, after expansion — matching
-            # the design intent that `rel:member` and `rel:member-of` are
-            # interchangeable query surfaces regardless of which one is
-            # asserted vs. inferred.
-            relation=None if infer else resolved_rel,
-            flavor=flavor,
-            status=status,
-            tags=tags if not tags or isinstance(tags, list) else [tags],
-            pit=pit,
-            # Same reasoning as `relation` above: a transitive fact spans
-            # MULTIPLE literal edges, none of which individually contains
-            # both endpoints — pre-filtering the literal fetch down to
-            # "edges containing all of these already-bound members" would
-            # starve owl:transitive expansion of the very chain it needs to
-            # walk, for a fully-resolved 2-endpoint pattern like
-            # `members: [{id: A}, {id: B}]` under `infer: true`. Dropping it
-            # here only widens the literal candidate set fed into
-            # expansion; final results are still narrowed correctly by the
-            # member-pattern matching loop below, same as dropping
-            # `relation` doesn't loosen the final `docs` filter above.
-            member_node_ids_all=None if infer else (bound_node_ids if bound_node_ids else None),
-            attributes=attributes if attributes else None,
-            extra_filters={"id": resolved_id} if resolved_id is not None else None,
-        )
-        docs = await get_storage().hyperedges.search(filters, skip=0, limit=2000)
-
+    async def finish(docs: List[Dict], resolved_rel: Any) -> List[Dict]:
         # infer: true extends the literal candidate set with synthesized
         # edges before member-pattern matching runs, so an inferred edge is
         # first-class in exactly the same way a literal one is — it can
@@ -512,10 +586,152 @@ async def _eval_edge_pattern(
             # merely happened to expand from the same source docs.
             if resolved_rel:
                 docs = [d for d in docs if d.get("relation") == resolved_rel]
-
         for doc in docs:
             for _f in _SKOS_FIELDS:
                 doc.pop(_f, None)
+        return docs
+
+    async def single(key: Tuple) -> List[Dict]:
+        resolved_rel, _members, resolved_id = key
+        bound = ids_of[key]
+        filters = _edge_filters(
+            pattern, graph_ids, pit,
+            # When inferring, a `relation:` filter names the relation the
+            # CALLER wants — which may only ever exist as something
+            # synthesized (e.g. `rel:member-of`, derived from `rel:member`
+            # via an `owl:inverse-of` axiom). Filtering the literal search
+            # by it would starve expand_edge_closure of anything to derive
+            # from, since it only ever expands edges it's handed. So the
+            # literal fetch stays relation-agnostic here, and `resolved_rel`
+            # is applied as a post-filter in `finish`, after expansion —
+            # matching the design intent that `rel:member` and
+            # `rel:member-of` are interchangeable query surfaces regardless
+            # of which one is asserted vs. inferred.
+            relation=None if infer else resolved_rel,
+            # Same reasoning as `relation` above: a transitive fact spans
+            # MULTIPLE literal edges, none of which individually contains
+            # both endpoints — pre-filtering the literal fetch down to
+            # "edges containing all of these already-bound members" would
+            # starve owl:transitive expansion of the very chain it needs to
+            # walk, for a fully-resolved 2-endpoint pattern like
+            # `members: [{id: A}, {id: B}]` under `infer: true`. Dropping it
+            # here only widens the literal candidate set fed into
+            # expansion; final results are still narrowed correctly by the
+            # member-pattern matching loop, same as dropping `relation`
+            # doesn't loosen the final `docs` filter.
+            member_node_ids_all=None if infer else (bound if bound else None),
+            edge_id=resolved_id,
+        )
+        docs = await _search_capped(store, filters, cap, "edge pattern candidates")
+        return await finish(docs, resolved_rel)
+
+    # Keys that differ only in their member-id sets can share one query.
+    groups: Dict[Tuple, List[Tuple]] = {}
+    for key in keys:
+        groups.setdefault((key[0], key[2]), []).append(key)
+
+    batch = get_settings().shql_join_batch_size
+    for (resolved_rel, resolved_id), group in groups.items():
+        constrained = [k for k in group if k[1]]
+        for key in group:
+            if not key[1]:
+                out[key] = await single(key)
+        for chunk in _chunks(constrained, batch):
+            if len(chunk) == 1:
+                out[chunk[0]] = await single(chunk[0])
+                continue
+            # Fetch every edge touching any bound id, at most enough to serve
+            # `cap` edges per key. Hitting that limit means some key's edges
+            # may be missing, so fall back to exact per-key queries.
+            limit = cap * len(chunk) + 1
+            any_ids = sorted({i for k in chunk for i in ids_of[k]}, key=str)
+            docs = await store.search(
+                _edge_filters(pattern, graph_ids, pit, relation=resolved_rel,
+                              member_node_ids_any=any_ids, edge_id=resolved_id),
+                skip=0, limit=limit,
+            )
+            if len(docs) >= limit:
+                for key in chunk:
+                    out[key] = await single(key)
+                continue
+            member_sets = [
+                {m.get("node_id") if isinstance(m, dict) else m for m in d.get("members", [])}
+                for d in docs
+            ]
+            for key in chunk:
+                need = set(ids_of[key])
+                matched = [d for d, ms in zip(docs, member_sets) if need <= ms]
+                if len(matched) > cap:
+                    from hgai.core.inference import note_truncation
+                    note_truncation(f"edge pattern candidates (cap {cap})")
+                    matched = matched[:cap]
+                out[key] = await finish(matched, resolved_rel)
+    return out
+
+
+async def _eval_edge_pattern(
+    pattern: Dict,
+    graph_ids: List[str],
+    pit: Optional[datetime],
+    bindings: List[BindingSet],
+    infer: bool = False,
+) -> List[BindingSet]:
+    bind_var       = pattern.get("bind")
+    edge_id        = pattern.get("id")
+    relation       = pattern.get("relation")
+    flavor         = pattern.get("flavor")
+    member_patterns = pattern.get("members") or []
+
+    # Phase 1: classify each binding (pass through / drop / needs a search key).
+    entries: List[Tuple[BindingSet, Optional[Tuple]]] = []
+    keys: List[Tuple] = []
+    ids_of: Dict[Tuple, List[Any]] = {}
+    for binding in bindings:
+        # Already bound: verify relation/flavor/id match
+        if bind_var and bind_var in binding:
+            existing = binding[bind_var]
+            if isinstance(existing, dict):
+                if relation and existing.get("relation") != relation:
+                    continue
+                if flavor and existing.get("flavor") != flavor:
+                    continue
+                if edge_id:
+                    req = _resolve_var(edge_id, binding) if _is_var(str(edge_id)) else edge_id
+                    if req and existing.get("id") != req:
+                        continue
+            entries.append((binding, None))
+            continue
+
+        # Resolve relation variable if needed
+        resolved_rel = None
+        if relation:
+            resolved_rel = _resolve_var(relation, binding) if _is_var(str(relation)) else relation
+
+        # Resolve edge id variable if needed
+        resolved_id = None
+        if edge_id is not None:
+            resolved_id = _resolve_var(edge_id, binding) if _is_var(str(edge_id)) else edge_id
+            if resolved_id is None:
+                continue
+
+        # Add member constraints from already-bound variables to narrow the query
+        # (ignored when inferring — see `_fetch_edge_docs`).
+        bound = [] if infer else _bound_member_ids(member_patterns, binding)
+        key = (resolved_rel, tuple(sorted({str(i) for i in bound})), resolved_id)
+        entries.append((binding, key))
+        if key not in ids_of:
+            ids_of[key] = bound
+            keys.append(key)
+
+    # Phase 2: one fetch per distinct key (batched); phase 3: expand in binding order.
+    docs_by_key = await _fetch_edge_docs(pattern, graph_ids, pit, infer, keys, ids_of) if keys else {}
+
+    result: List[BindingSet] = []
+    for binding, key in entries:
+        if key is None:
+            result.append(binding)
+            continue
+        for doc in docs_by_key[key]:
             edge_members = doc.get("members", [])
 
             expanded = (
@@ -739,14 +955,13 @@ async def _resolve_node_bindings(
     if not ids_needed:
         return bindings
 
-    docs = await get_storage().hypernodes.find_by_ids(
-        list(ids_needed), graph_ids
-    )
+    # Chunked so a huge join never builds one oversized `$in` list.
     node_map: Dict[str, Dict] = {}
-    for doc in docs:
-        for _f in _SKOS_FIELDS:
-            doc.pop(_f, None)
-        node_map[doc["id"]] = doc
+    for chunk in _chunks(sorted(ids_needed), _RESOLVE_CHUNK):
+        for doc in await get_storage().hypernodes.find_by_ids(chunk, graph_ids):
+            for _f in _SKOS_FIELDS:
+                doc.pop(_f, None)
+            node_map[doc["id"]] = doc
 
     result = []
     for binding in bindings:
@@ -1031,6 +1246,325 @@ async def _authorize_query(shql: Dict[str, Any], account: AccountInDB) -> None:
                     await _check(member.id, member.space_id)
 
 
+# ── Aggregate pushdown ────────────────────────────────────────────────────────
+#
+# `aggregate: {count, group_by}` is normally computed in memory over the
+# matched rows, which are capped at the candidate limit. When the query is
+# simple enough that storage can answer it exactly, the aggregate is computed
+# by `store.aggregate(...)` instead: exact regardless of graph size, and never
+# subject to the candidate caps. Anything the planner cannot prove equivalent
+# returns None and takes the in-memory path unchanged.
+
+_PUSHDOWN_NODE_KEYS = frozenset({"bind", "id", "type", "tags", "attributes", "status"})
+_PUSHDOWN_EDGE_KEYS = frozenset({"bind", "id", "relation", "flavor", "tags", "attributes", "status"})
+
+
+_AGGREGATE_KEYS = frozenset({"count", "group_by", *MEASURE_FNS})
+_measure_requests = measure_requests   # (fn, projected row key) pairs; shared with federation merging
+
+
+def _aggregate_in_memory(items: List[Dict], aggregate: Dict[str, Any]) -> Dict[str, Any]:
+    """`aggregate:` over already-fetched rows, using the storage layer's reducer semantics.
+
+    Result shape (keys present only when requested):
+      count             number of rows
+      sum/avg/min/max   {row_key: value} over all rows
+      groups            {str(group value): row count}   ("unknown" if the row key is absent)
+      group_measures    {str(group value): {fn: {row_key: value}}}
+    """
+    from hgai_module_storage.aggregate import reduce_values
+
+    pairs = _measure_requests(aggregate)
+    out: Dict[str, Any] = {}
+    if "count" in aggregate:
+        out["count"] = len(items)
+    for fn, key in pairs:
+        out.setdefault(fn, {})[key] = reduce_values(fn, (it.get(key) for it in items))
+    if "group_by" in aggregate:
+        field = aggregate["group_by"]
+        buckets: Dict[str, List[Dict]] = {}
+        for item in items:
+            buckets.setdefault(str(item.get(field, "unknown")), []).append(item)
+        out["groups"] = {k: len(v) for k, v in buckets.items()}
+        if pairs:
+            out["group_measures"] = {
+                k: _shape_measures((fn, key, reduce_values(fn, (it.get(key) for it in v)))
+                                   for fn, key in pairs)
+                for k, v in buckets.items()
+            }
+    return out
+
+
+def _shape_measures(triples: Any) -> Dict[str, Dict[str, Any]]:
+    shaped: Dict[str, Dict[str, Any]] = {}
+    for fn, key, value in triples:
+        shaped.setdefault(fn, {})[key] = value
+    return shaped
+
+
+class _AggregatePlan:
+    def __init__(
+        self,
+        store: Any,
+        filters: Any,
+        group_path: Optional[str],
+        measures: List[Tuple[str, str, str]],
+    ):
+        self.store = store
+        self.filters = filters
+        self.group_path = group_path   # store field path, or None for a global aggregate
+        self.measures = measures       # (fn, projected row key, store field path)
+
+
+def _pushdown_field(key: Any, bind: Any, select_fields: List[str]) -> Optional[str]:
+    """Store field path for a projected row key like `n.attributes.age`, or None if not pushdownable.
+
+    The key must be `<pattern variable>.<scalar store field>` AND be projected by
+    `select:` — otherwise the in-memory row has no such key and yields
+    different (empty) results. `tags` is excluded: storage unwinds arrays for
+    grouping and orders them differently for min/max, while the in-memory path
+    treats the whole list as one value.
+    """
+    from hgai_module_storage.aggregate import UNWOUND_FIELDS, AggregateSpecError, validate_field_path
+
+    if not isinstance(key, str) or not isinstance(bind, str) or not _is_var(bind):
+        return None
+    prefix = bind.lstrip("?") + "."
+    if not key.startswith(prefix):
+        return None
+    path = key[len(prefix):]
+    if f"{bind}.{path}" not in [f for f in select_fields if isinstance(f, str)]:
+        return None
+    try:
+        validate_field_path(path)
+    except AggregateSpecError:
+        return None
+    return None if path in UNWOUND_FIELDS else path
+
+
+class _SinglePattern:
+    def __init__(self, store: Any, filters: Any, bind: Optional[str]):
+        self.store = store
+        self.filters = filters
+        self.bind = bind
+
+
+def _single_pattern(
+    where_patterns: List[Any],
+    graph_ids: List[str],
+    pit: Optional[datetime],
+    infer: bool,
+    distinct: bool,
+) -> Optional[_SinglePattern]:
+    """The store + filters for a query that is exactly one simple `node:`/`edge:` pattern, else None.
+
+    "Simple": no filters, OPTIONAL, UNION or members, no variables in `id`/
+    `relation`, and no `infer`/`distinct` (both change which rows exist).
+    Shared by aggregate and paging pushdown so both accept the same shapes.
+    """
+    if infer or distinct or not graph_ids:
+        return None
+    if len(where_patterns) != 1 or not isinstance(where_patterns[0], dict):
+        return None
+
+    raw = where_patterns[0]
+    if "node" in raw:
+        pattern = _normalize_node_pattern(raw)
+        if set(pattern) - _PUSHDOWN_NODE_KEYS:
+            return None
+        node_id = pattern.get("id")
+        if node_id is not None and _is_var(str(node_id)):
+            return None
+        filters = _node_filters(
+            pattern, graph_ids, pit, [node_id] if node_id is not None else None,
+        )
+        return _SinglePattern(get_storage().hypernodes, filters, pattern.get("bind"))
+    if "edge" in raw:
+        pattern = _normalize_edge_pattern(raw)
+        if set(pattern) - _PUSHDOWN_EDGE_KEYS:
+            return None
+        if any(v is not None and _is_var(str(v)) for v in (pattern.get("id"), pattern.get("relation"))):
+            return None
+        filters = _edge_filters(pattern, graph_ids, pit,
+                                relation=pattern.get("relation"), edge_id=pattern.get("id"))
+        return _SinglePattern(get_storage().hyperedges, filters, pattern.get("bind"))
+    return None
+
+
+def _plan_aggregate_pushdown(
+    *,
+    aggregate: Dict[str, Any],
+    where_patterns: List[Any],
+    select_fields: List[str],
+    graph_ids: List[str],
+    pit: Optional[datetime],
+    infer: bool,
+    distinct: bool,
+) -> Optional[_AggregatePlan]:
+    """Return a plan when `aggregate` can be served exactly by storage, else None.
+
+    Eligible only for a `_single_pattern` query where every `group_by` / `sum` /
+    `avg` / `min` / `max` key passes `_pushdown_field`.
+    """
+    if not isinstance(aggregate, dict) or not (_AGGREGATE_KEYS & set(aggregate)):
+        return None
+    single = _single_pattern(where_patterns, graph_ids, pit, infer, distinct)
+    if single is None:
+        return None
+
+    bind = single.bind
+    group_path: Optional[str] = None
+    if "group_by" in aggregate:
+        group_path = _pushdown_field(aggregate["group_by"], bind, select_fields)
+        if group_path is None:
+            return None
+
+    measures: List[Tuple[str, str, str]] = []
+    try:
+        pairs = _measure_requests(aggregate)
+    except TypeError:
+        return None
+    for fn, key in pairs:
+        path = _pushdown_field(key, bind, select_fields)
+        if path is None:
+            return None
+        measures.append((fn, key, path))
+    return _AggregatePlan(single.store, single.filters, group_path, measures)
+
+
+async def _run_aggregate_pushdown(
+    plan: _AggregatePlan, aggregate: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Execute a plan and shape it exactly like `_aggregate_in_memory`.
+
+    Group keys are `str(value)` (a missing/null value is "None"), matching the
+    in-memory path. Returns None — caller falls back to memory — in the one
+    case that cannot be merged exactly: distinct group values that collide
+    after `str()` (e.g. 1 and "1") while measures are requested.
+    """
+    from hgai_module_storage.filters import AggregateMeasure, AggregateSpec
+
+    measures = [AggregateMeasure(fn, path, alias=f"m{i}") for i, (fn, _k, path) in enumerate(plan.measures)]
+
+    def shape(row: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        return _shape_measures((fn, key, row[f"m{i}"]) for i, (fn, key, _p) in enumerate(plan.measures))
+
+    out: Dict[str, Any] = {}
+    if plan.group_path is None:
+        (row,) = await plan.store.aggregate(
+            plan.filters, AggregateSpec(measures=[AggregateMeasure("count")] + measures),
+        )
+        if "count" in aggregate:
+            out["count"] = row["count"]
+        out.update(shape(row))
+        return out
+
+    rows = await plan.store.aggregate(
+        plan.filters,
+        AggregateSpec(group_by=[plan.group_path], measures=[AggregateMeasure("count")] + measures),
+    )
+    groups: Dict[str, int] = {}
+    group_measures: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for row in rows:
+        key = str(row[plan.group_path])
+        if key in groups and plan.measures:
+            return None
+        groups[key] = groups.get(key, 0) + row["count"]
+        if plan.measures:
+            group_measures[key] = shape(row)
+    if "count" in aggregate:
+        out["count"] = sum(groups.values())
+    if plan.measures:
+        (total,) = await plan.store.aggregate(plan.filters, AggregateSpec(measures=measures))
+        out.update(shape(total))
+    out["groups"] = groups
+    if plan.measures:
+        out["group_measures"] = group_measures
+    return out
+
+
+# ── Paging pushdown (order_by / offset / limit) ──────────────────────────────
+#
+# For a `_single_pattern` query, the storage layer sorts and pages the matching
+# documents itself (`search_ordered`, or plain `search` with skip/limit when
+# there is no `order_by`), so the result is exact however many documents match
+# and never limited by the candidate caps. Anything else keeps the in-memory
+# path (fetch up to the cap, sort, slice).
+
+class _PagingPlan:
+    def __init__(self, single: _SinglePattern, order: List[Tuple[str, bool]]):
+        self.single = single
+        self.order = order   # [(store field path, descending)]; empty = natural order
+
+
+def _pushdown_sort_field(key: str, bind: str, select_fields: List[str]) -> Optional[str]:
+    """Store field path for one `order_by` key, or None if it can't be pushed down.
+
+    In-memory ordering reads either the projected row key or, failing that,
+    the whole bound document from the row. Both equal the document field, so
+    a key is pushdownable when `select:` projects that exact key or projects
+    the whole variable. Otherwise the in-memory value is missing for every
+    row (ordering is a no-op there) and storage ordering would differ.
+    """
+    from hgai_module_storage.aggregate import UNWOUND_FIELDS, AggregateSpecError, validate_field_path
+
+    prefix = bind.lstrip("?") + "."
+    if not key.startswith(prefix):
+        return None
+    path = key[len(prefix):]
+    whole_var = not select_fields or select_fields == ["*"] or "*" in select_fields or bind in select_fields
+    if not whole_var and f"{bind}.{path}" not in select_fields:
+        return None
+    try:
+        validate_field_path(path)
+    except AggregateSpecError:
+        return None
+    return None if path in UNWOUND_FIELDS else path
+
+
+def _plan_paging_pushdown(
+    *,
+    order_by: Any,
+    where_patterns: List[Any],
+    select_fields: List[str],
+    graph_ids: List[str],
+    pit: Optional[datetime],
+    infer: bool,
+    distinct: bool,
+) -> Optional[_PagingPlan]:
+    single = _single_pattern(where_patterns, graph_ids, pit, infer, distinct)
+    if single is None or not isinstance(single.bind, str) or not _is_var(single.bind):
+        return None   # rows are built from the bound variable
+
+    order: List[Tuple[str, bool]] = []
+    if order_by:
+        for key, descending in _parse_order_by(order_by):
+            path = _pushdown_sort_field(key, single.bind, select_fields)
+            if path is None:
+                return None
+            order.append((path, descending))
+        if len({p for p, _ in order}) != len(order):
+            return None   # duplicate keys: in-memory applies both passes, storage rejects
+    return _PagingPlan(single, order)
+
+
+async def _run_paging_pushdown(
+    plan: _PagingPlan, select_fields: List[str], offset: int, limit: int,
+) -> List[Dict]:
+    """Fetch one sorted page from storage and project it exactly like the in-memory path."""
+    store, filters = plan.single.store, plan.single.filters
+    if plan.order:
+        docs = await store.search_ordered(filters, plan.order, skip=offset, limit=limit)
+    else:
+        docs = await store.search(filters, skip=offset, limit=limit)
+    bindings: List[BindingSet] = []
+    for doc in docs:
+        for _f in _SKOS_FIELDS:
+            doc.pop(_f, None)
+        bindings.append({plan.single.bind: doc})
+    return _project_select(bindings, select_fields)
+
+
 async def execute_shql(shql_text: str, use_cache: bool = True, *, account: AccountInDB) -> SHQLResult:
     """Parse and execute an SHQL query string on behalf of `account`.
 
@@ -1083,11 +1617,15 @@ async def execute_shql(shql_text: str, use_cache: bool = True, *, account: Accou
 
     # Handle dot-notation mesh refs (mesh_id.server_id.graph_id)
     dot_items: List[Dict] = []
+    fed_partials: List[Dict] = []     # {server_id, meta} of each federated server that answered
+    fed_errors: List[Dict] = []       # {server_id, error} of each that did not
     if dot_refs:
         try:
             from hgai_module_mesh.engine import execute_dot_refs
             dot_result = await execute_dot_refs(dot_refs, shql_text, use_cache=use_cache, account=account)
             dot_items = dot_result["items"]
+            fed_partials.extend(dot_result.get("partials", []))
+            fed_errors.extend(dot_result.get("errors", []))
         except ImportError:
             from .parser import SHQLError
             raise SHQLError("Mesh dot-notation requires hgai_module_mesh to be installed")
@@ -1111,6 +1649,8 @@ async def execute_shql(shql_text: str, use_cache: bool = True, *, account: Accou
                         from hgai_module_mesh.engine import federated_shql
                         fed = await federated_shql(gid, shql_text, use_cache=use_cache, account=account)
                         dot_items.extend(fed["items"])
+                        fed_partials.extend(fed.get("partials", []))
+                        fed_errors.extend(fed.get("errors", []))
                         continue
                     except ImportError:
                         from .parser import SHQLError
@@ -1136,16 +1676,60 @@ async def execute_shql(shql_text: str, use_cache: bool = True, *, account: Accou
         from dateutil.parser import parse as parse_dt
         pit = parse_dt(shql["at"])
 
-    # Execute local patterns (skipped when no local graphs)
-    if graph_ids:
-        bindings = await _evaluate_patterns(where_patterns, graph_ids, pit, [{}], infer=infer)
+    # Federation: every server aggregates its own graphs and returns partials
+    # (see aggregate_merge); they are merged with this server's own partial
+    # below. `distinct` needs the merged rows, so it keeps the row-based path.
+    federated = bool(dot_items) or bool(fed_partials)
+    merge_partials = bool(aggregate) and federated and not distinct
+    agg_req = partial_aggregate(aggregate) if merge_partials else aggregate
+
+    # Aggregate pushdown: when storage can answer `aggregate:` exactly, it does,
+    # independent of the candidate caps. With federation this is the *local*
+    # partial only.
+    agg_results: Dict[str, Any] = {}
+    pushed_down = False
+    if aggregate:
+        plan = _plan_aggregate_pushdown(
+            aggregate=agg_req, where_patterns=where_patterns, select_fields=select_fields,
+            graph_ids=graph_ids, pit=pit, infer=infer, distinct=distinct,
+        )
+        if plan is not None:
+            pushed = await _run_aggregate_pushdown(plan, agg_req)
+            if pushed is not None:
+                agg_results, pushed_down = pushed, True
+
+    # Paging pushdown: storage sorts and pages the rows itself. Needs every
+    # aggregate (if any) to be storage-computed already — an in-memory
+    # aggregate needs all rows — and no federated rows to merge in.
+    rows_pushed_down = False
+    items: List[Dict] = []
+    if graph_ids and not federated and (not aggregate or pushed_down) and not (pushed_down and limit == 0):
+        paging = _plan_paging_pushdown(
+            order_by=order_by, where_patterns=where_patterns, select_fields=select_fields,
+            graph_ids=graph_ids, pit=pit, infer=infer, distinct=distinct,
+        )
+        if paging is not None:
+            items = await _run_paging_pushdown(paging, select_fields, offset, limit)
+            rows_pushed_down = True
+
+    # Execute local patterns (skipped when no local graphs). A pushed-down
+    # aggregate with `limit: 0` needs no rows at all, so nothing is fetched.
+    truncated_by: List[str] = []
+    if graph_ids and not rows_pushed_down and not (pushed_down and limit == 0):
+        from hgai.core.inference import truncation_sink
+        sink_token = truncation_sink.set(truncated_by)
+        try:
+            bindings = await _evaluate_patterns(where_patterns, graph_ids, pit, [{}], infer=infer)
+        finally:
+            truncation_sink.reset(sink_token)
         bindings = await _resolve_node_bindings(bindings, graph_ids)
         items = _project_select(bindings, select_fields)
-    else:
+    elif not rows_pushed_down:
         items = []
 
     # Merge dot-notation / federation results
-    items.extend(dot_items)
+    local_items = items
+    items = items + dot_items
 
     # DISTINCT
     if distinct:
@@ -1158,35 +1742,40 @@ async def execute_shql(shql_text: str, use_cache: bool = True, *, account: Accou
                 deduped.append(item)
         items = deduped
 
-    # AGGREGATE — `count`/`group_by`, with an "unknown" fallback for a
-    # missing field, spread additively into meta as **agg_results.
-    # Computed over the full matched, deduplicated item set — before ORDER
-    # BY/OFFSET/LIMIT paginate it — so `count`/`groups` describe the whole
-    # result, not just the returned page. `group_by` names a *projected row
-    # key*, since an SHQL item is a `select:`-projected row keyed by
-    # variable — e.g. `select: [?e.relation]` produces the row key
-    # `"e.relation"`, which is what `group_by` must name here.
-    agg_results: Dict[str, Any] = {}
-    if aggregate:
-        if "count" in aggregate:
-            agg_results["count"] = len(items)
-        if "group_by" in aggregate:
-            field = aggregate["group_by"]
-            groups: Dict[str, int] = {}
-            for item in items:
-                key = str(item.get(field, "unknown"))
-                groups[key] = groups.get(key, 0) + 1
-            agg_results["groups"] = groups
+    # AGGREGATE — `count`, `group_by`, and `sum`/`avg`/`min`/`max`, spread
+    # additively into meta (see `_aggregate_in_memory` for the shape). Computed
+    # over the full matched, deduplicated item set — before ORDER
+    # BY/OFFSET/LIMIT paginate it — so the values describe the whole result,
+    # not just the returned page. Every field named (`group_by`, `sum`, ...)
+    # is a *projected row key*, since an SHQL item is a `select:`-projected
+    # row keyed by variable — e.g. `select: [?e.relation]` produces the row
+    # key `"e.relation"`. Skipped when storage already answered it (pushdown).
+    federation_merged = False
+    if merge_partials:
+        local_part = agg_results if pushed_down else (
+            _aggregate_in_memory(local_items, agg_req) if graph_ids else None
+        )
+        parts = ([local_part] if local_part is not None else []) + [p["meta"] for p in fed_partials]
+        merged = merge_aggregate_meta(parts, aggregate) if parts else None
+        if merged is not None:
+            agg_results, federation_merged = merged, True
+        else:
+            # A server could not supply the partials (e.g. an older version):
+            # aggregate the merged rows instead, as before.
+            agg_results = _aggregate_in_memory(items, aggregate)
+    elif aggregate and not pushed_down:
+        agg_results = _aggregate_in_memory(items, aggregate)
 
     # ORDER BY — `order_by` accepts a single field or a list of fields, each
     # optionally suffixed with " asc"/" desc" (case-insensitive, SQL-style;
     # e.g. "?e.relation desc"), for multi-key sort with independent
     # directions per key. A bare field with no suffix sorts ascending.
-    if order_by:
+    if order_by and not rows_pushed_down:
         items = _apply_order_by(items, order_by)
 
     # OFFSET / LIMIT
-    items = items[offset: offset + limit]
+    if not rows_pushed_down:
+        items = items[offset: offset + limit]
 
     meta = {
         "graph_ids":     graph_ids,
@@ -1195,8 +1784,32 @@ async def execute_shql(shql_text: str, use_cache: bool = True, *, account: Accou
         "pattern_count": len(where_patterns),
         "infer":         infer,
         "cached":        False,
+        # True when a pattern hit its candidate cap: `items` (and any
+        # in-memory count/group_by aggregates) cover only the fetched
+        # candidates. Aggregates with `aggregate_pushdown: true` were computed
+        # by storage and are exact regardless of this flag.
+        "truncated":     bool(truncated_by),
+        "truncated_by":  truncated_by,
+        # Storage computed the aggregate — on every participating server when federated.
+        "aggregate_pushdown": (
+            (pushed_down or not graph_ids) and all(p["meta"].get("aggregate_pushdown") for p in fed_partials)
+            if federation_merged else pushed_down
+        ),
+        # True when storage sorted and paged the rows (order_by/offset/limit):
+        # `items` are then exact and not subject to the candidate caps.
+        "paging_pushdown": rows_pushed_down,
         **agg_results,
     }
+    if federated or fed_errors:
+        meta["federation"] = {
+            "servers": [p["server_id"] for p in fed_partials],
+            "errors": fed_errors,           # servers that failed are absent from rows AND aggregates
+            "aggregate_merged": federation_merged,
+        }
+        for p in fed_partials:               # a server's truncation is this result's truncation
+            for what in p["meta"].get("truncated_by", []) or []:
+                meta["truncated_by"] = meta["truncated_by"] + [f"{p['server_id']}: {what}"]
+        meta["truncated"] = bool(meta["truncated_by"])
 
     result = SHQLResult(alias=alias, items=items, meta=meta)
 

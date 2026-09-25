@@ -185,6 +185,35 @@ async def get_node(graph_id: str, node_id: str):
 | `media` | `get_storage().media` | Binary file metadata (upload/download/delete) |
 | `notes` | `get_storage().notes` | Account-owned note documents |
 
+### Aggregation
+
+`hypernodes` and `hyperedges` also expose `aggregate(filters, spec)` and `count(filters)`, which group and reduce server-side instead of returning documents:
+
+```python
+from hgai_module_storage.filters import AggregateMeasure as M, AggregateSpec, HypernodeSearchFilters
+
+rows = await get_storage().hypernodes.aggregate(
+    HypernodeSearchFilters(hypergraph_ids=["my-graph"]),
+    AggregateSpec(
+        group_by=["type"],
+        measures=[M("count"), M("avg", "attributes.age")],
+        order_by=[("count", True)],
+        limit=10,
+    ),
+)
+# [{"type": "person", "count": 42, "avg_attributes_age": 31.5}, ...]
+```
+
+Functions: `count`, `count_distinct`, `count_numeric` (numeric values only — `avg`'s divisor), `sum`, `avg`, `min`, `max`. Fields are `id`, `type`, `label`, `status`, `relation`, `flavor`, `tags`, `hypergraph_id`, or `attributes.<key>`; anything else raises `AggregateSpecError`. Exact semantics (nulls, `tags` unwinding, ordering) are specified in `hgai_module_storage/aggregate.py`. `count` and aggregates ignore the SHQL candidate caps.
+
+**Writing a storage backend:** you get correct aggregation for free — the base class default pages through `search()` and reduces in Python. Override `aggregate()` (and set `supports_aggregate_pushdown = True`) to push it into your database, then add your backend to `BACKENDS` in `tests/test_storage_aggregate.py`; that conformance suite is what guarantees every backend returns identical rows.
+
+### Ordered paging
+
+`hypernodes` and `hyperedges` also expose `search_ordered(filters, order_by, skip, limit)` — one page of matches sorted by `[(field path, descending), ...]` (same field whitelist as aggregation). Values sort missing/null first, then numbers < strings < objects < arrays < booleans < datetimes; rows tied on every key are ordered by `id` then `hypergraph_id`, so pages never overlap or skip. Semantics live in `hgai_module_storage/ordering.py`.
+
+**Writing a storage backend:** the default implementation streams `search()` and keeps the best `skip + limit` rows (correct anywhere, but scans every match). Override `search_ordered()` and set `supports_ordered_search = True` to sort natively, and add your backend to `BACKENDS` in `tests/storage_fixtures.py` — `tests/test_storage_ordering.py` is the conformance suite.
+
 ### Custom Module Storage
 
 If your module needs its own storage, use the active backend's underlying connection. For the MongoDB backend:
