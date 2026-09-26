@@ -3589,6 +3589,57 @@ function vizLayerForce() {
   return force;
 }
 
+const VIZ_DBLCLICK_MS = 700;      // window in which a dblclick counts as belonging to a node click
+const VIZ_DBLCLICK_SLOP_PX = 12;  // pointer travel allowed between the two clicks
+let vizLastNodeClick = { node: null, t: 0, x: 0, y: 0 };
+
+// Records the node under a click. Within the double-click window and near the
+// same spot, the FIRST node is kept: the second click's raycast may hit a
+// different node (or none) because the camera is already flying.
+function vizNoteNodeClick(node, ev) {
+  const now = Date.now();
+  const x = ev?.clientX ?? 0, y = ev?.clientY ?? 0;
+  const prev = vizLastNodeClick;
+  const sameSpot = prev.node && now - prev.t <= VIZ_DBLCLICK_MS
+    && Math.hypot(x - prev.x, y - prev.y) <= VIZ_DBLCLICK_SLOP_PX;
+  vizLastNodeClick = sameSpot ? { ...prev, t: now } : { node, t: now, x, y };
+}
+
+// Native `dblclick` on the canvas: focus the node recorded by the first click.
+function vizHandleDblClick(ev) {
+  const { node, t, x, y } = vizLastNodeClick;
+  vizLastNodeClick = { node: null, t: 0, x: 0, y: 0 };
+  if (!node || Date.now() - t > VIZ_DBLCLICK_MS) return;
+  if (Math.hypot(ev.clientX - x, ev.clientY - y) > VIZ_DBLCLICK_SLOP_PX) return;
+  vizFocusOnNode(node);
+}
+
+// The raw (unprefixed) hypernode / hyperedge id a scene node stands for, or
+// null when it has none a focus can use: inferred edges are computed live and
+// have no persisted id (their "id" is synthetic), and a members node stands
+// for its parent hyperedge.
+function vizFocusIdForNode(node) {
+  if (node._inferred) return null;
+  if (node.kind === 'members') {
+    return node.parentRaw?._inferred ? null : (node.parentRaw?.id || node.parentRaw?.hyperkey || null);
+  }
+  return node.raw?.id || node.raw?.hyperkey || null;
+}
+
+// Make `node` the focus, reset the degrees to 1 and re-render. Returns false
+// (and does nothing) if the node cannot be a focus.
+function vizFocusOnNode(node) {
+  const id = vizFocusIdForNode(node);
+  if (!id) {
+    toast('Inferred elements are computed live and cannot be used as a focus', 'warning');
+    return false;
+  }
+  document.getElementById('viz-focus-id').value = id;
+  document.getElementById('viz-focus-degree').value = '1';
+  renderViz();
+  return true;
+}
+
 function initViz3D() {
   const container = document.getElementById('viz-canvas');
   const g = ForceGraph3D()(container)
@@ -3625,7 +3676,12 @@ function initViz3D() {
     .linkDirectionalArrowLength(4)
     .linkDirectionalArrowRelPos(1)
     .linkDirectionalArrowColor(l => l._dim ? VIZ_DIM_LINK_COLOR : l.color)
-    .onNodeClick(node => {
+    .onNodeClick((node, ev) => {
+      // 3d-force-graph has no double-click callback, and the first click starts a
+      // camera fly-to, so by the second click the node has moved away from the
+      // pointer and won't be hit again. Instead remember the node under the FIRST
+      // click of a pair; the container's native `dblclick` (below) acts on it.
+      vizNoteNodeClick(node, ev);
       const dist = 90;
       const ratio = 1 + dist / (Math.hypot(node.x || 0, node.y || 0, node.z || 0) || 1);
       g.cameraPosition({ x: node.x * ratio, y: node.y * ratio, z: node.z * ratio }, node, 700);
@@ -3661,6 +3717,7 @@ function initViz3D() {
     .onBackgroundClick(vizClearDetail);
 
   State.viz3d = g;
+  container.addEventListener('dblclick', vizHandleDblClick);
   vizResizeCanvas();
   window.addEventListener('resize', vizResizeCanvas);
 

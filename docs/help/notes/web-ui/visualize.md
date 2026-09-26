@@ -26,6 +26,6 @@ status: active
 | **Hide orphan nodes** | Hide nodes that are not a member of any hyperedge |
 | **Show inferred edges** | Also draw facts derived from inverse-of / symmetric / superproperty / transitive axioms — computed live, never persisted ([Inferencing](help:help-inferencing)) |
 
-Selecting an item shows its details in a collapsible side panel, and you can focus on one node's neighborhood (and clear the focus again).
+Selecting an item shows its details in a collapsible side panel, and you can focus on one node's neighborhood (and clear the focus again). **Double-click** any hypernode or hyperedge to make it the focus: the focus field is set to its id, the degrees reset to 1° and the scene re-renders around it. (Inferred edges are computed live and can't be a focus.)
 
 To make derived facts permanent, use [Project Inference](help:help-project-inference).
