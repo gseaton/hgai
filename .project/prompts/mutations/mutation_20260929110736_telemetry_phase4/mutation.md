@@ -1,0 +1,12 @@
+# Mutation Log
+
+## Created
+- **tests/test_telemetry_ingest.py** — 9 tests for `POST /api/v1/telemetry/ingest`: verified-account attachment, shell surface + hyphenated features, rejection of unknown surface/feature-shape/outcome, attribute allowlist stripping, rejection of free-text-shaped payloads, always-202 even when `emit()` is broken, and auth-required.
+- **tests/test_telemetry_shell.py** — 10 tests for `shell/hgai_shell.py`'s telemetry reporting: alias-to-canonical-command resolution, no-op before login, posts to the ingest endpoint when authenticated, never raises on a failed request.
+
+## Modified
+- **hgai_module_telemetry/api_router.py** — Added `POST /telemetry/ingest`: an authenticated (any active account, not admin-only), validated (`surface` in `{web-ui, shell}`, `feature` matches a dotted-token shape, `outcome` in the known set, `attributes` allowlisted to ≤8 primitive-valued keys with length caps), always-202 relay that enqueues a usage event with the request's own verified account.
+- **ui/js/api.js** — Added `trackFeature(feature, attributes)` (fire-and-forget POST to `/telemetry/ingest`, never throws, no-op when signed out) and `getTelemetryStatus()`; both exported from `HGAI_API`.
+- **ui/js/app.js** — Wired `HGAI_API.trackFeature(...)` into five existing user actions: Visualize Render click, the double-click-focus handler, hypergraph export, hypergraph import, and Notes save; `runShqlQuery()` tracks `ui.query.run` regardless of which of its three triggers (button, Ctrl-Enter, Cmd-Enter) fired it. Added a new "Telemetry" admin screen (`loadTelemetryScreen()`, a read-only status card from `GET /telemetry/status`, mirroring the existing System screen's own read-only-info-card pattern) with a button that opens the Query (SHQL) screen pre-filled with a starter query against `__local-telemetry`, and a help link.
+- **ui/index.html** — Added the "Telemetry" sidebar nav item and its screen markup (status table, explanation card, browse-in-Query button, help link).
+- **shell/hgai_shell.py** — Added `HgaiClient.track_feature(feature, attributes, outcome)` (posts to the same `/telemetry/ingest` endpoint the Web UI uses, no-op before login, never raises) and `_canonical_command_name(typed, handler)` (resolves an alias like `dn`/`sq`/`mq` to its full command name via the bound method's own `__name__`); `handle()` now reports one event per dispatched command, with an outcome derived from which exception (if any) the command raised.

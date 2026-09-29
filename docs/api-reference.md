@@ -595,6 +595,47 @@ Flush the shared query result cache. Optional `graph_id` query param scopes the 
 
 ---
 
+## Telemetry
+
+Usage/error telemetry (see [Telemetry](help:help-telemetry)) — off by default (`HGAI_TELEMETRY_ENABLED`).
+
+### GET /api/v1/telemetry/status (Admin Only)
+
+```json
+{
+  "enabled": true,
+  "destination": "LocalHypergraphExporter",
+  "endpoint_host": null,
+  "protocol": "hgai-envelope",
+  "queue_depth": 0,
+  "queue_max_size": 10000,
+  "dropped_queue_full": 0,
+  "batches_sent": 3,
+  "batches_failed": 0,
+  "records_sent": 42,
+  "last_export_at": 1759158957.1,
+  "last_export_outcome": "ok"
+}
+```
+
+### POST /api/v1/telemetry/ingest
+
+Server-side relay for client-driven usage events (the Web UI and the hgsh shell — neither runs in-process with the server). Any authenticated account may call it; the account attached to the resulting event is this request's own verified one, never a client-supplied value. Always responds `202` once the request body itself validates.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `surface` | string | yes | `web-ui` or `shell` |
+| `feature` | string | yes | Must look like `ui.<screen>.<action>` or `shell.<command>` |
+| `duration_ms` | float | no | Default `0` |
+| `outcome` | string | no | `ok` (default), `denied`, or `error` |
+| `attributes` | object | no | Up to 8 primitive-valued keys; longer strings and extra keys are dropped, not rejected |
+
+```json
+{"surface": "web-ui", "feature": "ui.visualize.render"}
+```
+
+---
+
 ## MCP Server
 
 The MCP (Model Context Protocol) server is available at:

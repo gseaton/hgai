@@ -56,6 +56,7 @@ Because every hyperedge is timestamped and versioned, you can also ask questions
 **Run and administer**
 - [Configuration](help:help-configuration), [running locally](help:help-running-locally), [Docker](help:help-docker)
 - [Accounts and roles](help:help-accounts-roles), [Meshes](help:help-meshes), [Backup](help:help-backup)
+- [Telemetry](help:help-telemetry) — usage/error events for hot-spot and feature-usage analysis, off by default
 
 ## Finding your way around this Help tab
 

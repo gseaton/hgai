@@ -71,6 +71,24 @@ async def lifespan(app: FastAPI):
     except ImportError:
         stop_scheduler = None
 
+    # Start telemetry background export task (no-op unless HGAI_TELEMETRY_ENABLED)
+    try:
+        from hgai_module_telemetry.engine import start_scheduler as start_telemetry, stop_scheduler as stop_telemetry
+        start_telemetry(settings)
+    except ImportError:
+        stop_telemetry = None
+
+    # Start telemetry local-storage retention sweep (plan §3a; no-op unless
+    # enabled and HGAI_TELEMETRY_LOCAL_RETENTION_DAYS > 0)
+    try:
+        from hgai_module_telemetry.local_storage import (
+            start_retention_scheduler as start_telemetry_retention,
+            stop_retention_scheduler as stop_telemetry_retention,
+        )
+        start_telemetry_retention(settings)
+    except ImportError:
+        stop_telemetry_retention = None
+
     # Seed the default AI Agent vendor/model catalog on first run
     if settings.agent_chat_enabled:
         try:
@@ -101,6 +119,23 @@ async def lifespan(app: FastAPI):
     except ImportError:
         pass
 
+    # Stop telemetry export task and close its shared HTTP client
+    try:
+        if stop_telemetry:
+            stop_telemetry()
+    except Exception:
+        pass
+    try:
+        if stop_telemetry_retention:
+            stop_telemetry_retention()
+    except Exception:
+        pass
+    try:
+        from hgai_module_telemetry.exporters import close_http_client as close_telemetry_http_client
+        await close_telemetry_http_client()
+    except ImportError:
+        pass
+
     await close_storage()
     logger.info("HypergraphAI server shutdown complete")
 
@@ -127,6 +162,42 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Telemetry REST instrumentation — mounted conditionally; failures are
+    # non-fatal. A no-op per request whenever HGAI_TELEMETRY_ENABLED=false.
+    try:
+        from hgai_module_telemetry.middleware import TelemetryMiddleware
+        app.add_middleware(TelemetryMiddleware)
+    except BaseException as e:
+        logger.warning(f"Telemetry middleware not available (continuing without it): {type(e).__name__}: {e}")
+
+    # Telemetry error reporting (plan §7) — observes every REST-layer
+    # exception and reports it, but returns *exactly* the same response
+    # FastAPI's own default handling would have produced; it does not
+    # change status codes or response bodies. Registered conditionally,
+    # same non-fatal pattern as every other optional module.
+    try:
+        from fastapi import HTTPException
+        from fastapi.exception_handlers import http_exception_handler as _default_http_exception_handler
+        from starlette.responses import PlainTextResponse
+
+        from hgai_module_telemetry import rest_errors
+
+        @app.exception_handler(HTTPException)
+        async def _telemetry_http_exception_handler(request, exc):
+            rest_errors.report(request, exc, exc.status_code)
+            return await _default_http_exception_handler(request, exc)
+
+        @app.exception_handler(Exception)
+        async def _telemetry_unhandled_exception_handler(request, exc):
+            rest_errors.report(request, exc, 500)
+            # Identical to Starlette's own ServerErrorMiddleware default
+            # (starlette.middleware.errors.ServerErrorMiddleware.error_response)
+            # — registering this handler only adds the telemetry call above,
+            # it does not change what the caller receives.
+            return PlainTextResponse("Internal Server Error", status_code=500)
+    except BaseException as e:
+        logger.warning(f"Telemetry error reporting not available (continuing without it): {type(e).__name__}: {e}")
 
     # API routers
     prefix = "/api/v1"
@@ -179,6 +250,15 @@ def create_app() -> FastAPI:
             logger.info("AI Agent Chat module mounted at /api/v1/agent")
         except BaseException as e:
             logger.warning(f"AI Agent Chat module not available (continuing without it): {type(e).__name__}: {e}")
+
+    # Telemetry module — mounted conditionally; failures are non-fatal
+    try:
+        from hgai_module_telemetry import TelemetryModule
+        telemetry_module = TelemetryModule()
+        app.include_router(telemetry_module.get_router(), prefix=prefix)
+        logger.info("Telemetry module mounted at /api/v1/telemetry")
+    except BaseException as e:
+        logger.warning(f"Telemetry module not available (continuing without it): {type(e).__name__}: {e}")
 
     # Serve Web UI static files
     ui_dir = Path(__file__).parent.parent / "ui"

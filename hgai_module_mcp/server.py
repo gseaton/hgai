@@ -28,6 +28,8 @@ from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
 
+from .telemetry import track_tool
+
 from hgai.core import engine
 from hgai.core.auth import (
     PermissionDeniedError,
@@ -116,6 +118,7 @@ async def _guard_space(space_id: str, minimum_role: str) -> Optional[str]:
 # ─── Hypergraph Tools ─────────────────────────────────────────────────────────
 
 @mcp.tool()
+@track_tool
 async def hgai_hypergraph_list(status: str = "active") -> str:
     """List all HypergraphAI hypergraphs.
 
@@ -140,6 +143,7 @@ async def hgai_hypergraph_list(status: str = "active") -> str:
 
 
 @mcp.tool()
+@track_tool
 async def hgai_hypergraph_get(graph_id: str) -> str:
     """Get a hypergraph by ID.
 
@@ -155,6 +159,7 @@ async def hgai_hypergraph_get(graph_id: str) -> str:
 
 
 @mcp.tool()
+@track_tool
 async def hgai_hypergraph_stats(graph_id: str) -> str:
     """Get statistics for a hypergraph.
 
@@ -168,6 +173,7 @@ async def hgai_hypergraph_stats(graph_id: str) -> str:
 
 
 @mcp.tool()
+@track_tool
 async def hgai_hypergraph_create(
     id: str,
     label: str,
@@ -201,6 +207,7 @@ async def hgai_hypergraph_create(
 # ─── Hypernode Tools ──────────────────────────────────────────────────────────
 
 @mcp.tool()
+@track_tool
 async def hgai_hypernode_list(
     graph_id: str,
     node_type: str = "",
@@ -231,6 +238,7 @@ async def hgai_hypernode_list(
 
 
 @mcp.tool()
+@track_tool
 async def hgai_hypernode_get(graph_id: str, node_id: str) -> str:
     """Get a hypernode by ID.
 
@@ -247,6 +255,7 @@ async def hgai_hypernode_get(graph_id: str, node_id: str) -> str:
 
 
 @mcp.tool()
+@track_tool
 async def hgai_hypernode_create(
     graph_id: str,
     id: str,
@@ -290,6 +299,7 @@ async def hgai_hypernode_create(
 
 
 @mcp.tool()
+@track_tool
 async def hgai_hypernode_update(
     graph_id: str,
     node_id: str,
@@ -340,6 +350,7 @@ async def hgai_hypernode_update(
 
 
 @mcp.tool()
+@track_tool
 async def hgai_hypernode_delete(graph_id: str, node_id: str) -> str:
     """Delete a hypernode.
 
@@ -356,6 +367,7 @@ async def hgai_hypernode_delete(graph_id: str, node_id: str) -> str:
 # ─── Hyperedge Tools ──────────────────────────────────────────────────────────
 
 @mcp.tool()
+@track_tool
 async def hgai_hyperedge_list(
     graph_id: str,
     relation: str = "",
@@ -391,6 +403,7 @@ async def hgai_hyperedge_list(
 
 
 @mcp.tool()
+@track_tool
 async def hgai_hyperedge_get(graph_id: str, edge_id: str) -> str:
     """Get a hyperedge by ID.
 
@@ -407,6 +420,7 @@ async def hgai_hyperedge_get(graph_id: str, edge_id: str) -> str:
 
 
 @mcp.tool()
+@track_tool
 async def hgai_hyperedge_create(
     graph_id: str,
     relation: str,
@@ -465,6 +479,7 @@ async def hgai_hyperedge_create(
 
 
 @mcp.tool()
+@track_tool
 async def hgai_hyperedge_delete(graph_id: str, edge_id: str) -> str:
     """Delete a hyperedge.
 
@@ -481,6 +496,7 @@ async def hgai_hyperedge_delete(graph_id: str, edge_id: str) -> str:
 # ─── Query Tools ──────────────────────────────────────────────────────────────
 
 @mcp.tool()
+@track_tool
 async def hgai_query_execute(query_yaml: str, use_cache: bool = True) -> str:
     """Execute an SHQL query against a hypergraph.
 
@@ -565,6 +581,7 @@ async def hgai_query_execute(query_yaml: str, use_cache: bool = True) -> str:
 
 
 @mcp.tool()
+@track_tool
 async def hgai_query_validate(query_yaml: str) -> str:
     """Validate an SHQL query without executing it.
 
@@ -598,6 +615,7 @@ async def hgai_query_validate(query_yaml: str) -> str:
 # between relation-hypernodes. See hgai/core/inference.py.
 
 @mcp.tool()
+@track_tool
 async def hgai_infer_expand_edge(graph_id: str, edge_id: str) -> str:
     """Expand one hyperedge via inverse-of/symmetric/superproperty axioms.
 
@@ -628,6 +646,7 @@ async def hgai_infer_expand_edge(graph_id: str, edge_id: str) -> str:
 
 
 @mcp.tool()
+@track_tool
 async def hgai_infer_check_transitive(
     graph_id: str,
     relation: str,
@@ -670,6 +689,7 @@ async def hgai_infer_check_transitive(
 # ─── Mesh Tools ───────────────────────────────────────────────────────────────
 
 @mcp.tool()
+@track_tool
 async def hgai_mesh_list() -> str:
     """List all HypergraphAI meshes."""
     if denied := _guard_admin("mesh operations"):
@@ -690,6 +710,7 @@ async def hgai_mesh_list() -> str:
 
 
 @mcp.tool()
+@track_tool
 async def hgai_mesh_get(mesh_id: str) -> str:
     """Get a mesh by ID, including its server list.
 
@@ -706,6 +727,7 @@ async def hgai_mesh_get(mesh_id: str) -> str:
 
 
 @mcp.tool()
+@track_tool
 async def hgai_mesh_ping(mesh_id: str) -> str:
     """Health-check all servers in a mesh.
 
@@ -729,6 +751,7 @@ async def hgai_mesh_ping(mesh_id: str) -> str:
 
 
 @mcp.tool()
+@track_tool
 async def hgai_mesh_sync(mesh_id: str) -> str:
     """Refresh the graph list on each server in a mesh from the live remotes.
 
@@ -746,6 +769,7 @@ async def hgai_mesh_sync(mesh_id: str) -> str:
 
 
 @mcp.tool()
+@track_tool
 async def hgai_mesh_query(mesh_id: str, query_yaml: str, use_cache: bool = True) -> str:
     """Execute a federated SHQL query across all servers in a mesh.
 
@@ -797,6 +821,7 @@ class _BytesReader:
 
 
 @mcp.tool()
+@track_tool
 async def hgai_media_upload(
     content_base64: str,
     filename: str = "",
@@ -835,6 +860,7 @@ async def hgai_media_upload(
 
 
 @mcp.tool()
+@track_tool
 async def hgai_media_download(media_id: str) -> str:
     """Download a media attachment's content as base64, with its metadata.
 
@@ -891,6 +917,7 @@ async def hgai_media_download(media_id: str) -> str:
 
 
 @mcp.tool()
+@track_tool
 async def hgai_media_delete(media_id: str) -> str:
     """Delete a media attachment. Fails if it's still referenced by any
     hypernode/hyperedge (detach it from every entity first) or if it's owned
@@ -909,6 +936,7 @@ async def hgai_media_delete(media_id: str) -> str:
 # ─── Space Tools ──────────────────────────────────────────────────────────────
 
 @mcp.tool()
+@track_tool
 async def hgai_space_list() -> str:
     """List all HypergraphAI spaces (tenant namespaces)."""
     from hgai.core.space_engine import list_spaces
@@ -930,6 +958,7 @@ async def hgai_space_list() -> str:
 
 
 @mcp.tool()
+@track_tool
 async def hgai_space_get(space_id: str) -> str:
     """Get a space by ID, including its members.
 
@@ -946,6 +975,7 @@ async def hgai_space_get(space_id: str) -> str:
 
 
 @mcp.tool()
+@track_tool
 async def hgai_space_create(
     id: str,
     label: str,
@@ -972,6 +1002,7 @@ async def hgai_space_create(
 
 
 @mcp.tool()
+@track_tool
 async def hgai_space_add_member(space_id: str, username: str, role: str = "member") -> str:
     """Add or update a member in a space.
 
@@ -993,6 +1024,7 @@ async def hgai_space_add_member(space_id: str, username: str, role: str = "membe
 
 
 @mcp.tool()
+@track_tool
 async def hgai_space_list_graphs(space_id: str, limit: int = 100) -> str:
     """List all hypergraphs belonging to a space.
 

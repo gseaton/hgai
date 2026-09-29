@@ -47,6 +47,8 @@ def _build_search_query(filters: HypernodeSearchFilters) -> Dict[str, Any]:
             query[f"attributes.{k}"] = v
     if filters.pit:
         query["$and"] = _pit_clause(filters.pit)
+    if filters.valid_from_before:
+        query["valid_from"] = {"$lt": filters.valid_from_before}
     return query
 
 

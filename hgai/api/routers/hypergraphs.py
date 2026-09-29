@@ -31,11 +31,12 @@ async def list_graphs(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=500),
     sort: Optional[str] = Query(default=None, description=f"Comma-separated fields, '-' prefix = descending. Allowed: {sorted(GRAPH_SORT_FIELDS)}"),
+    include_system: bool = Query(default=False, description="Include platform-internal graphs (id prefix '__', e.g. __local-telemetry)"),
     account: AccountInDB = Depends(get_current_active_account),
 ):
     total, graphs = await engine.list_hypergraphs(
         status=status, tags=tags, space_id=space_id, search=search, skip=skip, limit=limit,
-        sort=parse_sort_param(sort, GRAPH_SORT_FIELDS),
+        sort=parse_sort_param(sort, GRAPH_SORT_FIELDS), include_system=include_system,
     )
     # Filter by account permissions (direct + space membership)
     if "admin" not in account.roles and "*" not in account.permissions.graphs:

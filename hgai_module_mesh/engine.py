@@ -71,10 +71,17 @@ def _is_local(server: MeshServer) -> bool:
 
 
 async def _local_graph_ids() -> List[str]:
-    """Return all active instantiated graph IDs from the local storage."""
+    """Return all active instantiated graph IDs from the local storage.
+
+    `exclude_system=True` keeps platform-internal graphs (id prefix `__`,
+    e.g. `__local-telemetry` — telemetry plan §3a) out of this "every graph
+    on this server" fan-out: left in, a peer mesh server or a mesh-admin
+    querying `mesh.*.` graphs here would pull cross-tenant, cross-account
+    usage data into a federated SHQL result.
+    """
     from hgai_module_storage.filters import HypergraphFilters
     _, graphs = await get_storage().hypergraphs.list(
-        HypergraphFilters(status="active"), skip=0, limit=10000
+        HypergraphFilters(status="active", exclude_system=True), skip=0, limit=10000
     )
     return [g.id for g in graphs]
 

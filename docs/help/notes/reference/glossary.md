@@ -41,3 +41,5 @@ status: active
 | **Help topic** | A markdown file (or `system:help` note) shown in this Help tab ([more](help:help-authoring-help)) |
 | **Module** | A pluggable `hgai_module_<name>` subsystem ([more](help:help-modules)) |
 | **hgsh** | The interactive shell ([more](help:help-shell)) |
+| **Telemetry** | Usage/error events for hot-spot and feature-usage analysis, off by default ([more](help:help-telemetry)) |
+| **`__local-telemetry`** | The hypergraph telemetry writes to when no external endpoint is configured — an ordinary, SHQL-queryable graph ([more](help:help-telemetry)) |

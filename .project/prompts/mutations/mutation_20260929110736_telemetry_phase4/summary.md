@@ -1,0 +1,24 @@
+# Mutation Summary
+
+## Intent
+Implement Phase 4 of docs/architect/telemetry-20260929061557.md §4: Web UI and hgsh shell usage reporting, both routed through a new server-side ingest endpoint rather than either client emitting telemetry directly.
+
+## Context
+Phases 1-3 instrumented REST, SHQL and MCP — all in-process with the server, able to call `hgai_module_telemetry.engine.emit()` directly. Neither the Web UI (a browser) nor hgsh (`shell/hgai_shell.py`, a separate CLI process talking to the server over `httpx`) can do that.
+
+## What Changed and Why
+A new `POST /api/v1/telemetry/ingest` accepts a client-reported usage event, authenticated the same as any other route, and enqueues it with the request's own *verified* account — never whatever the client claims — exactly matching the plan's stated reason for this endpoint existing (no third-party CORS/API-key exposure, no trusting client identity). Because `feature` is meant to stay a small, known set of action ids (the whole reason it exists as a grouping dimension, plan §3), the endpoint validates it against the same dotted-token shape server-side features already use, rather than accepting client-supplied free text — confirmed by a test that a free-text-shaped payload is rejected outright, not merely reported oddly. `attributes` is allowlisted to a handful of primitive-valued keys so a client bug (or a malicious client) can't smuggle arbitrary content through the one open door into telemetry, which the plan's §5 hard privacy rule forbids everywhere else.
+
+Both clients turned out to need the *same* solution for a reason the plan's literal wording ("client-side event helper... posting to /telemetry/ingest") only states for the browser: hgsh is not in-process with the server either, so it reports through the identical endpoint via its own `httpx.Client`, not a local `emit()` call — this is stated explicitly in code comments since the plan's phrasing could be read as implying an in-process call for the shell too, and that would not actually work.
+
+The Web UI wiring covers the plan's own five named examples (Render, the double-click focus feature from an earlier session in this conversation, Export, Import, Notes save) plus `ui.query.run`, its own worked example. The shell wires tracking into its single command-dispatch point (`handle()`), reporting every dispatched command with a canonical name (aliases like `dn`/`sq`/`mq` collapse to their real command) and an outcome derived from which exception, if any, the command raised.
+
+A new read-only "Telemetry" admin screen mirrors the existing System screen's own pattern exactly (an info card sourced from a GET status endpoint) rather than a live editable toggle — there is no existing mechanism anywhere in this app for a screen to write a setting back into the server's environment (System's own screen is read-only plus one action button), so a literal "toggle" would be new, unprecedented UI architecture this phase doesn't call for. It includes a button that opens Query (SHQL) pre-filled with a starter query against `__local-telemetry`, satisfying the plan's explicit ask for "a way to browse/query [it] ... rather than requiring the admin to go find it in the Hypergraphs list."
+
+## Key Decisions
+- hgsh reports through the REST ingest endpoint, not `engine.emit()` — a correction to what the plan's literal wording could be read to imply, made explicit in code comments rather than silently deviating.
+- The ingest endpoint validates rather than trusts every client-supplied field (`surface`, `feature` shape, `outcome`, attribute allowlisting) — the plan's hard privacy rule (§5.2) applies with extra force here specifically because this is the one telemetry entry point open to less-trusted client code.
+- The "toggle screen" is read-only, matching the only pattern this app actually has for admin-facing `HGAI_*` configuration display (the System screen) rather than inventing new settings-write plumbing.
+
+## Verification
+`python -m pytest tests -q` — 999 passed (the same 2 pre-existing, unrelated mesh-ping failures deselected as before). `node --check` on both edited JS files; a script check confirmed no duplicate DOM ids were introduced. I restarted the local dev server and attempted live browser verification of the new Telemetry screen, but the browser tool's "localhost:8357" did not reflect the edited files even after a hard reload, a brand-new tab, and a cache-busted URL — while `curl` from this shell against the same port served the current file correctly. This points to the browser tool running in a different network context than this shell in the current environment, not a bug in the change itself; I was not able to get a live visual confirmation of the new screen and am saying so rather than claiming one. The double-click-focus wiring (one of the five tracked actions) was visually verified working end-to-end earlier in this same conversation, before this discrepancy appeared.

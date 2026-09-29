@@ -62,6 +62,28 @@ const HGAI_API = (() => {
     return data;
   }
 
+  // ── Telemetry ─────────────────────────────────────────────────────────────
+  // Fire-and-forget usage reporting (docs/architect/telemetry-20260929061557.md
+  // §4's Web UI row). Posts to this server's own /telemetry/ingest — never to
+  // an external endpoint directly, so no third-party CORS/API-key exposure,
+  // and the account attached server-side is the verified one, not whatever
+  // the client claims. Deliberately does NOT use request() above: a
+  // telemetry hiccup must never throw into the caller, trigger the
+  // unauthorized-session flow on a transient 401, or make a UI action feel
+  // slower — this is not awaited by any of its call sites.
+  function trackFeature(feature, attributes = {}) {
+    const token = getToken();
+    if (!token) return; // not signed in yet (e.g. the login screen) — nothing to attribute this to
+    try {
+      fetch(`${BASE}/telemetry/ingest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ surface: 'web-ui', feature, attributes }),
+        keepalive: true, // lets the request complete even if a click navigates away immediately after
+      }).catch(() => {});
+    } catch (_e) { /* never let telemetry break the feature it's reporting on */ }
+  }
+
   // ── Auth ──────────────────────────────────────────────────────────────────
   async function login(username, password) {
     const form = new URLSearchParams({ username, password, grant_type: 'password' });
@@ -83,6 +105,9 @@ const HGAI_API = (() => {
 
   // ── Server ────────────────────────────────────────────────────────────────
   async function getServerInfo() { return request('GET', '/server/info'); }
+
+  // ── Telemetry (admin) ────────────────────────────────────────────────────
+  async function getTelemetryStatus() { return request('GET', '/telemetry/status'); }
 
   // ── Hypergraphs ───────────────────────────────────────────────────────────
   async function listGraphs(params = {}) { return request('GET', '/graphs', null, params); }
@@ -390,10 +415,14 @@ const HGAI_API = (() => {
   return {
     // session
     getToken, getUsername, getRoles, isAdmin, setSession, clearSession,
+    // telemetry
+    trackFeature,
     // auth
     login, getMe,
     // server
     getServerInfo,
+    // telemetry (admin)
+    getTelemetryStatus,
     // graphs
     listGraphs, getGraph, createGraph, updateGraph, deleteGraph, getGraphStats, exportGraph, importGraph, downloadGraphExport, importGraphFile, importRdfFile,
     // nodes

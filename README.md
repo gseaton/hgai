@@ -28,6 +28,7 @@
 - [SHQL — Semantic Hypergraph Query Language](#shql--semantic-hypergraph-query-language)
 - [Module Development](#module-development)
 - [Administration](#administration)
+  - [Telemetry](#telemetry)
   - [MongoDB Indexes](#mongodb-indexes)
   - [Performance](#performance)
     - [Graph-scoped cache invalidation](#graph-scoped-cache-invalidation)
@@ -203,7 +204,13 @@ hgai/
 │   └── api_router.py            # CRUD + /ping, /sync, /query endpoints
 │
 ├── hgai_module_mcp/             # MCP — Model Context Protocol module
-│   └── server.py                # FastMCP server: 14 tools (CRUD + SHQL query + inferencing)
+│   └── server.py                # FastMCP server: 30 tools (CRUD + SHQL query + inferencing + mesh + media + spaces)
+│
+├── hgai_module_telemetry/       # Telemetry — OTEL-shaped usage/error events (off by default)
+│   ├── engine.py                # emit(), bounded queue, background export loop
+│   ├── exporters.py             # HTTPExporter, LocalHypergraphExporter, CompositeExporter
+│   ├── local_storage.py         # __local-telemetry hypergraph, retention sweep
+│   └── api_router.py            # GET /telemetry/status, POST /telemetry/ingest
 │
 ├── ui/                          # Web UI (SPA, vanilla JS + Bootstrap)
 ├── shell/                       # hgai interactive CLI shell
@@ -375,6 +382,20 @@ All configuration is via environment variables (or `.env` file):
 | `HGAI_SHQL_MAX_EDGE_CANDIDATES` | `2000` | Max hyperedges fetched per SHQL `edge:` pattern; overflow sets `meta.truncated` |
 | `HGAI_INFERENCE_MAX_FACT_EDGES` | `5000` | Max fact edges fetched for inference expansion / transitive closure |
 | `HGAI_SHQL_JOIN_BATCH_SIZE` | `200` | Max distinct bound values (node ids / member-id sets) resolved per storage query when a SHQL pattern joins against many earlier matches; `1` = one query per match |
+| `HGAI_TELEMETRY_ENABLED` | `false` | Master switch for OTEL-shaped usage/error telemetry (off by default) |
+| `HGAI_TELEMETRY_ENDPOINT` | *(none)* | URL telemetry batches are POSTed to, e.g. `https://telemetry.hypergra.ai/report`; optional even when enabled |
+| `HGAI_TELEMETRY_PROTOCOL` | `hgai-envelope` | Wire format for the endpoint above (`otlp-http-json` not yet implemented) |
+| `HGAI_TELEMETRY_API_KEY` | *(none)* | Optional bearer credential sent to the telemetry endpoint |
+| `HGAI_TELEMETRY_BATCH_SIZE` | `100` | Max events per export batch |
+| `HGAI_TELEMETRY_FLUSH_INTERVAL_SECONDS` | `10` | Max time an event waits before its batch is dispatched |
+| `HGAI_TELEMETRY_QUEUE_MAX_SIZE` | `10000` | Bounded in-memory event queue; oldest event dropped when full |
+| `HGAI_TELEMETRY_LOCAL_ENABLED` | `false` | Also write to the `__local-telemetry` hypergraph even when an endpoint is set (always used when no endpoint is set, regardless of this flag) |
+| `HGAI_TELEMETRY_LOCAL_RETENTION_DAYS` | `30` | Prune `__local-telemetry` hypernodes older than this many days; `0` disables pruning |
+| `HGAI_TELEMETRY_INCLUDE_GRAPH_IDS` | `false` | Send graph/space ids in the clear instead of HMAC-hashed |
+| `HGAI_TELEMETRY_INCLUDE_ACCOUNT_IDS` | `false` | Send account usernames in the clear instead of HMAC-hashed |
+| `HGAI_TELEMETRY_ALLOW_INSECURE` | `false` | Permit a non-HTTPS telemetry endpoint (local development only) |
+| `HGAI_TELEMETRY_SAMPLE_RATE` | `1.0` | Fraction of *usage* events kept (0.0-1.0); errors are never sampled |
+| `HGAI_TELEMETRY_ENVIRONMENT` | `production` | Free-text `deployment.environment` resource attribute |
 | `HGAI_SERVER_ID` | `hgai-local` | Server identifier (for meshes) |
 | `HGAI_SERVER_NAME` | `HypergraphAI Local` | Server display name |
 | `HGAI_HELP_DIR` | `<project>/docs/help` | Root of the built-in Help content (`notes/` markdown topics, `media/` files) |
@@ -627,6 +648,12 @@ DELETE /api/v1/meshes/{id}              # Delete mesh
 GET    /api/v1/meshes/{id}/ping         # Health-check all servers in mesh
 POST   /api/v1/meshes/{id}/sync         # Refresh graph lists from live remotes
 POST   /api/v1/meshes/{id}/query        # Execute federated SHQL across all mesh servers
+```
+
+### Telemetry (admin only)
+```
+GET    /api/v1/telemetry/status   # Enabled/destination/queue depth/export counts (admin only)
+POST   /api/v1/telemetry/ingest   # Client-driven usage event (Web UI, hgsh shell) — any authenticated account
 ```
 
 ---
@@ -1256,6 +1283,7 @@ The web UI is served at `http://localhost:8357/ui/` (local dev) or `http://local
 - **Hyperedges** — full CRUD with member management
 - **Query** — interactive SHQL query editor with results visualization
 - **Help** — searchable documentation with tag-based virtual folders, landing on `docs/help/notes/home.md`; built from markdown files with front matter under `docs/help/notes/` and from any Note tagged `system:help`. The AI Chat agent reads the same topics to answer questions about HypergraphAI. See [docs/help](docs/help/notes/home.md) and the *Adding your own help topics* topic.
+- **Telemetry** — usage/error telemetry status (enabled/destination/queue depth/export counts) and a shortcut to browse locally-stored telemetry in Query (SHQL); see [Telemetry](#telemetry) below (admin role only)
 - **Admin** — account management, server info (admin role only)
 
 ---
@@ -2140,6 +2168,35 @@ docker-compose exec mongo mongorestore \
   --authenticationDatabase admin \
   --db hgai /backup/hgai
 ```
+
+### Telemetry
+
+Usage and error telemetry — off by default. One event per REST request, SHQL query, MCP tool call, tracked Web UI action and `hgsh` shell command: `{kind: usage|error, surface: rest|shql|mcp|web-ui|shell, feature, duration_ms, outcome: ok|denied|error, account, attributes, error}`. `feature` is always a template (`POST /api/v1/hyperedges/{edge_id}`, `mcp.hgai_query_execute`, `ui.visualize.focus_dblclick`, `shell.import-rdf`) — never a raw id or value. Error messages are templatized (quoted text replaced with `'…'`) so the same underlying bug fingerprints identically across different data. Account/graph/space ids are HMAC-hashed by default (`HGAI_TELEMETRY_INCLUDE_ACCOUNT_IDS` / `HGAI_TELEMETRY_INCLUDE_GRAPH_IDS` to send them in the clear). Query text, entity/note content, chat prompts, media and vendor keys are never collected, in any mode.
+
+**Destination**, selected once at startup from `HGAI_TELEMETRY_ENDPOINT` / `HGAI_TELEMETRY_LOCAL_ENABLED`:
+
+| Configuration | Destination |
+|---|---|
+| No endpoint set | The `__local-telemetry` hypergraph, in this server's own database — nothing leaves the server |
+| Endpoint set | That URL, one JSON batch (`hgai-envelope` format) per POST |
+| Endpoint set **and** `HGAI_TELEMETRY_LOCAL_ENABLED=true` | Both, independently — one failing never blocks or duplicates the other |
+
+An endpoint is only used if `https://` (or `HGAI_TELEMETRY_ALLOW_INSECURE=true`, local dev only); otherwise it's treated as no endpoint. Emission is fire-and-forget through a bounded in-memory queue (oldest-drop when full) drained by a background batching task — never blocks the request/query/call it's reporting on.
+
+Local storage (`__local-telemetry`) writes each event as an ordinary `type: OTEL` hypernode through the same `create_hypernode` path every other hypernode uses, so it's queryable with SHQL immediately:
+
+```yaml
+shql:
+  from: __local-telemetry
+  where:
+    - node: {bind: '?n', type: OTEL}
+  select: ['?n.attributes.feature']
+  aggregate: {count: true, group_by: n.attributes.feature}
+```
+
+It's excluded from the default Hypergraphs listing (id prefix `__`), never included in mesh federation's graph fan-out, and reachable only by the `admin` role — through the platform's ordinary permission model, no special case. Hypernodes older than `HGAI_TELEMETRY_LOCAL_RETENTION_DAYS` (default 30, `0` = keep forever) are pruned automatically, about once an hour.
+
+The **Telemetry** admin screen (Web UI) shows live status; `GET /api/v1/telemetry/status` is the same data over the API. See [Configuration](#configuration) for the full `HGAI_TELEMETRY_*` settings table and the *Telemetry* Help topic for the complete disclosure.
 
 ### MongoDB Indexes
 

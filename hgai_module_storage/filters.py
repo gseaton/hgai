@@ -14,6 +14,7 @@ class HypergraphFilters:
     space_id: Optional[str] = None  # None means unowned-only when explicitly passed as UNOWNED sentinel
     search: Optional[str] = None  # text search on label
     sort: Optional[List[Tuple[str, int]]] = None  # [(field, 1|-1), ...] priority order; None = default
+    exclude_system: bool = False  # exclude ids starting with "__" (e.g. __local-telemetry)
 
 
 @dataclass
@@ -99,6 +100,7 @@ class HypernodeSearchFilters:
     pit: Optional[datetime] = None
     node_ids_in: Optional[List[str]] = None  # filter to specific node IDs
     attributes: Optional[Dict[str, Any]] = None  # attribute equality filters
+    valid_from_before: Optional[datetime] = None  # valid_from < this value (retention sweeps; not a PIT filter)
 
 
 @dataclass

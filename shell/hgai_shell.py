@@ -128,6 +128,28 @@ class HgaiClient:
         resp.raise_for_status()
         return resp.json()
 
+    def track_feature(self, feature: str, attributes: Optional[Dict] = None, outcome: str = "ok") -> None:
+        """Fire-and-forget usage reporting (telemetry plan §4's hgsh row).
+
+        hgsh is a separate process from the server — not the in-process
+        `emit()` call the server's own surfaces use — so, like the Web UI,
+        it reports through the server's own authenticated `/telemetry/ingest`
+        endpoint instead of needing its own export queue. Never raises and
+        never blocks the shell noticeably; a telemetry hiccup must not be
+        something the user sees or waits on.
+        """
+        if not HAS_HTTPX or not self.token:
+            return
+        try:
+            self._client.post(
+                f"{self.base_url}/api/v1/telemetry/ingest",
+                json={"surface": "shell", "feature": feature, "outcome": outcome, "attributes": attributes or {}},
+                headers=self._headers(),
+                timeout=2.0,
+            )
+        except Exception:
+            pass
+
     def login(self, username: str, password: str) -> Dict:
         if not HAS_HTTPX:
             raise RuntimeError("httpx required")
@@ -310,6 +332,20 @@ HELP_TEXT = {
 }
 
 
+def _canonical_command_name(typed: str, handler) -> str:
+    """The command's own name, not whichever alias was typed (`dn`/`de`/`sq`/
+    `sv`/`mq` all share a handler with their full name) — so `shell.<name>`
+    telemetry (plan §4) groups by command regardless of which alias a user
+    reached for. Bound methods here are always named `cmd_<name>`; the few
+    lambda handlers (cls/exit/quit/?) have no useful `__name__`, so those
+    fall back to whatever was actually typed.
+    """
+    name = getattr(handler, "__name__", "")
+    if name.startswith("cmd_"):
+        return name[len("cmd_"):].replace("_", "-")
+    return typed
+
+
 class HgaiShell:
     def __init__(self, server: str = None, username: str = None, password: str = None):
         self.client: Optional[HgaiClient] = None
@@ -458,16 +494,23 @@ class HgaiShell:
         }
         handler = handlers.get(cmd)
         if handler:
+            outcome = "ok"
             try:
                 handler(args)
             except PermissionError as e:
                 error(str(e))
+                outcome = "denied"
             except KeyError as e:
                 error(f"Not found: {e}")
+                outcome = "error"
             except ValueError as e:
                 error(str(e))
+                outcome = "error"
             except Exception as e:
                 error(f"Command failed: {e}")
+                outcome = "error"
+            if self.client:
+                self.client.track_feature(f"shell.{_canonical_command_name(cmd, handler)}", outcome=outcome)
         else:
             error(f"Unknown command: '{cmd}'. Type 'help' for help.")
 

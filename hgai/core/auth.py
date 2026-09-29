@@ -125,7 +125,9 @@ async def authenticate_token(token: Optional[str]) -> Optional[AccountInDB]:
     return account
 
 
-async def get_current_account(token: Optional[str] = Depends(oauth2_scheme)) -> AccountInDB:
+async def get_current_account(
+    request: Request, token: Optional[str] = Depends(oauth2_scheme)
+) -> AccountInDB:
     account = await authenticate_token(token)
     if account is None:
         raise HTTPException(
@@ -133,6 +135,11 @@ async def get_current_account(token: Optional[str] = Depends(oauth2_scheme)) -> 
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    # Stashed on the ASGI scope (not just this Request instance) so telemetry's
+    # outer middleware — which runs before FastAPI's own dependency injection —
+    # can read the authenticated account after the fact, without re-running
+    # authentication. See hgai_module_telemetry/middleware.py.
+    request.state.account = account
     return account
 
 

@@ -199,7 +199,7 @@ function showScreen(name) {
     pq: 'Parameterized Queries',
     'project-inference': 'Project Inference',
     'agent-admin': 'AI Agent',
-    spaces: 'Spaces', accounts: 'Accounts', meshes: 'Meshes', system: 'System',
+    spaces: 'Spaces', accounts: 'Accounts', meshes: 'Meshes', system: 'System', telemetry: 'Telemetry',
   };
   document.getElementById('topbar-screen-title').textContent = titles[name] || name;
   State.currentScreen = name;
@@ -222,6 +222,7 @@ function showScreen(name) {
     accounts: loadAccounts,
     meshes: loadMeshes,
     system: loadSystem,
+    telemetry: loadTelemetryScreen,
   };
   if (loaders[name]) loaders[name]();
 }
@@ -658,6 +659,7 @@ window.exportGraphFile = async (id, spaceId) => {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    HGAI_API.trackFeature('ui.hypergraphs.export');
     toast(`Exported "${id}" to ${filename}`);
   } catch (err) { toast(err.message, 'danger'); }
 };
@@ -785,6 +787,7 @@ document.getElementById('btn-graph-import-run').addEventListener('click', async 
     const r = graphImportFormat.kind === 'rdf'
       ? await HGAI_API.importRdfFile(graphImportText, { spaceId, graphId, format: graphImportFormat.rdfFormat, mode, stripAttributePrefixes })
       : await HGAI_API.importGraphFile(graphImportText, { spaceId, graphId, mode, stripAttributePrefixes });
+    HGAI_API.trackFeature('ui.hypergraphs.import', { format: graphImportFormat.kind });
     const skipped = (r.skipped_nodes || r.skipped_edges)
       ? `, skipped ${r.skipped_nodes} existing node(s) and ${r.skipped_edges} existing edge(s)` : '';
     const media = r.media_references_dropped
@@ -2870,9 +2873,11 @@ document.getElementById('btn-save-note').addEventListener('click', async () => {
       if (!document.getElementById('note-scope').disabled && scope !== noteModalScope) {
         await HGAI_API.setNoteScope(id, scope);
       }
+      HGAI_API.trackFeature('ui.notes.save', { new: false });
       toast('Note updated');
     } else {
       await HGAI_API.createNote({ ...data, scope });
+      HGAI_API.trackFeature('ui.notes.save', { new: true });
       toast('Note created');
     }
     bootstrap.Modal.getInstance(document.getElementById('modal-note'))?.hide();
@@ -3636,6 +3641,7 @@ function vizFocusOnNode(node) {
   }
   document.getElementById('viz-focus-id').value = id;
   document.getElementById('viz-focus-degree').value = '1';
+  HGAI_API.trackFeature('ui.visualize.focus_dblclick', { kind: node.kind });
   renderViz();
   return true;
 }
@@ -4367,7 +4373,10 @@ function vizStopAutoRotate() {
   if (vizRotateTimer) { clearInterval(vizRotateTimer); vizRotateTimer = null; }
 }
 
-document.getElementById('btn-viz-render').addEventListener('click', renderViz);
+document.getElementById('btn-viz-render').addEventListener('click', () => {
+  HGAI_API.trackFeature('ui.visualize.render');
+  renderViz();
+});
 document.getElementById('btn-viz-fit').addEventListener('click', () => State.viz3d?.zoomToFit(600, 60));
 document.getElementById('btn-viz-clear').addEventListener('click', vizClear);
 document.getElementById('btn-viz-at-clear').addEventListener('click', () => {
@@ -4638,6 +4647,7 @@ async function runShqlQuery() {
   const useCache = document.getElementById('shql-use-cache').checked;
   const resultArea = document.getElementById('shql-result-area');
   const countEl = document.getElementById('shql-result-count');
+  HGAI_API.trackFeature('ui.query.run', { use_cache: useCache });
   addToShqlHistory(shql);
   resultArea.innerHTML = '<span class="text-muted"><div class="spinner-border spinner-border-sm me-2"></div>Executing...</span>';
   try {
@@ -5538,6 +5548,54 @@ document.getElementById('btn-flush-cache').addEventListener('click', async () =>
     const result = await HGAI_API.flushCache();
     toast(`Cache flushed (${result.invalidated} entries removed)`);
   } catch (err) { toast(err.message, 'danger'); }
+});
+
+// ── Telemetry (admin) ─────────────────────────────────────────────────────────
+// Read-only status (docs/architect/telemetry-20260929061557.md §5.4's kill
+// switch / §10 Phase 5) — the same "info card, no live-editable settings"
+// shape every other screen here uses for HGAI_* configuration (see System,
+// above): there is no mechanism in this app for a screen to persist a
+// setting back into the server's environment, so this shows what's
+// configured rather than pretending to let an admin change it in place.
+async function loadTelemetryScreen() {
+  const table = document.getElementById('tel-status-info');
+  try {
+    const s = await HGAI_API.getTelemetryStatus();
+    const rows = {
+      'Enabled': s.enabled ? 'Yes' : 'No',
+      'Destination': s.destination || '—',
+      'Endpoint host': s.endpoint_host || '(none — using local storage)',
+      'Protocol': s.protocol || '—',
+      'Queue depth': `${s.queue_depth} / ${s.queue_max_size}`,
+      'Dropped (queue full)': s.dropped_queue_full,
+      'Batches sent': s.batches_sent,
+      'Batches failed': s.batches_failed,
+      'Records sent': s.records_sent,
+      'Last export': s.last_export_at ? new Date(s.last_export_at * 1000).toLocaleString() : 'never',
+      'Last export outcome': s.last_export_outcome || '—',
+    };
+    table.innerHTML = Object.entries(rows)
+      .map(([k, v]) => `<tr><th class="fw-normal text-muted" style="width:50%">${k}</th><td>${v}</td></tr>`)
+      .join('');
+  } catch (err) {
+    table.innerHTML = `<tr><td class="text-danger">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+document.getElementById('telemetry-help-link')?.addEventListener('click', e => {
+  e.preventDefault();
+  showScreen('help');
+  openHelpTopic('help-telemetry');
+});
+
+document.getElementById('btn-telemetry-browse')?.addEventListener('click', () => {
+  showScreen('shql');
+  _shqlEditorCM.setValue(
+    "shql:\n  from: __local-telemetry\n  where:\n    - node: {bind: '?n', type: OTEL}\n" +
+    "  select: ['?n.id', '?n.attributes.kind', '?n.attributes.surface', '?n.attributes.feature',\n" +
+    "           '?n.attributes.outcome', '?n.attributes.duration_ms']\n" +
+    "  order_by: '?n.valid_from desc'\n  limit: 100\n"
+  );
 });
 
 // ── Parameterized Queries ────────────────────────────────────────────────────

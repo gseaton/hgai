@@ -155,8 +155,17 @@ async def list_hypergraphs(
     skip: int = 0,
     limit: int = 50,
     sort: Optional[List[Tuple[str, int]]] = None,
+    include_system: bool = False,
 ) -> Tuple[int, List[HypergraphInDB]]:
-    filters = HypergraphFilters(status=status, tags=tags, space_id=space_id, search=search, sort=sort)
+    """`include_system=False` (the default) hides platform-internal graphs
+    (id prefix `__`, e.g. `__local-telemetry` — telemetry plan §3a) from the
+    ordinary hypergraph listing; callers that specifically want to browse
+    them (an admin "show system graphs" toggle) pass `include_system=True`.
+    """
+    filters = HypergraphFilters(
+        status=status, tags=tags, space_id=space_id, search=search, sort=sort,
+        exclude_system=not include_system,
+    )
     return await get_storage().hypergraphs.list(filters, skip=skip, limit=limit)
 
 

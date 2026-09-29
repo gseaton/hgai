@@ -66,4 +66,6 @@ Create an `owl:inverse-of` axiom hyperedge between the two relation types and qu
 
 **Can I add my own help pages?** Yes — files or `system:help` notes ([Adding your own help topics](help:help-authoring-help)).
 
+**Does HypergraphAI phone home?** No. Usage/error telemetry is off by default; with no endpoint configured, turning it on stores events locally in your own database, never sent anywhere ([Telemetry](help:help-telemetry)).
+
 Still stuck? Browse the [Glossary](help:help-glossary) or return [Home](help:help-home).

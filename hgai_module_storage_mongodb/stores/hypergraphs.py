@@ -54,6 +54,8 @@ class MongoHypergraphStore(HypergraphStore):
             query["space_id"] = filters.space_id
         if filters.search:
             query["label"] = {"$regex": filters.search, "$options": "i"}
+        if filters.exclude_system:
+            query["id"] = {**query.get("id", {}), "$not": {"$regex": "^__"}}
 
         total = await _col().count_documents(query)
         sort_spec = filters.sort or [("system_created", -1)]

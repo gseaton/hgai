@@ -113,6 +113,82 @@ class Settings(BaseSettings):
     admin_password: str = Field(default="pwd357")
     admin_email: str = Field(default="admin@hgai.local")
 
+    # Telemetry — see docs/architect/telemetry-20260929061557.md. Off by default:
+    # a self-hosted operator must opt in. `telemetry_endpoint` is optional even
+    # when enabled — Phase 1 ships HTTP export only (local-hypergraph storage,
+    # the no-endpoint fallback the plan describes, is Phase 3a; until then,
+    # enabling telemetry with no endpoint configured collects events in-process
+    # but has nowhere to send them, and a startup warning says so).
+    telemetry_enabled: bool = Field(
+        default=False,
+        description="Master switch for OTEL-shaped usage/error telemetry. Env: HGAI_TELEMETRY_ENABLED",
+    )
+    telemetry_endpoint: Optional[str] = Field(
+        default=None,
+        description="URL telemetry batches are POSTed to, e.g. https://telemetry.hypergra.ai/report. "
+                    "Optional even when enabled. Env: HGAI_TELEMETRY_ENDPOINT",
+    )
+    telemetry_protocol: str = Field(
+        default="hgai-envelope",
+        description="Wire format for HGAI_TELEMETRY_ENDPOINT: 'hgai-envelope' (one JSON body per batch, "
+                    "posted to the exact URL) or 'otlp-http-json' (not yet implemented — falls back to "
+                    "hgai-envelope with a startup warning). Env: HGAI_TELEMETRY_PROTOCOL",
+    )
+    telemetry_api_key: Optional[str] = Field(
+        default=None,
+        description="Optional bearer credential sent to the telemetry endpoint. Env: HGAI_TELEMETRY_API_KEY",
+    )
+    telemetry_batch_size: int = Field(
+        default=100, ge=1,
+        description="Max events per export batch. Env: HGAI_TELEMETRY_BATCH_SIZE",
+    )
+    telemetry_flush_interval_seconds: float = Field(
+        default=10, gt=0,
+        description="Max time an event waits before its batch is dispatched, even if telemetry_batch_size "
+                    "isn't reached. Env: HGAI_TELEMETRY_FLUSH_INTERVAL_SECONDS",
+    )
+    telemetry_queue_max_size: int = Field(
+        default=10000, ge=1,
+        description="Bounded in-memory event queue; oldest event is dropped when full. "
+                    "Env: HGAI_TELEMETRY_QUEUE_MAX_SIZE",
+    )
+    telemetry_local_enabled: bool = Field(
+        default=False,
+        description="Also write telemetry into the __local-telemetry hypergraph even when "
+                    "telemetry_endpoint is set (it is always used when no endpoint is set, "
+                    "regardless of this flag). Env: HGAI_TELEMETRY_LOCAL_ENABLED",
+    )
+    telemetry_local_retention_days: int = Field(
+        default=30, ge=0,
+        description="Prune __local-telemetry hypernodes older than this many days; 0 disables pruning. "
+                    "Env: HGAI_TELEMETRY_LOCAL_RETENTION_DAYS",
+    )
+    telemetry_include_graph_ids: bool = Field(
+        default=False,
+        description="Send graph/space ids in the clear instead of HMAC-hashed. "
+                    "Env: HGAI_TELEMETRY_INCLUDE_GRAPH_IDS",
+    )
+    telemetry_include_account_ids: bool = Field(
+        default=False,
+        description="Send account usernames in the clear instead of HMAC-hashed. "
+                    "Env: HGAI_TELEMETRY_INCLUDE_ACCOUNT_IDS",
+    )
+    telemetry_allow_insecure: bool = Field(
+        default=False,
+        description="Permit a non-HTTPS telemetry endpoint (local development only). "
+                    "Env: HGAI_TELEMETRY_ALLOW_INSECURE",
+    )
+    telemetry_sample_rate: float = Field(
+        default=1.0, ge=0.0, le=1.0,
+        description="Fraction of *usage* events kept (0.0-1.0). Error events are never sampled. "
+                    "Env: HGAI_TELEMETRY_SAMPLE_RATE",
+    )
+    telemetry_environment: str = Field(
+        default="production",
+        description="Free-text deployment.environment resource attribute on every telemetry batch. "
+                    "Env: HGAI_TELEMETRY_ENVIRONMENT",
+    )
+
     @property
     def cors_origins_list(self) -> List[str]:
         if self.cors_origins == "*":

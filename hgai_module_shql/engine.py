@@ -23,6 +23,7 @@ Pattern types
 
 import hashlib
 import json
+import logging
 from copy import deepcopy
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -36,6 +37,8 @@ from hgai.models.account import AccountInDB
 from hgai_module_storage.filters import HyperedgeSearchFilters, HypernodeSearchFilters
 
 from .aggregate_merge import MEASURE_FNS, measure_requests, merge_aggregate_meta, partial_aggregate
+
+logger = logging.getLogger(__name__)
 
 _SKOS_FIELDS = ("skos_broader", "skos_narrower", "skos_related")
 
@@ -1565,7 +1568,99 @@ async def _run_paging_pushdown(
     return _project_select(bindings, select_fields)
 
 
+# ── Telemetry (Phase 2, docs/architect/telemetry-20260929061557.md §4/§7) ─────
+#
+# execute_shql is the single chokepoint every caller (REST, MCP, mesh
+# federation, HgNexus) already goes through, so it's instrumented once here
+# rather than at each caller. Lazy-imported and broadly caught, matching how
+# this module already treats hgai_module_mesh as an optional dependency
+# (see the `infer: true` / dot-ref blocks above) — telemetry being absent or
+# broken must never break a query.
+
+def _shql_telemetry_flags(shql_text: str) -> Dict[str, Any]:
+    """Best-effort attributes only obtainable from the query itself, not
+    from `SHQLResult.meta` — a second, disposable parse purely for
+    telemetry. Never raises; an unparseable query is fully reported by
+    `_emit_shql_error` instead (this function's caller is the success path)."""
+    try:
+        from .parser import parse_shql
+        shql = parse_shql(shql_text)
+        kinds = sorted({
+            k for p in (shql.get("where") or []) if isinstance(p, dict)
+            for k in p if k in ("node", "edge", "filter", "optional", "union")
+        })
+        return {"pattern_kinds": kinds, "aggregate_requested": bool(shql.get("aggregate"))}
+    except Exception:
+        return {}
+
+
+def _emit_shql_usage(shql_text: str, result: "SHQLResult", duration_ms: float, account: AccountInDB) -> None:
+    try:
+        from hgai.config import get_settings
+        from hgai_module_telemetry.engine import emit
+        from hgai_module_telemetry.events import account_field, build_event
+    except ImportError:
+        return
+    try:
+        meta = result.meta or {}
+        attributes = {
+            "hgai.shql.aggregate_pushdown": meta.get("aggregate_pushdown"),
+            "hgai.shql.paging_pushdown": meta.get("paging_pushdown"),
+            "hgai.shql.truncated": meta.get("truncated"),
+            "hgai.shql.infer": meta.get("infer"),
+            "hgai.shql.cached": meta.get("cached"),
+            "hgai.shql.pattern_count": meta.get("pattern_count"),
+            "hgai.mesh.federated": bool(meta.get("federation")),
+        }
+        attributes.update({f"hgai.shql.{k}": v for k, v in _shql_telemetry_flags(shql_text).items()})
+        settings = get_settings()
+        emit(build_event(
+            kind="usage", surface="shql", feature="shql.query", duration_ms=duration_ms, outcome="ok",
+            account=account_field(account, settings), attributes=attributes,
+        ))
+    except Exception:
+        logger.debug("SHQL telemetry (usage) failed", exc_info=True)
+
+
+def _emit_shql_error(exc: Exception, duration_ms: float, account: AccountInDB) -> None:
+    try:
+        from hgai.config import get_settings
+        from hgai_module_telemetry.engine import emit
+        from hgai_module_telemetry.events import account_field
+        from hgai_module_telemetry.errors import build_error_event
+        from .parser import SHQLPermissionError
+    except ImportError:
+        return
+    try:
+        settings = get_settings()
+        outcome = "denied" if isinstance(exc, SHQLPermissionError) else "error"
+        emit(build_error_event(
+            exc, surface="shql", surface_context="shql.execute", feature="shql.query",
+            duration_ms=duration_ms, outcome=outcome, account=account_field(account, settings),
+        ))
+    except Exception:
+        logger.debug("SHQL telemetry (error) failed", exc_info=True)
+
+
 async def execute_shql(shql_text: str, use_cache: bool = True, *, account: AccountInDB) -> SHQLResult:
+    """Parse and execute an SHQL query string on behalf of `account`.
+
+    A thin timing/telemetry wrapper around `_execute_shql_impl` — behavior,
+    return value and raised exceptions are unchanged; see the telemetry
+    block above.
+    """
+    import time as _time
+    start = _time.perf_counter()
+    try:
+        result = await _execute_shql_impl(shql_text, use_cache=use_cache, account=account)
+    except Exception as exc:
+        _emit_shql_error(exc, (_time.perf_counter() - start) * 1000, account)
+        raise
+    _emit_shql_usage(shql_text, result, (_time.perf_counter() - start) * 1000, account)
+    return result
+
+
+async def _execute_shql_impl(shql_text: str, use_cache: bool = True, *, account: AccountInDB) -> SHQLResult:
     """Parse and execute an SHQL query string on behalf of `account`.
 
     `account` is required and enforced: see `_authorize_query`. Callers acting

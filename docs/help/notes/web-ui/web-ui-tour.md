@@ -29,6 +29,7 @@ The Web UI is served at `/ui/` (for example `http://localhost:8357/ui/`). Sign i
 | **Accounts** *(admin)* | Manage users, roles, permissions and space memberships | [Accounts and roles](help:help-accounts-roles) |
 | **Meshes** *(admin)* | Register servers and federate queries | [Meshes](help:help-meshes) |
 | **System** *(admin)* | Server information, the query cache, and an API explorer | [Configuration](help:help-configuration) |
+| **Telemetry** *(admin)* | Usage/error telemetry status, and a shortcut to browse it in Query (SHQL) | [Telemetry](help:help-telemetry) |
 
 ## Always available
 
