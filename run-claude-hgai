@@ -1,0 +1,2 @@
+#!/bin/bash
+claude --resume 812c63ef-274e-43fe-a530-878efc43ef33
