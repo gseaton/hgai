@@ -34,6 +34,15 @@ def account_field(account: Optional[AccountInDB], settings: Settings) -> Optiona
     }
 
 
+SYSTEM_ACTOR = "__system"
+
+
+def actor_of(account: Optional[Dict[str, Any]]) -> str:
+    """The event's `actor` — the account's identifier (hashed unless
+    `telemetry_include_account_ids`), or `__system` when no account acted."""
+    return account["id_hash"] if account else SYSTEM_ACTOR
+
+
 def build_event(
     *,
     kind: str,
@@ -60,6 +69,7 @@ def build_event(
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
         "duration_ms": round(duration_ms, 3),
         "outcome": outcome,
+        "actor": actor_of(account),
         "account": account,
         "attributes": attributes or {},
         "error": error,

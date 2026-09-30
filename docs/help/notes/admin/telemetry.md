@@ -26,6 +26,7 @@ Every request (REST), query (SHQL), tool call (MCP), tracked Web UI action and h
 | `feature` | *What* got used — always a template, e.g. `POST /api/v1/hyperedges/{edge_id}`, `mcp.hgai_query_execute`, `ui.visualize.focus_dblclick`, `shell.import-rdf` — never a value like an actual graph or record id |
 | `duration_ms` | How long it took |
 | `outcome` | `ok`, `denied`, or `error` |
+| `actor` | Who acted: the same (hashed) account id as below, or `__system` when no account acted (background or unauthenticated activity) |
 | `account` | The caller's roles, whether it's an agent account, and a **hashed** account id (see below) — or nothing, for an unauthenticated request |
 | `attributes` | A small, fixed set of extra fields for that surface — e.g. an HTTP status code, or (for SHQL) whether the query used `infer:`, was aggregated, was exact or candidate-capped |
 | `error` | Present only on `kind: error`: an exception type, a **templatized** message (see below), a fingerprint for grouping repeats of the same bug, and (where one exists) a repo-relative stack trace — file, line and function only |
