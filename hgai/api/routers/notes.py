@@ -11,6 +11,8 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from hgai.api.deps import get_current_active_account, parse_sort_param
+from hgai.core.auth import TenantBoundaryError, check_record_tenant, is_system_admin, multitenancy_on, tenant_scope
+from hgai.core.tenant_engine import TenancyError, check_member_tenant
 from hgai.core.notes import (
     can_edit_note,
     can_view_note,
@@ -34,7 +36,7 @@ NOTE_SORT_FIELDS = {"label", "name", "owner_username", "scope", "status", "syste
 
 
 def _is_admin(account: AccountInDB) -> bool:
-    return "admin" in account.roles
+    return is_system_admin(account)
 
 
 def _with_access(note, account: AccountInDB) -> dict:
@@ -49,6 +51,10 @@ def _with_access(note, account: AccountInDB) -> dict:
 async def _get_viewable(note_id: str, account: AccountInDB):
     note = await get_note(note_id)
     if not note:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Note '{note_id}' not found")
+    try:
+        check_record_tenant(account, note.tenant_id, "Note")
+    except TenantBoundaryError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Note '{note_id}' not found")
     if not _is_admin(account) and not can_view_note(note, account.username):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Access to note '{note_id}' not permitted")
@@ -81,6 +87,7 @@ async def list_notes(
         account.username, tags=tags, search=search, skip=skip, limit=limit,
         sort=parse_sort_param(sort, NOTE_SORT_FIELDS),
         scope=scope.value if scope else None, owner_username=owner,
+        tenant_id=tenant_scope(account),
     )
     return PaginatedResponse(total=total, skip=skip, limit=limit, items=[_with_access(n, account) for n in notes])
 
@@ -162,6 +169,11 @@ async def share_note_route(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the owner can change sharing")
     if data.username == note.owner_username:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Note owner already has full access")
+    if multitenancy_on():
+        try:
+            await check_member_tenant(note.tenant_id, data.username)
+        except TenancyError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     result = await share_note(note_id, data.username, data.role, account.username)
     if not result:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Note '{note_id}' not found")

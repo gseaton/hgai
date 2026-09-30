@@ -169,7 +169,8 @@ class HgaiClient:
         return resp.json()
 
     # Graphs
-    def list_graphs(self, status="active", limit=100): return self._request("GET", "/graphs", params={"status": status, "limit": limit})
+    def list_graphs(self, status="active", limit=100, tenant_id=None):
+        return self._request("GET", "/graphs", params={"status": status, "limit": limit, "tenant_id": tenant_id})
     def get_graph(self, gid): return self._request("GET", f"/graphs/{gid}")
     def create_graph(self, data): return self._request("POST", "/graphs", body=data)
     def update_graph(self, gid, data): return self._request("PUT", f"/graphs/{gid}", body=data)
@@ -248,6 +249,19 @@ class HgaiClient:
     def update_account(self, username, data): return self._request("PUT", f"/accounts/{username}", body=data)
     def delete_account(self, username): return self._request("DELETE", f"/accounts/{username}")
 
+    # Tenants
+    def list_tenants(self, **kw): return self._request("GET", "/tenants", params=kw)
+    def get_tenant(self, tid): return self._request("GET", f"/tenants/{tid}")
+    def create_tenant(self, data): return self._request("POST", "/tenants", body=data)
+    def update_tenant(self, tid, data): return self._request("PUT", f"/tenants/{tid}", body=data)
+    def delete_tenant(self, tid): return self._request("DELETE", f"/tenants/{tid}")
+
+    # API keys
+    def list_api_keys(self, **kw): return self._request("GET", "/api-keys", params=kw)
+    def create_api_key(self, data): return self._request("POST", "/api-keys", body=data)
+    def revoke_api_key(self, kid): return self._request("DELETE", f"/api-keys/{kid}")
+    def tenant_usage(self, tid): return self._request("GET", f"/tenants/{tid}/usage")
+
     # Meshes
     def list_meshes(self, **kw): return self._request("GET", "/meshes", params=kw)
     def get_mesh(self, mid): return self._request("GET", f"/meshes/{mid}")
@@ -275,12 +289,19 @@ HELP_TEXT = {
     "disconnect": "disconnect  —  Disconnect from current server",
     "whoami": "whoami  —  Show current user info",
     "server": "server  —  Show server info and health",
-    "use": "use <graph-id>  —  Set active hypergraph for node/edge operations",
+    "use": textwrap.dedent("""\
+        use <graph-id>         Set active hypergraph for node/edge operations
+        use tenant <id>        Scope ls graphs / ls accounts to one tenant (system admin)
+        use tenant all         Clear the tenant scope
+        use tenant             Show the current tenant scope"""),
     "ls": textwrap.dedent("""\
         ls graphs              List all hypergraphs
         ls nodes               List hypernodes in active graph
         ls edges               List hyperedges in active graph
-        ls accounts            List accounts (admin)
+        ls accounts            List accounts (admin; a tenant admin sees its own tenant)
+        ls tenants             List tenants (system admin; a tenant admin sees its own)
+        ls apikeys             List tenant API keys (admin)
+        ls usage [<tenant>]    A tenant's usage against its quotas
         ls meshes              List meshes (admin)
         ls meshes <id>         List servers in a mesh (admin)"""),
     "get": textwrap.dedent("""\
@@ -288,23 +309,29 @@ HELP_TEXT = {
         get node <id>          Get a hypernode
         get edge <id>          Get a hyperedge
         get account <user>     Get an account (admin)
+        get tenant <id>        Get a tenant
         get mesh <id>          Get a mesh (admin)"""),
     "create": textwrap.dedent("""\
         create graph           Create a hypergraph (interactive YAML)
         create node            Create a hypernode (interactive YAML)
         create edge            Create a hyperedge (interactive YAML)
         create account         Create an account (admin, interactive YAML)
+        create tenant          Create a tenant (system admin, interactive YAML)
+        create apikey          Create a tenant-scoped API key (admin, interactive YAML); the secret is shown once
         create mesh            Create a mesh (admin, interactive YAML)"""),
     "update": textwrap.dedent("""\
         update graph <id>      Update a hypergraph (interactive YAML)
         update node <id>       Update a hypernode (interactive YAML)
         update edge <id>       Update a hyperedge (interactive YAML)
+        update tenant <id>     Update a tenant (system admin, interactive YAML)
         update mesh <id>       Update a mesh (admin, interactive YAML)"""),
     "delete": textwrap.dedent("""\
         delete graph <id>      Delete a hypergraph (and all its nodes/edges)
         delete node <id>       Delete a hypernode (active graph)
         delete edge <id>       Delete a hyperedge (active graph)
         delete account <user>  Delete an account (admin)
+        delete tenant <id>     Delete an empty tenant (system admin)
+        delete apikey <id>     Revoke an API key (admin)
         delete mesh <id>       Delete a mesh (admin)"""),
     "ping": "ping mesh <id>  —  Health-check all servers in a mesh (admin)",
     "sync": "sync mesh <id>  —  Refresh server graph lists from live remotes (admin)",
@@ -352,6 +379,7 @@ class HgaiShell:
         self.server_url: Optional[str] = server
         self.username: Optional[str] = username
         self.active_graph: Optional[str] = None
+        self.tenant_scope: Optional[str] = None  # system admins: only list this tenant's graphs/accounts
         self.running = True
 
         # Auto-connect if server provided
@@ -363,6 +391,8 @@ class HgaiShell:
         parts = []
         if self.client and self.username:
             parts.append(f"{C.CYAN}{self.username}{C.RESET}@{C.BLUE}{self.server_url}{C.RESET}")
+        if self.tenant_scope:
+            parts.append(f"{C.YELLOW}<{self.tenant_scope}>{C.RESET}")
         if self.active_graph:
             parts.append(f"{C.GREEN}[{self.active_graph}]{C.RESET}")
         return ("  ".join(parts) + " " if parts else "") + f"{C.BOLD}{C.WHITE}hgai>{C.RESET} "
@@ -536,7 +566,7 @@ class HgaiShell:
         self._do_connect(server, username, password)
 
     def cmd_disconnect(self, args):
-        self.client = None; self.username = None; self.active_graph = None
+        self.client = None; self.username = None; self.active_graph = None; self.tenant_scope = None
         info("Disconnected")
 
     def cmd_whoami(self, args):
@@ -558,7 +588,14 @@ class HgaiShell:
         self._require_connection()
         if not args:
             info(f"Active graph: {self.active_graph or '(none)'}")
+            if self.tenant_scope:
+                info(f"Tenant scope: {self.tenant_scope}")
             return
+        if args[0].lower() == "tenant":
+            self._use_tenant(args[1:])
+            return
+        if args[0].lower() == "graph" and len(args) > 1:
+            args = args[1:]   # `use graph <id>` also reaches a graph that is itself named "tenant"
         gid = args[0]
         try:
             self.client.get_graph(gid)
@@ -567,12 +604,41 @@ class HgaiShell:
         except KeyError:
             error(f"Hypergraph '{gid}' not found")
 
+    def _use_tenant(self, args):
+        """use tenant [<id>|all]  (system admins): scope `ls graphs` / `ls accounts` to one tenant."""
+        if not args:
+            info(f"Tenant scope: {self.tenant_scope or '(all tenants)'}")
+            return
+        tid = args[0]
+        if tid.lower() == "all":
+            self.tenant_scope = None
+            self.active_graph = None
+            success("Tenant scope cleared (all tenants)")
+            return
+        try:
+            self.client.get_tenant(tid)
+        except KeyError:
+            error(f"Tenant '{tid}' not found")
+            return
+        self.tenant_scope = tid
+        self.active_graph = None
+        success(f"Tenant scope set to: {tid}")
+        if not self._is_system_admin():
+            warn("Only system admins can see other tenants; you are always limited to your own")
+
+    def _is_system_admin(self) -> bool:
+        try:
+            me = self.client.me()
+        except Exception:
+            return False
+        return me.get("system_role") == "system_admin"
+
     def cmd_ls(self, args):
         self._require_connection()
         what = args[0].lower() if args else "graphs"
 
         if what in ("graphs", "graph"):
-            resp = self.client.list_graphs(status="", limit=200)
+            resp = self.client.list_graphs(status="", limit=200, tenant_id=self.tenant_scope)
             rows = resp.get("items", [])
             print(f"\n  {C.BOLD}Hypergraphs ({resp.get('total',0)} total){C.RESET}")
             self._print_table(rows, ["id", "label", "type", "status", "node_count", "edge_count"],
@@ -597,12 +663,40 @@ class HgaiShell:
                               ["ID", "Relation", "Flavor", "Members", "Status"])
 
         elif what in ("accounts", "account"):
-            resp = self.client.list_accounts(limit=100)
+            resp = self.client.list_accounts(limit=100, tenant_id=self.tenant_scope)
             rows = resp.get("items", [])
             print(f"\n  {C.BOLD}Accounts ({resp.get('total',0)} total){C.RESET}")
             for row in rows:
                 row["roles_str"] = ", ".join(row.get("roles") or [])
-            self._print_table(rows, ["username", "email", "roles_str", "status"], ["Username", "Email", "Roles", "Status"])
+                row["tenant"] = row.get("tenant_id") or ("(system)" if row.get("system_role") else "")
+            self._print_table(rows, ["username", "email", "roles_str", "tenant", "status"],
+                              ["Username", "Email", "Roles", "Tenant", "Status"])
+
+        elif what in ("tenants", "tenant"):
+            resp = self.client.list_tenants(limit=200)
+            rows = resp.get("items", [])
+            print(f"\n  {C.BOLD}Tenants ({resp.get('total',0)} total){C.RESET}")
+            self._print_table(rows, ["id", "label", "status", "description"], ["ID", "Label", "Status", "Description"])
+
+        elif what in ("apikeys", "apikey"):
+            resp = self.client.list_api_keys(limit=200, tenant_id=self.tenant_scope)
+            rows = resp.get("items", [])
+            print(f"\n  {C.BOLD}API keys ({resp.get('total',0)} total){C.RESET}")
+            for row in rows:
+                row["ops"] = ",".join(row.get("operations") or [])
+            self._print_table(rows, ["id", "label", "tenant_id", "key_prefix", "ops", "last_used"],
+                              ["ID", "Label", "Tenant", "Key", "Operations", "Last used"])
+
+        elif what == "usage":
+            tid = args[1] if len(args) > 1 else self.tenant_scope
+            if not tid:
+                error("Usage: ls usage <tenant-id>   (or set one with: use tenant <id>)")
+                return
+            resp = self.client.tenant_usage(tid)
+            print(f"\n  {C.BOLD}Usage of tenant '{tid}'{C.RESET}")
+            for key, used in resp.get("usage", {}).items():
+                limit = resp.get("quotas", {}).get(f"max_{key}")
+                print(f"    {key:<10} {used}" + (f" / {limit}" if limit is not None else "  (unlimited)"))
 
         elif what in ("meshes", "mesh"):
             # Optional: ls meshes <id> to list servers inside a mesh
@@ -621,12 +715,12 @@ class HgaiShell:
                 self._print_table(rows, ["id", "label", "server_count", "status"], ["ID", "Label", "Servers", "Status"])
 
         else:
-            error(f"Unknown entity: '{what}'. Use: graphs, nodes, edges, accounts, meshes")
+            error(f"Unknown entity: '{what}'. Use: graphs, nodes, edges, accounts, tenants, apikeys, usage, meshes")
 
     def cmd_get(self, args):
         self._require_connection()
         if len(args) < 2:
-            error("Usage: get <graph|node|edge|account> <id>")
+            error("Usage: get <graph|node|edge|account|tenant> <id>")
             return
         what, eid = args[0].lower(), args[1]
 
@@ -640,6 +734,8 @@ class HgaiShell:
             data = self.client.get_edge(self.active_graph, eid)
         elif what == "account":
             data = self.client.get_account(eid)
+        elif what == "tenant":
+            data = self.client.get_tenant(eid)
         elif what == "mesh":
             data = self.client.get_mesh(eid)
         else:
@@ -695,13 +791,35 @@ class HgaiShell:
 
         elif what == "account":
             print("\n  Creating Account (enter YAML, end with ---):")
-            template = "username: myuser\npassword: mypassword\nemail: user@example.com\nroles: [user]\nstatus: active"
+            template = "username: myuser\npassword: mypassword\nemail: user@example.com\nroles: [user]\ntenant_id: alpha   # system admins only; a tenant admin always creates in its own tenant\nstatus: active"
             print(f"\n  Template:\n{C.DIM}{textwrap.indent(template, '    ')}{C.RESET}\n")
             raw = self._read_multiline()
             if not raw.strip(): return
             data = yaml.safe_load(raw) if HAS_YAML else json.loads(raw)
             result = self.client.create_account(data)
             success(f"Account created: {result.get('username')}")
+
+        elif what == "apikey":
+            print("\n  Creating API key (enter YAML, end with ---):")
+            template = "label: ci-pipeline\ntenant_id: alpha   # system admins only; a tenant admin's keys use its own tenant\noperations: [read, query]\n# expires_at: 2027-01-01T00:00:00Z"
+            print(f"\n  Template:\n{C.DIM}{textwrap.indent(template, '    ')}{C.RESET}\n")
+            raw = self._read_multiline()
+            if not raw.strip(): return
+            data = yaml.safe_load(raw) if HAS_YAML else json.loads(raw)
+            result = self.client.create_api_key(data)
+            success(f"API key created: {result.get('id')} (tenant {result.get('tenant_id')})")
+            warn("Copy the secret now; it is not shown again:")
+            print(f"    {C.BOLD}{result.get('key')}{C.RESET}")
+
+        elif what == "tenant":
+            print("\n  Creating Tenant (system admin; enter YAML, end with ---):")
+            template = "id: alpha\nlabel: Alpha\ndescription: ''\nstatus: active"
+            print(f"\n  Template:\n{C.DIM}{textwrap.indent(template, '    ')}{C.RESET}\n")
+            raw = self._read_multiline()
+            if not raw.strip(): return
+            data = yaml.safe_load(raw) if HAS_YAML else json.loads(raw)
+            result = self.client.create_tenant(data)
+            success(f"Tenant created: {result.get('id')}")
 
         elif what == "mesh":
             print("\n  Creating Mesh (enter YAML, end with ---):")
@@ -722,12 +840,12 @@ class HgaiShell:
             success(f"Mesh created: {result.get('id')}")
 
         else:
-            error(f"Usage: create <graph|node|edge|account|mesh>")
+            error(f"Usage: create <graph|node|edge|account|tenant|apikey|mesh>")
 
     def cmd_update(self, args):
         self._require_connection()
         if len(args) < 2:
-            error("Usage: update <graph|node|edge> <id>")
+            error("Usage: update <graph|node|edge|tenant|mesh> <id>")
             return
         what, eid = args[0].lower(), args[1]
 
@@ -741,6 +859,8 @@ class HgaiShell:
             existing = self.client.get_edge(self.active_graph, eid)
         elif what == "mesh":
             existing = self.client.get_mesh(eid)
+        elif what == "tenant":
+            existing = self.client.get_tenant(eid)
         else:
             error(f"Unknown entity: '{what}'"); return
 
@@ -759,6 +879,8 @@ class HgaiShell:
             result = self.client.update_edge(self.active_graph, eid, data)
         elif what == "mesh":
             result = self.client.update_mesh(eid, data)
+        elif what == "tenant":
+            result = self.client.update_tenant(eid, data)
 
         success(f"Updated: {eid}")
         self._print_json(result)
@@ -766,7 +888,7 @@ class HgaiShell:
     def cmd_delete(self, args):
         self._require_connection()
         if len(args) < 2:
-            error("Usage: delete <graph|node|edge|account> <id>")
+            error("Usage: delete <graph|node|edge|account|tenant|apikey> <id>")
             return
         what, eid = args[0].lower(), args[1]
         confirm = input(f"  Delete {what} '{eid}'? [y/N] ").strip().lower()
@@ -785,6 +907,11 @@ class HgaiShell:
             self.client.delete_edge(self.active_graph, eid)
         elif what == "account":
             self.client.delete_account(eid)
+        elif what == "apikey":
+            self.client.revoke_api_key(eid)
+        elif what == "tenant":
+            self.client.delete_tenant(eid)
+            if self.tenant_scope == eid: self.tenant_scope = None
         elif what == "mesh":
             self.client.delete_mesh(eid)
         else:
@@ -1090,12 +1217,16 @@ def main():
     parser.add_argument("--user", "-u", default=None, help="Username")
     parser.add_argument("--password", "-p", default=None, help="Password (use env var HGAI_PASSWORD in production)")
     parser.add_argument("--graph", "-g", default=None, help="Initial active graph ID")
+    parser.add_argument("--tenant", "-t", default=None, help="Initial tenant scope (system admins: only list this tenant's graphs/accounts)")
     args = parser.parse_args()
 
     # Allow password from environment
     password = args.password or os.environ.get("HGAI_PASSWORD")
 
     shell = HgaiShell(server=args.server, username=args.user, password=password)
+
+    if args.tenant and shell.client:
+        shell._use_tenant([args.tenant])
 
     if args.graph:
         shell.active_graph = args.graph

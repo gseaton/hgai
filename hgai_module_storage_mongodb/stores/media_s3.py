@@ -66,6 +66,7 @@ class S3MediaStore(MediaStore):
         content_type: str,
         filename: Optional[str],
         uploaded_by: str,
+        tenant_id: Optional[str] = None,
     ) -> Media:
         hasher = hashlib.sha256()
         chunks: List[bytes] = []
@@ -82,7 +83,7 @@ class S3MediaStore(MediaStore):
         duration_seconds = extract_media_duration(content_type, body)
 
         # Dedup — see MongoMediaStore.put() for the same best-effort rationale.
-        existing_raw = await _col().find_one({"checksum": checksum})
+        existing_raw = await _col().find_one({"checksum": checksum, "tenant_id": tenant_id})
         if existing_raw:
             existing_raw.pop("_id", None)
             return Media(**existing_raw)
@@ -104,6 +105,7 @@ class S3MediaStore(MediaStore):
             "duration_seconds": duration_seconds,
             "checksum": checksum,
             "uploaded_by": uploaded_by,
+            "tenant_id": tenant_id,
             "ref_count": 0,
             "system_created": now,
             "system_updated": now,
@@ -182,6 +184,8 @@ class S3MediaStore(MediaStore):
         query: Dict[str, Any] = {}
         if filters.id:
             query["id"] = filters.id
+        if filters.tenant_id is not None:
+            query["tenant_id"] = filters.tenant_id
         if filters.status:
             query["status"] = filters.status
         if filters.content_type:

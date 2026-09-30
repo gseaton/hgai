@@ -7,6 +7,7 @@ from hgai_module_storage.backend import MediaStore, StorageBackend
 
 from . import connection, indexes
 from .stores.accounts import MongoAccountStore
+from .stores.api_keys import MongoApiKeyStore
 from .stores.cache import MongoCacheStore
 from .stores.hyperedges import MongoHyperedgeStore
 from .stores.hypergraphs import MongoHypergraphStore
@@ -16,6 +17,7 @@ from .stores.meshes import MongoMeshStore
 from .stores.notes import MongoNoteStore
 from .stores.parameterized_queries import MongoParameterizedQueryStore
 from .stores.spaces import MongoSpaceStore
+from .stores.tenants import MongoTenantStore
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,8 @@ class MongoStorageBackend(StorageBackend):
         self._hyperedges = MongoHyperedgeStore()
         self._accounts = MongoAccountStore()
         self._spaces = MongoSpaceStore()
+        self._tenants = MongoTenantStore()
+        self._api_keys = MongoApiKeyStore()
         self._meshes = MongoMeshStore()
         self._cache = MongoCacheStore()
         self._notes = MongoNoteStore()
@@ -75,6 +79,18 @@ class MongoStorageBackend(StorageBackend):
     @property
     def spaces(self) -> MongoSpaceStore:
         return self._spaces
+
+    @property
+    def api_keys(self) -> MongoApiKeyStore:
+        return self._api_keys
+
+    @property
+    def tenants(self) -> MongoTenantStore:
+        return self._tenants
+
+    async def migrate_tenancy(self, default_tenant_id: str, system_graph_ids: frozenset) -> dict:
+        from .tenancy_migration import migrate_tenancy
+        return await migrate_tenancy(default_tenant_id, system_graph_ids)
 
     @property
     def meshes(self) -> MongoMeshStore:

@@ -18,7 +18,6 @@ from hgai.db.storage import close_storage, get_storage, init_storage
 from hgai.models.account import AccountInDB, AccountPermissions
 from hgai_module_telemetry import local_storage
 from hgai_module_telemetry.exporters import CompositeExporter, HTTPExporter, LocalHypergraphExporter, select_exporter
-from tests.storage_fixtures import mongod  # noqa: F401  (fixture used by name)
 
 UTC = timezone.utc
 ADMIN = AccountInDB(username="admin", email=None, roles=["admin"], password_hash="")

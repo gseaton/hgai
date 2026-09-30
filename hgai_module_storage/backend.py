@@ -28,6 +28,8 @@ from .filters import (
     NotePatch,
     ParameterizedQueryFilters,
     ParameterizedQueryPatch,
+    TenantFilters,
+    TenantPatch,
     TransitiveSearchFilter,
 )
 
@@ -420,6 +422,70 @@ class SpaceStore(ABC):
 
 # ─── Mesh Store ───────────────────────────────────────────────────────────────
 
+class TenantStore(ABC):
+    """CRUD for tenants, the top-level isolation boundary."""
+
+    @abstractmethod
+    async def create(self, doc: Dict[str, Any]) -> Any:
+        """Insert a tenant document and return TenantInDB."""
+
+    @abstractmethod
+    async def get(self, tenant_id: str) -> Optional[Any]:
+        """Return TenantInDB or None."""
+
+    @abstractmethod
+    async def list(
+        self, filters: TenantFilters, skip: int = 0, limit: int = 50
+    ) -> Tuple[int, List[Any]]:
+        """Return (total, tenants)."""
+
+    @abstractmethod
+    async def update(self, tenant_id: str, patch: TenantPatch) -> Optional[Any]:
+        """Apply a partial update; return TenantInDB or None if missing."""
+
+    @abstractmethod
+    async def delete(self, tenant_id: str) -> bool:
+        """Delete the tenant document only. Returns True if it existed."""
+
+    @abstractmethod
+    async def count_references(self, tenant_id: str) -> Dict[str, int]:
+        """How many accounts, spaces, graphs (and API keys) still belong to the tenant."""
+
+    @abstractmethod
+    async def usage(self, tenant_id: str, only: Optional[List[str]] = None) -> Dict[str, int]:
+        """Current usage: accounts, spaces, graphs, nodes, edges (nodes and edges summed over
+        the tenant's graphs). `only` limits which are computed, since nodes and edges are the
+        expensive ones."""
+
+
+class ApiKeyStore(ABC):
+    """Stored, tenant-scoped API keys (secrets kept only as hashes)."""
+
+    @abstractmethod
+    async def create(self, doc: Dict[str, Any]) -> Any:
+        """Insert a key document and return ApiKeyInDB."""
+
+    @abstractmethod
+    async def get(self, key_id: str) -> Optional[Any]:
+        """Return ApiKeyInDB or None."""
+
+    @abstractmethod
+    async def get_by_hash(self, key_hash: str) -> Optional[Any]:
+        """Return the ApiKeyInDB whose secret hashes to `key_hash`, or None."""
+
+    @abstractmethod
+    async def list(self, tenant_id: Optional[str], skip: int = 0, limit: int = 50) -> Tuple[int, List[Any]]:
+        """Return (total, keys), for one tenant or (None) all."""
+
+    @abstractmethod
+    async def delete(self, key_id: str) -> bool:
+        """Delete (revoke) a key. True if it existed."""
+
+    @abstractmethod
+    async def touch(self, key_id: str, when: Any) -> None:
+        """Record that the key was just used."""
+
+
 class MeshStore(ABC):
     """CRUD operations for meshes."""
 
@@ -480,6 +546,7 @@ class MediaStore(ABC):
         content_type: str,
         filename: Optional[str],
         uploaded_by: str,
+        tenant_id: Optional[str] = None,
     ) -> Any:
         """Stream `stream`'s bytes into the blob store and create the Media metadata
         record. Returns the created Media model (with size_bytes/checksum computed
@@ -689,6 +756,16 @@ class StorageBackend(ABC):
 
     @property
     @abstractmethod
+    def api_keys(self) -> ApiKeyStore:
+        """API key store."""
+
+    @property
+    @abstractmethod
+    def tenants(self) -> TenantStore:
+        """Tenant store."""
+
+    @property
+    @abstractmethod
     def meshes(self) -> MeshStore:
         """Mesh store."""
 
@@ -711,3 +788,14 @@ class StorageBackend(ABC):
     @abstractmethod
     def parameterized_queries(self) -> ParameterizedQueryStore:
         """Parameterized query store."""
+
+    @abstractmethod
+    async def migrate_tenancy(self, default_tenant_id: str, system_graph_ids: frozenset) -> Dict[str, int]:
+        """Stamp pre-multi-tenancy records with a tenant. Idempotent and safe on every startup.
+
+        Only records with no `tenant_id` are touched, so a second run changes nothing.
+        Non-system accounts and their owned data, spaces and unowned graphs go to
+        `default_tenant_id`; space graphs take their space's tenant; legacy `admin`
+        accounts become `system_admin`; `system_graph_ids` and system accounts' data
+        get an explicit null tenant. Returns {what: count changed}.
+        """

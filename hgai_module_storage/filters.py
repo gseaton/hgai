@@ -8,6 +8,15 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 @dataclass
+class GraphAccess:
+    """Which graphs an account may see, for filtering a listing in storage so totals and
+    paging are exact: graphs of `space_ids`, plus unowned graphs (all of them when
+    `unowned_ids` is None, else only those ids)."""
+    space_ids: List[str] = field(default_factory=list)
+    unowned_ids: Optional[List[str]] = field(default_factory=list)
+
+
+@dataclass
 class HypergraphFilters:
     status: Optional[str] = None
     tags: Optional[List[str]] = None
@@ -15,6 +24,8 @@ class HypergraphFilters:
     search: Optional[str] = None  # text search on label
     sort: Optional[List[Tuple[str, int]]] = None  # [(field, 1|-1), ...] priority order; None = default
     exclude_system: bool = False  # exclude ids starting with "__" (e.g. __local-telemetry)
+    tenant_id: Optional[str] = None  # only this tenant's graphs (None: no tenant filter)
+    access: Optional[GraphAccess] = None  # only graphs this access allows (None: no access filter)
 
 
 @dataclass
@@ -165,6 +176,7 @@ class TransitiveSearchFilter:
 class AccountFilters:
     role: Optional[str] = None
     status: Optional[str] = None
+    tenant_id: Optional[str] = None  # only this tenant's accounts (None: no tenant filter)
 
 
 @dataclass
@@ -182,6 +194,7 @@ class AccountPatch:
 class SpaceFilters:
     username: Optional[str] = None  # filter spaces where this user is a member
     status: Optional[str] = None
+    tenant_id: Optional[str] = None  # only this tenant's spaces (None: no tenant filter)
 
 
 @dataclass
@@ -215,6 +228,7 @@ class MediaFilters:
     status: Optional[str] = None
     tags: Optional[List[str]] = None
     sort: Optional[List[Tuple[str, int]]] = None  # [(field, 1|-1), ...], priority order
+    tenant_id: Optional[str] = None  # only this tenant's media (None: no tenant filter)
 
 
 @dataclass
@@ -234,6 +248,7 @@ class NoteFilters:
     username: Optional[str] = None  # visibility: owner, or note scope public*, or (on the acl and scope != private)
     scope: Optional[str] = None  # only notes with this scope (a note with no stored scope counts as 'protected')
     owner_username: Optional[str] = None  # only notes owned by this account
+    tenant_id: Optional[str] = None  # only this tenant's notes (None: no tenant filter)
     tags: Optional[List[str]] = None
     search: Optional[str] = None  # substring match against label or text
     status: Optional[str] = None
@@ -260,6 +275,7 @@ class ParameterizedQueryFilters:
     search: Optional[str] = None  # substring match against name, label, or description
     status: Optional[str] = None
     sort: Optional[List[Tuple[str, int]]] = None  # [(field, 1|-1), ...], priority order
+    tenant_id: Optional[str] = None  # only this tenant's queries (None: no tenant filter)
 
 
 @dataclass
@@ -287,3 +303,18 @@ class GraphStats:
     edge_count: int
     relation_types: List[str]
     node_types: List[str]
+
+
+@dataclass
+class TenantFilters:
+    status: Optional[str] = None
+
+
+@dataclass
+class TenantPatch:
+    label: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    settings: Optional[Dict[str, Any]] = None
+    attributes: Optional[Dict[str, Any]] = None
+    updated_by: str = ""

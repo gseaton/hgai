@@ -18,6 +18,7 @@ from hgai.core.mutations import append_mutation as _append_mutation
 from hgai.core.mutations import create_delta as _create_delta
 from hgai.core.mutations import update_delta as _update_delta
 from hgai.core.query_templates import parse_parameters, render_query
+from hgai.core.tenant_engine import tenant_of_owner
 from hgai.db.storage import get_storage
 from hgai.models.common import now_utc
 from hgai.models.parameterized_query import (
@@ -39,6 +40,7 @@ async def create_parameterized_query(data: ParameterizedQueryCreate, created_by:
     doc.update(
         id=uuid.uuid4().hex,
         parameters=parameters,
+        tenant_id=await tenant_of_owner(created_by),
         system_created=now,
         system_updated=now,
         created_by=created_by,
@@ -58,8 +60,9 @@ async def list_parameterized_queries(
     skip: int = 0,
     limit: int = 50,
     sort: Optional[List[Tuple[str, int]]] = None,
+    tenant_id: Optional[str] = None,
 ) -> Tuple[int, List[ParameterizedQueryInDB]]:
-    filters = ParameterizedQueryFilters(tags=tags, search=search, sort=sort)
+    filters = ParameterizedQueryFilters(tags=tags, search=search, sort=sort, tenant_id=tenant_id)
     return await get_storage().parameterized_queries.list(filters, skip=skip, limit=limit)
 
 

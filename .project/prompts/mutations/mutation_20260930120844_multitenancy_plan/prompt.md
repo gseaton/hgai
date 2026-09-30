@@ -1,0 +1,3 @@
+# Prompt
+
+Please generate a plan to implement locking space(s) to tenents to support multitenancy.  For example, if a user / account is assigned to tenant 'Alpha', then that user / account will only have access to tenent 'Alpha' space(s). Please plan how to create a high-level 'Tenant' entity that accounts must be assigned to (system-wide admin/root accounts have access to all tenants and spaces).  The current roles across the current implementation need to pushed down to the 'Tenant' level while still maintaining 'system' roles across tenents.  Please generate this plan as markdown in the 'docs/architecture/hypergraph-ai-multi-tenancy-<yyyymmddhhmmss>.md'.

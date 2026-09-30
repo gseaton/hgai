@@ -32,7 +32,7 @@ username=admin&password=pwd357&grant_type=password
 
 ### GET /auth/me
 
-Get current authenticated user info.
+Get current authenticated user info. Besides the account fields (including `system_role` and `tenant_id`) it returns `multitenancy_enabled` (whether the server enforces [tenants](help:help-tenants)) and `tenant_label` (the display name of the account's tenant).
 
 ---
 
@@ -512,7 +512,65 @@ Flush the shared query result cache. Optional `graph_id` query param scopes the 
 
 ---
 
+## Tenants
+
+Enforced only when `HGAI_MULTITENANCY_ENABLED=true` (see [Tenants](help:help-tenants)). Another tenant's resources are reported as `404`.
+
+### GET /tenants
+System admin or system auditor: all tenants. Tenant admin: its own tenant only. Query: `status`, `skip`, `limit`.
+
+### POST /tenants (System Admin Only)
+
+**Body:**
+```json
+{ "id": "alpha", "label": "Alpha Corp", "description": "", "status": "active" }
+```
+`id` starts with a letter or digit and contains only letters, digits, `-` and `_`. `__system` is reserved. `409` if it exists.
+
+### GET /tenants/{id}
+A system admin, or an account of that tenant. Any other tenant is `404`.
+
+### PUT /tenants/{id} (System Admin Only)
+Update `label`, `description`, `status` (`active` or `suspended`; suspending locks out every account of the tenant) or `settings`. The `default` tenant cannot be suspended.
+
+### GET /tenants/{id}/usage
+`{"usage": {"accounts", "spaces", "graphs", "nodes", "edges"}, "quotas": {...}}` for a system admin, a system auditor, or an account of that tenant.
+
+### Quotas
+`PUT /tenants/{id}` with `{"settings": {"quotas": {"max_graphs": 20, "max_nodes": 1000000}}}`. Keys: `max_accounts`, `max_spaces`, `max_graphs`, `max_nodes`, `max_edges` (integers, at least 0; unknown keys are a `422`). Creating past a limit returns `409` with the limit and current usage. Soft limits, enforced only while tenancy is on.
+
+### DELETE /tenants/{id} (System Admin Only)
+Only an empty tenant: `409` lists the accounts, spaces and graphs still in it. `default` cannot be deleted.
+
+---
+
+## API Keys
+
+Tenant-scoped keys; see [Tenants](help:help-tenants). Needs `HGAI_MULTITENANCY_ENABLED=true` (`409` otherwise). A system admin or tenant admin manages them; a system auditor can list them.
+
+### POST /api-keys
+
+**Body:**
+```json
+{ "label": "ci-pipeline", "tenant_id": "alpha", "operations": ["read", "query"], "expires_at": "2027-01-01T00:00:00Z" }
+```
+`tenant_id` is required for a system admin and ignored for a tenant admin (its own tenant is used; another tenant is `403`). `operations` may contain `read`, `query`, `write`, `delete`, `export`, `import`. The response includes `key`, **shown once**; only its hash is stored.
+
+### GET /api-keys
+Lists keys: id, label, tenant, key prefix, operations, expiry, last use. Never the secret.
+
+### DELETE /api-keys/{id}
+Revokes a key (`404` for a key of another tenant, as a tenant admin).
+
+Use a key as `Authorization: Bearer hgai_...` on any route or on MCP.
+
+---
+
 ## Accounts (Admin Only)
+
+`system_role` may be `system_auditor`: a read-only account across every tenant that also cannot reach users' notes, media, saved queries or chats.
+
+With tenants enabled, a **tenant admin** can also use these routes for the accounts of its own tenant: it cannot create an account elsewhere, grant `admin` or `system_role`, or assign another tenant, and other tenants' accounts are `404`. A system admin can pass `?tenant_id=` to `GET /accounts` (and to `GET /spaces` and `GET /graphs`) to list one tenant's records. Account bodies take `tenant_id` and `system_role`.
 
 ### GET /accounts
 ### POST /accounts

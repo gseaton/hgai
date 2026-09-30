@@ -54,6 +54,13 @@ class MongoHypergraphStore(HypergraphStore):
             query["space_id"] = filters.space_id
         if filters.search:
             query["label"] = {"$regex": filters.search, "$options": "i"}
+        if filters.tenant_id is not None:
+            query["tenant_id"] = filters.tenant_id
+        if filters.access is not None:
+            unowned: Dict[str, Any] = {"space_id": None}
+            if filters.access.unowned_ids is not None:
+                unowned["id"] = {"$in": list(filters.access.unowned_ids)}
+            query["$and"] = [{"$or": [{"space_id": {"$in": list(filters.access.space_ids)}}, unowned]}]
         if filters.exclude_system:
             query["id"] = {**query.get("id", {}), "$not": {"$regex": "^__"}}
 

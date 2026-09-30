@@ -36,6 +36,8 @@ class MongoParameterizedQueryStore(ParameterizedQueryStore):
         clauses: List[Dict[str, Any]] = []
         if filters.status:
             clauses.append({"status": filters.status})
+        if filters.tenant_id is not None:
+            clauses.append({"tenant_id": filters.tenant_id})
         if filters.tags:
             clauses.append({"tags": {"$all": filters.tags}})
         if filters.search:

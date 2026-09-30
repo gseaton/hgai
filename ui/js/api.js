@@ -15,7 +15,31 @@ const HGAI_API = (() => {
     const r = _roles.length ? _roles : JSON.parse(sessionStorage.getItem('hgai_roles') || '[]');
     return r;
   }
-  function isAdmin() { return getRoles().includes('admin'); }
+  // `isAdmin` is the system admin (the legacy global `admin` role). A tenant admin
+  // administers only its own tenant, and only while the server enforces tenancy.
+  function isAdmin() {
+    return getRoles().includes('admin') || getMeCached().system_role === 'system_admin';
+  }
+  function isSystemAdmin() { return isAdmin(); }
+  function isTenantAdmin() {
+    return !isAdmin() && getRoles().includes('tenant_admin') && tenancyEnabled();
+  }
+  function getMeCached() {
+    try { return JSON.parse(sessionStorage.getItem('hgai_me') || '{}'); } catch { return {}; }
+  }
+  function tenancyEnabled() { return !!getMeCached().multitenancy_enabled; }
+  function tenantId() { return getMeCached().tenant_id || null; }
+  function tenantLabel() { return getMeCached().tenant_label || getMeCached().tenant_id || null; }
+
+  // System admins can scope graph/space/account lists to one tenant ('' = all tenants).
+  function getTenantScope() { return (isAdmin() && tenancyEnabled() && sessionStorage.getItem('hgai_tenant_scope')) || ''; }
+  function setTenantScope(id) {
+    if (id) sessionStorage.setItem('hgai_tenant_scope', id); else sessionStorage.removeItem('hgai_tenant_scope');
+  }
+  function scoped(params = {}) {
+    const t = getTenantScope();
+    return t && params.tenant_id === undefined ? { ...params, tenant_id: t } : params;
+  }
 
   function setSession(token, username, roles) {
     _token = token; _username = username; _roles = roles;
@@ -29,6 +53,8 @@ const HGAI_API = (() => {
     sessionStorage.removeItem('hgai_token');
     sessionStorage.removeItem('hgai_username');
     sessionStorage.removeItem('hgai_roles');
+    sessionStorage.removeItem('hgai_me');
+    sessionStorage.removeItem('hgai_tenant_scope');
   }
 
   async function request(method, path, body = null, params = {}) {
@@ -103,6 +129,26 @@ const HGAI_API = (() => {
 
   async function getMe() { return request('GET', '/auth/me'); }
 
+  // Fetch /auth/me once per session start and keep what the UI needs about tenancy.
+  async function refreshMe() {
+    const me = await getMe();
+    sessionStorage.setItem('hgai_me', JSON.stringify(me));
+    return me;
+  }
+
+  // ── Tenants ──────────────────────────────────────────────────────────────
+  async function listTenants(params = {}) { return request('GET', '/tenants', null, params); }
+  async function getTenant(id) { return request('GET', `/tenants/${id}`); }
+  async function createTenant(data) { return request('POST', '/tenants', data); }
+  async function updateTenant(id, data) { return request('PUT', `/tenants/${id}`, data); }
+  async function deleteTenant(id) { return request('DELETE', `/tenants/${id}`); }
+  async function getTenantUsage(id) { return request('GET', `/tenants/${id}/usage`); }
+
+  // ── API keys (tenant-scoped) ─────────────────────────────────────────────
+  async function listApiKeys(params = {}) { return request('GET', '/api-keys', null, scoped(params)); }
+  async function createApiKey(data) { return request('POST', '/api-keys', data); }
+  async function revokeApiKey(id) { return request('DELETE', `/api-keys/${id}`); }
+
   // ── Server ────────────────────────────────────────────────────────────────
   async function getServerInfo() { return request('GET', '/server/info'); }
 
@@ -110,7 +156,7 @@ const HGAI_API = (() => {
   async function getTelemetryStatus() { return request('GET', '/telemetry/status'); }
 
   // ── Hypergraphs ───────────────────────────────────────────────────────────
-  async function listGraphs(params = {}) { return request('GET', '/graphs', null, params); }
+  async function listGraphs(params = {}) { return request('GET', '/graphs', null, scoped(params)); }
   async function getGraph(id) { return request('GET', `/graphs/${id}`); }
   async function createGraph(data) { return request('POST', '/graphs', data); }
   async function updateGraph(id, data) { return request('PUT', `/graphs/${id}`, data); }
@@ -281,7 +327,7 @@ const HGAI_API = (() => {
   async function clearShqlHistory() { return request('DELETE', '/shql/history'); }
 
   // ── Accounts ──────────────────────────────────────────────────────────────
-  async function listAccounts(params = {}) { return request('GET', '/accounts', null, params); }
+  async function listAccounts(params = {}) { return request('GET', '/accounts', null, scoped(params)); }
   async function getAccount(username) { return request('GET', `/accounts/${username}`); }
   async function createAccount(data) { return request('POST', '/accounts', data); }
   async function updateAccount(username, data) { return request('PUT', `/accounts/${username}`, data); }
@@ -301,7 +347,7 @@ const HGAI_API = (() => {
   async function queryMesh(id, body) { return request('POST', `/meshes/${id}/query`, body); }
 
   // ── Spaces ────────────────────────────────────────────────────────────────
-  async function listSpaces(params = {}) { return request('GET', '/spaces', null, params); }
+  async function listSpaces(params = {}) { return request('GET', '/spaces', null, scoped(params)); }
   async function getSpace(id) { return request('GET', `/spaces/${id}`); }
   async function createSpace(data) { return request('POST', '/spaces', data); }
   async function updateSpace(id, data) { return request('PUT', `/spaces/${id}`, data); }
@@ -414,7 +460,11 @@ const HGAI_API = (() => {
 
   return {
     // session
-    getToken, getUsername, getRoles, isAdmin, setSession, clearSession,
+    getToken, getUsername, getRoles, isAdmin, isSystemAdmin, isTenantAdmin, setSession, clearSession,
+    // tenancy
+    refreshMe, tenancyEnabled, tenantId, tenantLabel, getTenantScope, setTenantScope,
+    listTenants, getTenant, createTenant, updateTenant, deleteTenant, getTenantUsage,
+    listApiKeys, createApiKey, revokeApiKey,
     // telemetry
     trackFeature,
     // auth

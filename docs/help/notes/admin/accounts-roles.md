@@ -17,7 +17,9 @@ A fresh install has one account: **admin** / **pwd357**. **Change this password 
 
 | Role | Description |
 |---|---|
-| `admin` | Full system access, including account management; bypasses all access checks |
+| `admin` | Full system access, including account management; bypasses all access checks (the **system admin**; see [Tenants](help:help-tenants)) |
+| `system_auditor` | (a system role, set with `system_role`) Read-only across every tenant; see [Tenants](help:help-tenants) |
+| `tenant_admin` | With [tenants](help:help-tenants) enabled: full control of its own tenant's accounts, spaces and graphs, and nothing outside it |
 | `user` | Read/write access to permitted hypergraphs |
 | `agent` | API/MCP-only access for AI agents |
 | `readonly` | Read-only access |
@@ -45,5 +47,7 @@ curl -X POST http://localhost:8357/api/v1/accounts/alice/spaces/my-team \
 curl http://localhost:8357/api/v1/accounts/alice/spaces -H "Authorization: Bearer <token>"
 curl -X DELETE http://localhost:8357/api/v1/accounts/alice/spaces/my-team -H "Authorization: Bearer <token>"
 ```
+
+With [tenants](help:help-tenants) enabled, every non-system account belongs to one tenant. A system admin picks the tenant when creating an account; a tenant admin manages only the accounts of its own tenant (it cannot create one elsewhere or grant `admin`). Assigning an account to a space requires the account and the space to be in the same tenant.
 
 See also [Authentication](help:help-authentication).

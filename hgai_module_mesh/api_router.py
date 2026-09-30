@@ -4,7 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
-from hgai.core.auth import require_admin
+from hgai.core.auth import require_system_admin
 from hgai.db.storage import get_storage
 from hgai.models.common import PaginatedResponse, now_utc
 
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/meshes", tags=["meshes"])
 async def list_meshes(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
-    _admin=Depends(require_admin),
+    _admin=Depends(require_system_admin),
 ):
     from hgai_module_storage.filters import MeshFilters
     total, docs = await get_storage().meshes.list(MeshFilters(), skip=skip, limit=limit)
@@ -27,7 +27,7 @@ async def list_meshes(
 
 
 @router.post("", response_model=MeshResponse, status_code=status.HTTP_201_CREATED)
-async def create_mesh(data: MeshCreate, admin=Depends(require_admin)):
+async def create_mesh(data: MeshCreate, admin=Depends(require_system_admin)):
     existing = await get_storage().meshes.get(data.id)
     if existing:
         raise HTTPException(status_code=409, detail=f"Mesh '{data.id}' already exists")
@@ -45,7 +45,7 @@ async def create_mesh(data: MeshCreate, admin=Depends(require_admin)):
 
 
 @router.get("/{mesh_id}", response_model=MeshResponse)
-async def get_mesh(mesh_id: str, _admin=Depends(require_admin)):
+async def get_mesh(mesh_id: str, _admin=Depends(require_system_admin)):
     doc = await get_storage().meshes.get(mesh_id)
     if not doc:
         raise HTTPException(status_code=404, detail=f"Mesh '{mesh_id}' not found")
@@ -53,7 +53,7 @@ async def get_mesh(mesh_id: str, _admin=Depends(require_admin)):
 
 
 @router.put("/{mesh_id}", response_model=MeshResponse)
-async def update_mesh(mesh_id: str, data: MeshUpdate, admin=Depends(require_admin)):
+async def update_mesh(mesh_id: str, data: MeshUpdate, admin=Depends(require_system_admin)):
     update_fields = {k: v for k, v in data.model_dump(exclude_none=True).items() if k != "version"}
     update_fields["system_updated"] = now_utc()
     result = await get_storage().meshes.update(mesh_id, update_fields)
@@ -63,7 +63,7 @@ async def update_mesh(mesh_id: str, data: MeshUpdate, admin=Depends(require_admi
 
 
 @router.delete("/{mesh_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_mesh(mesh_id: str, _admin=Depends(require_admin)):
+async def delete_mesh(mesh_id: str, _admin=Depends(require_system_admin)):
     deleted = await get_storage().meshes.delete(mesh_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Mesh '{mesh_id}' not found")
@@ -72,7 +72,7 @@ async def delete_mesh(mesh_id: str, _admin=Depends(require_admin)):
 # ─── Active Mesh Operations ───────────────────────────────────────────────────
 
 @router.get("/{mesh_id}/ping")
-async def ping_mesh(mesh_id: str, _admin=Depends(require_admin)):
+async def ping_mesh(mesh_id: str, _admin=Depends(require_system_admin)):
     """Health-check all servers in a mesh."""
     from .engine import ping_mesh as _ping_mesh
     try:
@@ -82,7 +82,7 @@ async def ping_mesh(mesh_id: str, _admin=Depends(require_admin)):
 
 
 @router.post("/{mesh_id}/sync")
-async def sync_mesh(mesh_id: str, _admin=Depends(require_admin)):
+async def sync_mesh(mesh_id: str, _admin=Depends(require_system_admin)):
     """Refresh each server's graph list from the live remotes."""
     from .engine import sync_mesh_graphs
     try:
@@ -95,7 +95,7 @@ async def sync_mesh(mesh_id: str, _admin=Depends(require_admin)):
 async def query_mesh(
     mesh_id: str,
     body: dict,
-    admin=Depends(require_admin),
+    admin=Depends(require_system_admin),
 ):
     """Fan out an SHQL query across all servers in a mesh and merge results.
 
@@ -122,7 +122,7 @@ async def proxy_to_server(
     server_id: str,
     path: str,
     request: Request,
-    _admin=Depends(require_admin),
+    _admin=Depends(require_system_admin),
 ):
     """Forward a request to a specific server in a mesh.
 

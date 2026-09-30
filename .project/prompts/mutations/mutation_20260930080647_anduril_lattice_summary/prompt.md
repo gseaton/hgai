@@ -1,0 +1,3 @@
+# Prompt
+
+Please generate a integration summary for HypergraphAI for the Anduril Lattice Partner Program (https://www.anduril.com/lattice/lattice-partner-program) highlighting the primary roles of the HypergraphAI platform, including universal agentic context memory (cross-vendor, cross-host, cross-model, cross-session), universal agentic semantic knowledge store (transient/per-job, persisted long-term), human analyst semantic knowledge platforms, semantic integration layers, and persisted enterprise / operational semantic knowledge hypergraphs.  Please generate the integration summary as a markdown file 'docs/marketing/anduril-lattice-partner-summary-<yyyymmddhhmmss>.md' with no em dashes, tabs, or emoticons / emoji / clipart characters.

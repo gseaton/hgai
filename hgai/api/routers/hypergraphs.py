@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from hgai.api.transfer_http import export_response, read_export_body, read_rdf_body, run_import
 from hgai.api.deps import get_current_active_account, parse_sort_param, require_graph_access
 from hgai.core import engine
-from hgai.core.auth import can_access_graph, can_perform, require_admin
+from hgai.core.auth import TenantBoundaryError, can_access_graph, check_composition_tenancy, can_perform, filter_accessible_graphs, graph_access_for, is_system_admin, sees_all_tenants, require_system_admin, tenant_scope
 from hgai.core.rdf_import import SUPPORTED_FORMATS
 from hgai.models.account import AccountInDB
 from hgai.models.common import PaginatedResponse
@@ -22,6 +22,13 @@ router = APIRouter(prefix="/graphs", tags=["hypergraphs"])
 GRAPH_SORT_FIELDS = {"id", "label", "type", "space_id", "node_count", "edge_count", "status", "system_created", "system_updated"}
 
 
+async def _check_composition(account: AccountInDB, composition) -> None:
+    try:
+        await check_composition_tenancy(account, composition)
+    except TenantBoundaryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("", response_model=PaginatedResponse)
 async def list_graphs(
     status: Optional[str] = Query(default="active"),
@@ -32,20 +39,19 @@ async def list_graphs(
     limit: int = Query(default=50, ge=1, le=500),
     sort: Optional[str] = Query(default=None, description=f"Comma-separated fields, '-' prefix = descending. Allowed: {sorted(GRAPH_SORT_FIELDS)}"),
     include_system: bool = Query(default=False, description="Include platform-internal graphs (id prefix '__', e.g. __local-telemetry)"),
+    tenant_id: Optional[str] = Query(default=None, description="System admin only: list one tenant's graphs"),
     account: AccountInDB = Depends(get_current_active_account),
 ):
     total, graphs = await engine.list_hypergraphs(
         status=status, tags=tags, space_id=space_id, search=search, skip=skip, limit=limit,
         sort=parse_sort_param(sort, GRAPH_SORT_FIELDS), include_system=include_system,
+        tenant_id=scope if (scope := tenant_scope(account)) is not None else (tenant_id if sees_all_tenants(account) else None),
+        access=await graph_access_for(account),
     )
-    # Filter by account permissions (direct + space membership)
-    if "admin" not in account.roles and "*" not in account.permissions.graphs:
-        from hgai.core.space_engine import get_accessible_graph_ids_via_spaces
-        space_graph_ids = set(await get_accessible_graph_ids_via_spaces(account.username))
-        direct_ids = set(account.permissions.graphs)
-        allowed = direct_ids | space_graph_ids
-        graphs = [g for g in graphs if g.id in allowed]
-        total = len(graphs)
+    # Storage already applied the tenant and access filters (so total and paging are
+    # exact); this is the same rule every other surface uses, kept as a safety net.
+    if not is_system_admin(account):
+        graphs = await filter_accessible_graphs(account, graphs)
     return PaginatedResponse(
         total=total, skip=skip, limit=limit,
         items=[g.model_dump() for g in graphs]
@@ -58,6 +64,10 @@ async def create_graph(
     account: AccountInDB = Depends(get_current_active_account),
 ):
     """Create an unowned (no space) hypergraph. For space-owned graphs use POST /spaces/{space_id}/graphs."""
+    # This route creates unowned graphs only: a client-supplied space_id must not
+    # place the graph in a space the caller has no rights in.
+    data = data.model_copy(update={"space_id": None})
+    await _check_composition(account, data.composition)
     existing = await engine.get_hypergraph(data.id, space_id=None)
     if existing:
         raise HTTPException(status_code=409, detail=f"Hypergraph '{data.id}' already exists")
@@ -83,6 +93,7 @@ async def update_graph(
     data: HypergraphUpdate,
     account: AccountInDB = Depends(require_graph_access("write")),
 ):
+    await _check_composition(account, data.composition)
     graph = await engine.update_hypergraph(graph_id, data, updated_by=account.username, space_id=None)
     if not graph:
         raise HTTPException(status_code=404, detail=f"Hypergraph '{graph_id}' not found")
@@ -135,6 +146,7 @@ async def import_new_graph(
     """Import an export file (raw YAML/JSON request body) as an unowned hypergraph,
     creating the hypergraph from the file's own definition."""
     doc = await read_export_body(request)
+    await _check_composition(account, (doc.get("graph") or {}).get("composition"))
     target = graph_id or doc["graph"].get("id")
     if target and mode == "merge" and await engine.get_hypergraph(target, space_id=None):
         if not await can_access_graph(account, target) or not await can_perform(account, "write", graph_id=target):

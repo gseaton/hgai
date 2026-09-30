@@ -8,6 +8,8 @@ Notes. Every route just requires authentication.
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from hgai.core.auth import TenantBoundaryError, check_record_tenant, tenant_scope
 from pydantic import BaseModel
 
 from hgai.api.deps import get_current_active_account, parse_sort_param
@@ -38,6 +40,19 @@ class ParseTemplateRequest(BaseModel):
     shql: str
 
 
+async def _get_scoped(query_id: str, account: AccountInDB):
+    """The query, or 404 if it does not exist or belongs to another tenant."""
+    query = await get_parameterized_query(query_id)
+    try:
+        if query:
+            check_record_tenant(account, query.tenant_id, "Parameterized query")
+    except TenantBoundaryError:
+        query = None
+    if not query:
+        raise HTTPException(status_code=404, detail=f"Parameterized query '{query_id}' not found")
+    return query
+
+
 @router.get("", response_model=PaginatedResponse)
 async def list_parameterized_queries_route(
     tags: Optional[List[str]] = Query(default=None),
@@ -49,7 +64,7 @@ async def list_parameterized_queries_route(
 ):
     total, items = await list_parameterized_queries(
         tags=tags, search=search, skip=skip, limit=limit,
-        sort=parse_sort_param(sort, PQ_SORT_FIELDS),
+        sort=parse_sort_param(sort, PQ_SORT_FIELDS), tenant_id=tenant_scope(account),
     )
     return PaginatedResponse(total=total, skip=skip, limit=limit, items=[q.model_dump() for q in items])
 
@@ -83,10 +98,7 @@ async def get_parameterized_query_route(
     query_id: str,
     account: AccountInDB = Depends(get_current_active_account),
 ):
-    query = await get_parameterized_query(query_id)
-    if not query:
-        raise HTTPException(status_code=404, detail=f"Parameterized query '{query_id}' not found")
-    return query
+    return await _get_scoped(query_id, account)
 
 
 @router.put("/{query_id}", response_model=ParameterizedQueryResponse)
@@ -95,6 +107,7 @@ async def update_parameterized_query_route(
     data: ParameterizedQueryUpdate,
     account: AccountInDB = Depends(get_current_active_account),
 ):
+    await _get_scoped(query_id, account)
     try:
         result = await update_parameterized_query(query_id, data, account.username)
     except QueryTemplateError as e:
@@ -109,6 +122,7 @@ async def delete_parameterized_query_route(
     query_id: str,
     account: AccountInDB = Depends(get_current_active_account),
 ):
+    await _get_scoped(query_id, account)
     deleted = await delete_parameterized_query(query_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Parameterized query '{query_id}' not found")
@@ -122,9 +136,7 @@ async def execute_parameterized_query_route(
 ):
     from hgai_module_shql.parser import SHQLError, SHQLPermissionError
 
-    query = await get_parameterized_query(query_id)
-    if not query:
-        raise HTTPException(status_code=404, detail=f"Parameterized query '{query_id}' not found")
+    await _get_scoped(query_id, account)
     try:
         rendered, result = await execute_parameterized_query(query_id, request.values, request.use_cache, account=account)
     except QueryTemplateError as e:

@@ -25,8 +25,10 @@ The Web UI is served at `/ui/` (for example `http://localhost:8357/ui/`). Sign i
 | **Project Inference** | Materialize inferred facts into a hypergraph | [Project Inference](help:help-project-inference) |
 | **Help** | This documentation | [Adding your own help topics](help:help-authoring-help) |
 | **AI Agent** *(admin)* | Configure AI vendors, models and keys for the chat panel | [AI Chat](help:help-ai-chat) |
-| **Spaces** *(admin)* | Manage multi-tenant spaces and their members | [Spaces](help:help-spaces) |
-| **Accounts** *(admin)* | Manage users, roles, permissions and space memberships | [Accounts and roles](help:help-accounts-roles) |
+| **Spaces** *(admin, tenant admin)* | Manage multi-tenant spaces and their members | [Spaces](help:help-spaces) |
+| **Accounts** *(admin, tenant admin)* | Manage users, roles, permissions and space memberships | [Accounts and roles](help:help-accounts-roles) |
+| **API Keys** *(admin, tenant admin, when tenancy is on)* | Issue and revoke tenant-scoped API keys; the secret is shown once | [Tenants](help:help-tenants) |
+| **Tenants** *(system admin, when tenancy is on)* | Create, suspend and delete tenants. A tenant picker in the top bar scopes lists to one tenant; other users see their tenant's name in the sidebar | [Tenants](help:help-tenants) |
 | **Meshes** *(admin)* | Register servers and federate queries | [Meshes](help:help-meshes) |
 | **System** *(admin)* | Server information, the query cache, and an API explorer | [Configuration](help:help-configuration) |
 | **Telemetry** *(admin)* | Usage/error telemetry status, and a shortcut to browse it in Query (SHQL) | [Telemetry](help:help-telemetry) |

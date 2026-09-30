@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import yaml
 
 from hgai.config import get_settings
-from hgai.core.auth import PermissionDeniedError, check_graph_permission
+from hgai.core.auth import PermissionDeniedError, check_graph_permission, is_system_admin
 from hgai.db.storage import get_storage
 from hgai.models.account import AccountInDB
 from hgai_module_storage.filters import HyperedgeSearchFilters, HypernodeSearchFilters
@@ -1217,7 +1217,7 @@ async def _authorize_query(shql: Dict[str, Any], account: AccountInDB) -> None:
     """
     from .parser import SHQLPermissionError
 
-    if "admin" in account.roles:
+    if is_system_admin(account):
         return
 
     async def _check(gid: str, space_id: Optional[str]) -> None:

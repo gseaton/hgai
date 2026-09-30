@@ -58,6 +58,8 @@ Create an `owl:inverse-of` axiom hyperedge between the two relation types and qu
 
 **What's the default login?** `admin` / `pwd357` — change it immediately ([Accounts and roles](help:help-accounts-roles)).
 
+**Can one customer's users see another's?** Not when [tenants](help:help-tenants) are enabled (`HGAI_MULTITENANCY_ENABLED=true`): each account belongs to one tenant and reaches only that tenant's spaces and data, and anything in another tenant is reported as not found.
+
 **Which port?** 8357 locally, 8000 under Docker Compose ([Running locally](help:help-running-locally), [Docker](help:help-docker)).
 
 **How do I back up?** Use `mongodump` ([Backup](help:help-backup)).

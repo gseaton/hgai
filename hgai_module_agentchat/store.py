@@ -255,11 +255,14 @@ async def delete_model(model_id: str) -> bool:
 
 # ─── Chat sessions ──────────────────────────────────────────────────────────
 
-async def create_session(data: AgentChatSessionCreate, owner_username: str) -> AgentChatSessionInDB:
+async def create_session(
+    data: AgentChatSessionCreate, owner_username: str, tenant_id: Optional[str] = None
+) -> AgentChatSessionInDB:
     now = now_utc()
     doc = {
         "id": uuid.uuid4().hex,
         "owner_username": owner_username,
+        "tenant_id": tenant_id,
         "title": data.title or "",
         "model_id": data.model_id,
         "last_message_at": None,

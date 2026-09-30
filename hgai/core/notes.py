@@ -13,6 +13,7 @@ from hgai.core.media import adjust_media_refs, apply_media_diff
 from hgai.core.mutations import append_mutation as _append_mutation
 from hgai.core.mutations import create_delta as _create_delta
 from hgai.core.mutations import update_delta as _update_delta
+from hgai.core.tenant_engine import tenant_of_owner
 from hgai.db.storage import get_storage
 from hgai.models.common import now_utc
 from hgai.models.note import NoteCreate, NoteGrant, NoteInDB, NoteRole, NoteScope, NoteUpdate
@@ -69,6 +70,7 @@ async def create_note(data: NoteCreate, owner_username: str, id: Optional[str] =
     doc.update(
         id=id or uuid.uuid4().hex,
         owner_username=owner_username,
+        tenant_id=await tenant_of_owner(owner_username),
         acl=[],
         system_created=now,
         system_updated=now,
@@ -94,9 +96,11 @@ async def list_notes_visible_to(
     sort: Optional[List[Tuple[str, int]]] = None,
     scope: Optional[str] = None,
     owner_username: Optional[str] = None,
+    tenant_id: Optional[str] = None,
 ) -> Tuple[int, List[NoteInDB]]:
     filters = NoteFilters(
         username=username, tags=tags, search=search, sort=sort, scope=scope, owner_username=owner_username,
+        tenant_id=tenant_id,
     )
     return await get_storage().notes.list(filters, skip=skip, limit=limit)
 

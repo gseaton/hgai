@@ -16,7 +16,7 @@ from hgai_module_storage.aggregate import (
 from hgai_module_storage.backend import HyperedgeStore, HypernodeStore
 from hgai_module_storage.filters import AggregateMeasure as M, AggregateSpec
 from tests.storage_fixtures import (  # noqa: F401  (fixtures are used by name)
-    NODES, PIT, _MemNodes, ef, mongod, nf, stores,
+    NODES, PIT, _MemNodes, ef, nf, stores,
 )
 
 

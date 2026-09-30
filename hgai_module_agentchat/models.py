@@ -146,6 +146,7 @@ class AgentChatSessionInDB(BaseModel):
 
     id: str = Field(..., description="Chat session identifier (UUID4) — also the Agno session_id")
     owner_username: str = Field(..., description="Account that owns this session; only it (or an admin) may access it")
+    tenant_id: Optional[str] = Field(default=None, description="Owner's tenant (None: system-level, or pre-migration)")
     title: str = Field(default="")
     model_id: str = Field(..., description="AgentModel.id this session is pinned to")
     last_message_at: Optional[datetime] = Field(default=None)

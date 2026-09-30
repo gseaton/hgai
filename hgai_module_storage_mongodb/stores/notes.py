@@ -61,6 +61,8 @@ class MongoNoteStore(NoteStore):
         clauses: List[Dict[str, Any]] = []
         if filters.username:
             clauses.append(_visibility_clause(filters.username))
+        if filters.tenant_id is not None:
+            clauses.append({"tenant_id": filters.tenant_id})
         if filters.owner_username:
             clauses.append({"owner_username": filters.owner_username})
         if filters.scope:

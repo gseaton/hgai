@@ -70,6 +70,7 @@ class ParameterizedQueryInDB(ParameterizedQueryBase):
     `shql` on every create/update, never set directly by a caller."""
 
     id: str = Field(..., description="Parameterized query identifier (UUID4)")
+    tenant_id: Optional[str] = Field(default=None, description="Owning tenant (None: system-level, or pre-migration and read as the default tenant)")
     parameters: List[QueryParameter] = Field(default_factory=list)
     mutations: List[Any] = Field(default_factory=list, description="Audit trail of create/mutate events")
 

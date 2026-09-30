@@ -12,6 +12,9 @@ from typing import Any, Dict, Optional
 from hgai.config import Settings
 from hgai.models.account import AccountInDB
 
+from hgai.core.tenant_engine import effective_tenant_id
+from hgai.models.tenant import SYSTEM_TENANT_ID
+
 from .identity import hash_id
 
 VALID_KINDS = ("usage", "error")
@@ -27,8 +30,12 @@ def account_field(account: Optional[AccountInDB], settings: Settings) -> Optiona
     if account is None:
         return None
     identifier = account.username if settings.telemetry_include_account_ids else hash_id(account.username, settings)
+    tenant = effective_tenant_id(account)
     return {
         "id_hash": identifier,
+        # Hashed like the account id. A system account acts above tenants.
+        "tenant": SYSTEM_TENANT_ID if tenant is None else (
+            tenant if settings.telemetry_include_account_ids else hash_id(tenant, settings)),
         "roles": [str(r) for r in account.roles],
         "is_agent": "agent" in [str(r) for r in account.roles],
     }
@@ -70,6 +77,7 @@ def build_event(
         "duration_ms": round(duration_ms, 3),
         "outcome": outcome,
         "actor": actor_of(account),
+        "tenant": account["tenant"] if account else SYSTEM_TENANT_ID,
         "account": account,
         "attributes": attributes or {},
         "error": error,

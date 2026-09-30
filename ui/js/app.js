@@ -199,7 +199,7 @@ function showScreen(name) {
     pq: 'Parameterized Queries',
     'project-inference': 'Project Inference',
     'agent-admin': 'AI Agent',
-    spaces: 'Spaces', accounts: 'Accounts', meshes: 'Meshes', system: 'System', telemetry: 'Telemetry',
+    spaces: 'Spaces', accounts: 'Accounts', tenants: 'Tenants', 'api-keys': 'API Keys', meshes: 'Meshes', system: 'System', telemetry: 'Telemetry',
   };
   document.getElementById('topbar-screen-title').textContent = titles[name] || name;
   State.currentScreen = name;
@@ -220,6 +220,8 @@ function showScreen(name) {
     'agent-admin': loadAgentAdmin,
     spaces: loadSpaces,
     accounts: loadAccounts,
+    tenants: loadTenants,
+    'api-keys': loadApiKeys,
     meshes: loadMeshes,
     system: loadSystem,
     telemetry: loadTelemetryScreen,
@@ -447,7 +449,7 @@ document.getElementById('form-login').addEventListener('submit', async e => {
 });
 
 // ── App Init ───────────────────────────────────────────────────────────────
-function initApp() {
+async function initApp() {
   const token = HGAI_API.getToken();
   if (!token) {
     document.getElementById('screen-login').classList.remove('d-none');
@@ -455,22 +457,83 @@ function initApp() {
     return;
   }
 
+  // What the server says about this account and whether it enforces tenancy.
+  // Failing to load it just leaves tenancy UI hidden (single-tenant behaviour).
+  try { await HGAI_API.refreshMe(); } catch {}
+
   document.getElementById('screen-login').classList.add('d-none');
   document.getElementById('app-shell').classList.remove('d-none');
 
   const username = HGAI_API.getUsername();
   document.getElementById('sidebar-username').textContent = username || '—';
 
-  // Show/hide admin sections
+  // Show/hide admin sections. A tenant admin sees only the parts marked
+  // data-tenant-admin (Spaces, Accounts), and only for its own tenant.
   const isAdmin = HGAI_API.isAdmin();
+  const isTenantAdmin = HGAI_API.isTenantAdmin();
   document.querySelectorAll('.admin-only').forEach(el => {
-    el.style.display = isAdmin ? '' : 'none';
+    const show = isAdmin || (isTenantAdmin && el.hasAttribute('data-tenant-admin'));
+    el.style.display = show ? '' : 'none';
   });
+  applyTenancyUi();
 
   populateGraphSelector();
   loadAgentChatModelOptions();
   showScreen('dashboard');
 }
+
+// ── Tenancy UI ─────────────────────────────────────────────────────────────
+// Hidden entirely unless the server enforces tenancy (HGAI_MULTITENANCY_ENABLED).
+function applyTenancyUi() {
+  const tenancy = HGAI_API.tenancyEnabled();
+  document.querySelectorAll('.tenancy-only').forEach(el => el.classList.toggle('d-none', !tenancy));
+  document.querySelectorAll('.sysadmin-only').forEach(el => {
+    el.style.display = HGAI_API.isAdmin() ? '' : 'none';
+  });
+
+  // Regular and tenant-admin accounts: show which tenant they are in.
+  const row = document.getElementById('sidebar-tenant-row');
+  const label = HGAI_API.tenantLabel();
+  if (tenancy && label && !HGAI_API.isAdmin()) {
+    document.getElementById('sidebar-tenant').textContent = label;
+    row.classList.remove('d-none');
+  } else {
+    row.classList.add('d-none');
+  }
+
+  // System admins: pick one tenant to scope graph/space/account lists to.
+  const picker = document.getElementById('tenant-scope-select');
+  if (tenancy && HGAI_API.isAdmin()) {
+    picker.classList.remove('d-none');
+    populateTenantScopePicker();
+  } else {
+    picker.classList.add('d-none');
+  }
+}
+
+async function populateTenantScopePicker() {
+  const picker = document.getElementById('tenant-scope-select');
+  try {
+    const resp = await HGAI_API.listTenants({ limit: 500 });
+    const current = HGAI_API.getTenantScope();
+    picker.innerHTML = '<option value="">All tenants</option>';
+    (resp.items || []).forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.label && t.label !== t.id ? `${t.label} (${t.id})` : t.id;
+      opt.selected = t.id === current;
+      picker.appendChild(opt);
+    });
+  } catch {}
+}
+
+document.getElementById('tenant-scope-select').addEventListener('change', async e => {
+  HGAI_API.setTenantScope(e.target.value);
+  State.activeGraphId = null;
+  State.graphsCache = {};
+  await populateGraphSelector();
+  showScreen(State.currentScreen || 'dashboard');   // reload what is on screen under the new scope
+});
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
 async function loadDashboard() {
@@ -4866,12 +4929,13 @@ document.getElementById('btn-pi-commit').addEventListener('click', async () => {
 // ── Accounts ───────────────────────────────────────────────────────────────
 async function loadAccounts() {
   const tbody = document.getElementById('tbody-accounts');
-  tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  const tenancy = HGAI_API.tenancyEnabled();
   try {
     const resp = await HGAI_API.listAccounts({ limit: 200 });
     tbody.innerHTML = '';
     if (!resp.items || !resp.items.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No accounts found</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No accounts found</td></tr>';
       return;
     }
     resp.items.forEach(a => {
@@ -4880,6 +4944,7 @@ async function loadAccounts() {
         <td><strong>${a.username}</strong></td>
         <td>${a.email||'—'}</td>
         <td>${roleBadges(a.roles)}</td>
+        <td class="tenancy-only${tenancy ? '' : ' d-none'}">${a.system_role ? '<em class="text-muted">system</em>' : escapeHtml(a.tenant_id || 'default')}</td>
         <td>${statusBadge(a.status)}</td>
         <td class="small text-muted">${fmtDate(a.last_login)}</td>
         <td>${tagBadges(a.tags)}</td>
@@ -4890,11 +4955,13 @@ async function loadAccounts() {
       tbody.appendChild(tr);
     });
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="7" class="text-danger text-center">${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="text-danger text-center">${err.message}</td></tr>`;
   }
 }
 
 document.getElementById('btn-create-account').addEventListener('click', () => openAccountModal());
+
+const ACCOUNT_ROLES = ['admin','tenant_admin','user','agent','readonly'];
 
 async function openAccountModal(username = null) {
   const modal = new bootstrap.Modal(document.getElementById('modal-account'));
@@ -4909,6 +4976,16 @@ async function openAccountModal(username = null) {
   bootstrap.Tab.getOrCreateInstance(detailsTabEl).show();
   document.getElementById('account-assign-space-form').classList.add('d-none');
 
+  // System admins choose the account's tenant; a tenant admin's accounts always go in its own.
+  const tenantSel = document.getElementById('account-tenant');
+  if (HGAI_API.tenancyEnabled() && HGAI_API.isAdmin()) {
+    try {
+      const tr = await HGAI_API.listTenants({ limit: 500 });
+      tenantSel.innerHTML = '<option value="">(none / system account)</option>' +
+        (tr.items || []).map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.label || t.id)} (${escapeHtml(t.id)})</option>`).join('');
+    } catch {}
+  }
+
   if (isEdit) {
     try {
       const a = await HGAI_API.getAccount(username);
@@ -4919,15 +4996,19 @@ async function openAccountModal(username = null) {
       document.getElementById('account-tags').value = (a.tags || []).join(', ');
       document.getElementById('account-description').value = a.description || '';
       document.getElementById('account-password').value = '';
-      ['admin','user','agent','readonly'].forEach(r => {
+      ACCOUNT_ROLES.forEach(r => {
         document.getElementById(`role-${r}`).checked = (a.roles || []).includes(r);
       });
+      tenantSel.value = a.tenant_id || '';
+      document.getElementById('account-system-role').value = a.system_role === 'system_auditor' ? 'system_auditor' : '';
     } catch {}
     loadAccountSpaces(username);
   } else {
     document.getElementById('form-account').reset();
     document.getElementById('account-username').readOnly = false;
     document.getElementById('role-user').checked = true;
+    tenantSel.value = '';
+    document.getElementById('account-system-role').value = '';
   }
   modal.show();
 }
@@ -5037,7 +5118,7 @@ window.deleteAccount = (username) => {
 document.getElementById('btn-save-account').addEventListener('click', async () => {
   const mode = document.getElementById('account-form-mode').value;
   const username = document.getElementById('account-username').value.trim();
-  const roles = ['admin','user','agent','readonly'].filter(r => document.getElementById(`role-${r}`).checked);
+  const roles = ACCOUNT_ROLES.filter(r => document.getElementById(`role-${r}`).checked);
   const pw = document.getElementById('account-password').value;
 
   const data = {
@@ -5051,6 +5132,16 @@ document.getElementById('btn-save-account').addEventListener('click', async () =
     permissions: { graphs: ['*'], operations: roles.includes('admin') ? ['read','write','delete','admin','query','export','import'] : ['read','query'] },
   };
   if (pw) data.password = pw;
+  // Only a system admin picks the tenant; the server ignores/forbids it for anyone else.
+  if (HGAI_API.tenancyEnabled() && HGAI_API.isAdmin()) {
+    const tenant = document.getElementById('account-tenant').value;
+    if (tenant) data.tenant_id = tenant;
+  }
+  // Only a system admin can grant a system role (an auditor), and only the read-only one from here.
+  if (HGAI_API.isAdmin()) {
+    const systemRole = document.getElementById('account-system-role').value;
+    if (systemRole) data.system_role = systemRole;
+  }
   if (mode === 'create' && !pw) { toast('Password is required for new accounts', 'warning'); return; }
 
   try {
@@ -5065,6 +5156,217 @@ document.getElementById('btn-save-account').addEventListener('click', async () =
     loadAccounts();
   } catch (err) { toast(err.message, 'danger'); }
 });
+
+// ── Tenants (system admin, tenancy enforced) ───────────────────────────────
+async function loadTenants() {
+  const tbody = document.getElementById('tbody-tenants');
+  tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  try {
+    const resp = await HGAI_API.listTenants({ limit: 500 });
+    tbody.innerHTML = '';
+    if (!resp.items || !resp.items.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No tenants found</td></tr>';
+      return;
+    }
+    resp.items.forEach(t => {
+      const tr = document.createElement('tr');
+      const badge = t.status === 'suspended'
+        ? '<span class="badge bg-danger">suspended</span>' : '<span class="badge bg-success">active</span>';
+      const isDefault = t.id === 'default';
+      tr.innerHTML = `
+        <td><strong>${escapeHtml(t.id)}</strong></td>
+        <td>${escapeHtml(t.label || '')}</td>
+        <td class="text-muted small">${escapeHtml(t.description || '—')}</td>
+        <td>${badge}</td>
+        <td class="text-end">
+          <button class="btn btn-xs btn-outline-primary me-1" data-tenant-edit="${escapeHtml(t.id)}"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-xs btn-outline-danger" data-tenant-delete="${escapeHtml(t.id)}" ${isDefault ? 'disabled title="The default tenant cannot be deleted"' : ''}><i class="bi bi-trash"></i></button>
+        </td>`;
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('[data-tenant-edit]').forEach(b => b.addEventListener('click', () => openTenantModal(b.dataset.tenantEdit)));
+    tbody.querySelectorAll('[data-tenant-delete]').forEach(b => b.addEventListener('click', () => deleteTenant(b.dataset.tenantDelete)));
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="5" class="text-danger text-center">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+document.getElementById('btn-create-tenant').addEventListener('click', () => openTenantModal());
+
+const TENANT_QUOTA_KEYS = ['accounts', 'spaces', 'graphs', 'nodes', 'edges'];
+
+async function openTenantModal(id = null) {
+  const modal = new bootstrap.Modal(document.getElementById('modal-tenant'));
+  const isEdit = !!id;
+  document.getElementById('tenant-form-mode').value = isEdit ? 'edit' : 'create';
+  document.getElementById('modal-tenant-title').textContent = isEdit ? `Edit: ${id}` : 'New Tenant';
+  const idEl = document.getElementById('tenant-id');
+  idEl.readOnly = isEdit;
+  if (isEdit) {
+    try {
+      const t = await HGAI_API.getTenant(id);
+      idEl.value = t.id;
+      document.getElementById('tenant-label').value = t.label || '';
+      document.getElementById('tenant-description').value = t.description || '';
+      document.getElementById('tenant-status').value = t.status || 'active';
+      const quotas = (t.settings && t.settings.quotas) || {};
+      TENANT_QUOTA_KEYS.forEach(k => { document.getElementById(`tenant-quota-${k}`).value = quotas[`max_${k}`] ?? ''; });
+    } catch (err) { toast(err.message, 'danger'); return; }
+  } else {
+    idEl.value = '';
+    document.getElementById('tenant-label').value = '';
+    document.getElementById('tenant-description').value = '';
+    document.getElementById('tenant-status').value = 'active';
+    TENANT_QUOTA_KEYS.forEach(k => { document.getElementById(`tenant-quota-${k}`).value = ''; });
+  }
+  modal.show();
+}
+
+document.getElementById('btn-save-tenant').addEventListener('click', async () => {
+  const mode = document.getElementById('tenant-form-mode').value;
+  const id = document.getElementById('tenant-id').value.trim();
+  const label = document.getElementById('tenant-label').value.trim();
+  if (!id || !label) { toast('ID and label are required', 'warning'); return; }
+  const quotas = {};
+  TENANT_QUOTA_KEYS.forEach(k => {
+    const v = document.getElementById(`tenant-quota-${k}`).value;
+    if (v !== '') quotas[`max_${k}`] = parseInt(v, 10);
+  });
+  const data = {
+    label,
+    description: document.getElementById('tenant-description').value.trim() || null,
+    status: document.getElementById('tenant-status').value,
+    settings: Object.keys(quotas).length ? { quotas } : {},
+  };
+  try {
+    if (mode === 'create') {
+      await HGAI_API.createTenant({ id, ...data });
+      toast('Tenant created');
+    } else {
+      await HGAI_API.updateTenant(id, data);
+      toast('Tenant updated');
+    }
+    bootstrap.Modal.getInstance(document.getElementById('modal-tenant'))?.hide();
+    loadTenants();
+    populateTenantScopePicker();
+  } catch (err) { toast(err.message, 'danger'); }
+});
+
+function deleteTenant(id) {
+  confirmDelete(`Delete tenant "${id}"? It must have no accounts, spaces or graphs left.`, async () => {
+    try {
+      await HGAI_API.deleteTenant(id);
+      toast(`Tenant "${id}" deleted`);
+      if (HGAI_API.getTenantScope() === id) HGAI_API.setTenantScope('');
+      loadTenants();
+      populateTenantScopePicker();
+    } catch (err) { toast(err.message, 'danger'); }
+  });
+}
+
+// ── API keys (system admin / tenant admin, tenancy enforced) ────────────────
+async function loadApiKeys() {
+  const tbody = document.getElementById('tbody-api-keys');
+  tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  try {
+    const resp = await HGAI_API.listApiKeys({ limit: 200 });
+    tbody.innerHTML = '';
+    if (!resp.items || !resp.items.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No API keys</td></tr>';
+      return;
+    }
+    resp.items.forEach(k => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong>${escapeHtml(k.label)}</strong><div class="small text-muted font-monospace">${escapeHtml(k.id)}</div></td>
+        <td>${escapeHtml(k.tenant_id)}</td>
+        <td class="font-monospace small">${escapeHtml(k.key_prefix)}…</td>
+        <td>${(k.operations || []).map(o => `<span class="badge-role">${escapeHtml(o)}</span>`).join('')}</td>
+        <td class="small text-muted">${k.expires_at ? fmtDate(k.expires_at) : 'never'}</td>
+        <td class="small text-muted">${k.last_used ? fmtDate(k.last_used) : 'never'}</td>
+        <td class="text-end">
+          <button class="btn btn-xs btn-outline-danger" data-api-key-revoke="${escapeHtml(k.id)}" title="Revoke"><i class="bi bi-trash"></i></button>
+        </td>`;
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('[data-api-key-revoke]').forEach(b =>
+      b.addEventListener('click', () => revokeApiKey(b.dataset.apiKeyRevoke)));
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-danger text-center">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+async function openApiKeyModal() {
+  document.getElementById('api-key-form').classList.remove('d-none');
+  document.getElementById('api-key-created').classList.add('d-none');
+  document.getElementById('api-key-secret').value = '';
+  document.getElementById('btn-save-api-key').classList.remove('d-none');
+  document.getElementById('btn-api-key-close').textContent = 'Cancel';
+  document.getElementById('api-key-label').value = '';
+  document.getElementById('api-key-expires').value = '';
+  ['read', 'query'].forEach(o => { document.getElementById(`api-key-op-${o}`).checked = true; });
+  ['write', 'delete', 'export', 'import'].forEach(o => { document.getElementById(`api-key-op-${o}`).checked = false; });
+
+  // A system admin picks the tenant; a tenant admin's keys always belong to its own.
+  const group = document.getElementById('api-key-tenant-group');
+  if (HGAI_API.isAdmin()) {
+    try {
+      const tr = await HGAI_API.listTenants({ limit: 500 });
+      const scope = HGAI_API.getTenantScope();
+      document.getElementById('api-key-tenant').innerHTML = (tr.items || [])
+        .map(t => `<option value="${escapeHtml(t.id)}" ${t.id === scope ? 'selected' : ''}>${escapeHtml(t.label || t.id)} (${escapeHtml(t.id)})</option>`).join('');
+    } catch {}
+    group.classList.remove('d-none');
+  } else {
+    group.classList.add('d-none');
+  }
+  new bootstrap.Modal(document.getElementById('modal-api-key')).show();
+}
+
+document.getElementById('btn-create-api-key').addEventListener('click', openApiKeyModal);
+
+document.getElementById('btn-save-api-key').addEventListener('click', async () => {
+  const label = document.getElementById('api-key-label').value.trim();
+  if (!label) { toast('A label is required', 'warning'); return; }
+  const operations = ['read', 'query', 'write', 'delete', 'export', 'import']
+    .filter(o => document.getElementById(`api-key-op-${o}`).checked);
+  if (!operations.length) { toast('Choose at least one operation', 'warning'); return; }
+  const data = { label, operations };
+  if (HGAI_API.isAdmin()) data.tenant_id = document.getElementById('api-key-tenant').value;
+  const expires = document.getElementById('api-key-expires').value;
+  if (expires) data.expires_at = new Date(expires).toISOString();
+  try {
+    const created = await HGAI_API.createApiKey(data);
+    // Swap the form for the one-time secret; closing the dialog discards it from the page.
+    document.getElementById('api-key-form').classList.add('d-none');
+    document.getElementById('btn-save-api-key').classList.add('d-none');
+    document.getElementById('api-key-created').classList.remove('d-none');
+    document.getElementById('api-key-secret').value = created.key;
+    document.getElementById('btn-api-key-close').textContent = 'Done';
+    loadApiKeys();
+  } catch (err) { toast(err.message, 'danger'); }
+});
+
+document.getElementById('btn-copy-api-key').addEventListener('click', async () => {
+  const el = document.getElementById('api-key-secret');
+  try { await navigator.clipboard.writeText(el.value); toast('Copied'); }
+  catch { el.select(); toast('Press Ctrl+C to copy', 'warning'); }
+});
+
+// Clear the secret whenever the dialog goes away.
+document.getElementById('modal-api-key').addEventListener('hidden.bs.modal', () => {
+  document.getElementById('api-key-secret').value = '';
+});
+
+function revokeApiKey(id) {
+  confirmDelete(`Revoke API key "${id}"? Anything using it stops working immediately.`, async () => {
+    try {
+      await HGAI_API.revokeApiKey(id);
+      toast('API key revoked');
+      loadApiKeys();
+    } catch (err) { toast(err.message, 'danger'); }
+  });
+}
 
 // ── Meshes ─────────────────────────────────────────────────────────────────
 let _activeMeshId = null;

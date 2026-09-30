@@ -303,7 +303,7 @@ class TestSHQLRoutes:
 
     async def test_parameterized_query_route_maps_denial_to_403(self):
         from hgai.api.routers import parameterized_queries as pq
-        query_doc = SimpleNamespace(id="q1")
+        query_doc = SimpleNamespace(id="q1", tenant_id=None)
         with patch.object(pq, "get_parameterized_query", AsyncMock(return_value=query_doc)), \
              patch.object(pq, "execute_parameterized_query", AsyncMock(side_effect=SHQLPermissionError("nope"))):
             with pytest.raises(HTTPException) as e:

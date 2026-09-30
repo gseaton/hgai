@@ -29,6 +29,7 @@ All configuration is through environment variables (prefix `HGAI_`) or a `.env` 
 | `HGAI_SHQL_MAX_EDGE_CANDIDATES` | `2000` | Max hyperedges fetched per SHQL `edge:` pattern; overflow sets `meta.truncated` |
 | `HGAI_INFERENCE_MAX_FACT_EDGES` | `5000` | Max fact edges fetched for inference expansion / transitive closure |
 | `HGAI_SHQL_JOIN_BATCH_SIZE` | `200` | Max distinct bound values (node ids / member-id sets) resolved per storage query when a SHQL pattern joins against many earlier matches; `1` = one query per match |
+| `HGAI_MULTITENANCY_ENABLED` | `false` | Enforce tenant isolation between accounts ([Tenants](help:help-tenants)). Off: everything runs in the implicit `default` tenant |
 | `HGAI_TELEMETRY_ENABLED` | `false` | Master switch for OTEL-shaped usage/error telemetry (off by default) |
 | `HGAI_TELEMETRY_ENDPOINT` | *(none)* | URL telemetry batches are POSTed to, e.g. `https://telemetry.hypergra.ai/report`; optional even when enabled |
 | `HGAI_TELEMETRY_PROTOCOL` | `hgai-envelope` | Wire format for the endpoint above (`otlp-http-json` not yet implemented) |

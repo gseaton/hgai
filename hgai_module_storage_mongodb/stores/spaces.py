@@ -42,6 +42,8 @@ class MongoSpaceStore(SpaceStore):
             query["members.username"] = filters.username
         if filters.status:
             query["status"] = filters.status
+        if filters.tenant_id is not None:
+            query["tenant_id"] = filters.tenant_id
 
         total = await _col().count_documents(query)
         cursor = _col().find(query).skip(skip).limit(limit).sort("system_created", -1)

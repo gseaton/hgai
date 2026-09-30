@@ -16,7 +16,7 @@ from hgai.models.account import AccountInDB
 import hgai_module_telemetry.engine as engine
 from hgai_module_shql import engine as shql_engine
 from hgai_module_shql.parser import SHQLError, SHQLPermissionError
-from tests.storage_fixtures import mongod, stores  # noqa: F401  (fixtures used by name)
+from tests.storage_fixtures import stores  # noqa: F401  (fixture used by name)
 
 ADMIN = AccountInDB(username="root", email=None, roles=["admin"], password_hash="", status="active")
 READER = AccountInDB(

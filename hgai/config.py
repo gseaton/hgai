@@ -113,6 +113,13 @@ class Settings(BaseSettings):
     admin_password: str = Field(default="pwd357")
     admin_email: str = Field(default="admin@hgai.local")
 
+    # Multi-tenancy — see docs/architecture/hypergraph-ai-multi-tenancy-*.md. Off by
+    # default: everything runs in the implicit "default" tenant and behaves as before.
+    multitenancy_enabled: bool = Field(
+        default=False,
+        description="Enforce tenant isolation between accounts. Env: HGAI_MULTITENANCY_ENABLED",
+    )
+
     # Telemetry — see docs/architect/telemetry-20260929061557.md. Off by default:
     # a self-hosted operator must opt in. `telemetry_endpoint` is optional even
     # when enabled — Phase 1 ships HTTP export only (local-hypergraph storage,

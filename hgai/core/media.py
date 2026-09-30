@@ -23,6 +23,25 @@ def parse_media_id(media_id: str) -> Tuple[Optional[str], str]:
     return None, media_id
 
 
+async def check_media_tenant(account, media_id: str) -> None:
+    """Raise TenantBoundaryError unless `account` may reach this media's tenant.
+
+    Mesh-qualified ids ("server/id") are served through the mesh's own admin
+    credentials, which bypass tenant isolation, so a tenant account may not use
+    them while tenancy is enforced. An unknown id passes: the route's own 404 follows.
+    """
+    from hgai.core.auth import TenantBoundaryError, check_record_tenant, tenant_scope
+
+    if tenant_scope(account) is None:
+        return
+    server_id, local_id = parse_media_id(media_id)
+    if server_id is not None:
+        raise TenantBoundaryError("Media not found")
+    meta = await get_storage().media.get_metadata(local_id)
+    if meta is not None:
+        check_record_tenant(account, meta.tenant_id, "Media")
+
+
 def validate_default_media_id(default_media_id: Optional[str], media_refs: Optional[List[Any]]) -> str:
     """Returns `default_media_id` unchanged if it matches a media_id in `media_refs`,
     otherwise "" (the "no default set" sentinel).

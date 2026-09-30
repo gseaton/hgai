@@ -11,7 +11,9 @@ from hgai.core.auth import (
     get_current_account,
 )
 from hgai.db.storage import get_storage
-from hgai.models.account import AccountResponse, TokenResponse
+from hgai.core.auth import multitenancy_on
+from hgai.core.tenant_engine import effective_tenant_id
+from hgai.models.account import MeResponse, TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -39,6 +41,12 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
     )
 
 
-@router.get("/me", response_model=AccountResponse)
+@router.get("/me", response_model=MeResponse)
 async def get_me(account=Depends(get_current_account)):
-    return AccountResponse(**account.model_dump())
+    enabled = multitenancy_on()
+    label = None
+    tenant_id = effective_tenant_id(account) if enabled else None
+    if tenant_id:
+        tenant = await get_storage().tenants.get(tenant_id)
+        label = tenant.label if tenant else tenant_id
+    return MeResponse(**account.model_dump(), multitenancy_enabled=enabled, tenant_label=label)

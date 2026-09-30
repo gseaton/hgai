@@ -31,9 +31,14 @@ from mcp.server.fastmcp import FastMCP
 from .telemetry import track_tool
 
 from hgai.core import engine
+from hgai.core.tenant_engine import tenant_of_owner
 from hgai.core.auth import (
     PermissionDeniedError,
     check_graph_permission,
+    is_system_admin,
+    is_system_auditor,
+    multitenancy_on,
+    space_visibility,
     check_space_role,
     filter_accessible_graphs,
     require_admin_role,
@@ -94,6 +99,16 @@ async def _guard_graph(graph_id: str, operation: str) -> Optional[str]:
     """
     try:
         await check_graph_permission(_caller(), graph_id, operation, unowned=True)
+    except PermissionDeniedError as e:
+        return _denied(e)
+    return None
+
+
+def _guard_writable() -> Optional[str]:
+    """Tools that create or delete things refuse a read-only system auditor."""
+    try:
+        if is_system_auditor(_caller()):
+            raise PermissionDeniedError("System auditors are read-only")
     except PermissionDeniedError as e:
         return _denied(e)
     return None
@@ -190,6 +205,8 @@ async def hgai_hypergraph_create(
         graph_type: 'instantiated' (physical) or 'logical' (composed)
         tags: Comma-separated tags
     """
+    if denied := _guard_writable():
+        return denied
     from hgai.models.hypergraph import HypergraphCreate, GraphType
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
 
@@ -839,6 +856,8 @@ async def hgai_media_upload(
         filename: Original filename (optional, shown to users in the UI)
         content_type: MIME type, e.g. 'image/png', 'application/pdf'
     """
+    if denied := _guard_writable():
+        return denied
     import base64
     import uuid
     from hgai.db.storage import get_storage
@@ -853,6 +872,7 @@ async def hgai_media_upload(
         media = await get_storage().media.put(
             media_id, _BytesReader(data), content_type=content_type,
             filename=filename or None, uploaded_by=_caller().username,
+            tenant_id=await tenant_of_owner(_caller().username),
         )
         return json.dumps({"success": True, "media": media.model_dump()}, indent=2, default=str)
     except Exception as e:
@@ -872,9 +892,13 @@ async def hgai_media_download(media_id: str) -> str:
         media_id: The media identifier (local or mesh-qualified)
     """
     import base64
-    from hgai.core.media import parse_media_id
+    from hgai.core.media import check_media_tenant, parse_media_id
     from hgai.db.storage import get_storage
 
+    try:
+        await check_media_tenant(_caller(), media_id)
+    except PermissionDeniedError as e:
+        return _denied(e)
     server_id, local_id = parse_media_id(media_id)
 
     if server_id is None:
@@ -926,7 +950,13 @@ async def hgai_media_delete(media_id: str) -> str:
     Args:
         media_id: The local media identifier to delete
     """
-    from hgai.core.media import delete_media_checked
+    if denied := _guard_writable():
+        return denied
+    from hgai.core.media import check_media_tenant, delete_media_checked
+    try:
+        await check_media_tenant(_caller(), media_id)
+    except PermissionDeniedError as e:
+        return _denied(e)
     deleted, _reason, message = await delete_media_checked(media_id)
     if not deleted:
         return json.dumps({"error": message})
@@ -941,7 +971,8 @@ async def hgai_space_list() -> str:
     """List all HypergraphAI spaces (tenant namespaces)."""
     from hgai.core.space_engine import list_spaces
     caller = _caller()
-    total, spaces = await list_spaces(username=None if "admin" in caller.roles else caller.username, limit=200)
+    username, scope = space_visibility(caller)
+    total, spaces = await list_spaces(username=username, tenant_id=scope, limit=200)
     return json.dumps({
         "total": total,
         "spaces": [
@@ -988,6 +1019,8 @@ async def hgai_space_create(
         label: Human-readable display label
         description: Optional description
     """
+    if denied := _guard_writable():
+        return denied
     from hgai.core.space_engine import create_space, get_space
     from hgai.models.space import SpaceCreate
     try:
@@ -1013,8 +1046,11 @@ async def hgai_space_add_member(space_id: str, username: str, role: str = "membe
     """
     if denied := await _guard_space(space_id, "admin"):
         return denied
-    from hgai.core.space_engine import add_member
+    from hgai.core.space_engine import add_member, get_space
+    from hgai.core.tenant_engine import check_member_tenant
     try:
+        if multitenancy_on() and (target_space := await get_space(space_id)):
+            await check_member_tenant(target_space.tenant_id, username)
         space = await add_member(space_id, username, role)
         if not space:
             return json.dumps({"error": f"Space '{space_id}' not found"})

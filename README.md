@@ -28,6 +28,7 @@
 - [SHQL — Semantic Hypergraph Query Language](#shql--semantic-hypergraph-query-language)
 - [Module Development](#module-development)
 - [Administration](#administration)
+  - [Multi-Tenancy](#multi-tenancy)
   - [Telemetry](#telemetry)
   - [MongoDB Indexes](#mongodb-indexes)
   - [Performance](#performance)
@@ -382,6 +383,7 @@ All configuration is via environment variables (or `.env` file):
 | `HGAI_SHQL_MAX_EDGE_CANDIDATES` | `2000` | Max hyperedges fetched per SHQL `edge:` pattern; overflow sets `meta.truncated` |
 | `HGAI_INFERENCE_MAX_FACT_EDGES` | `5000` | Max fact edges fetched for inference expansion / transitive closure |
 | `HGAI_SHQL_JOIN_BATCH_SIZE` | `200` | Max distinct bound values (node ids / member-id sets) resolved per storage query when a SHQL pattern joins against many earlier matches; `1` = one query per match |
+| `HGAI_MULTITENANCY_ENABLED` | `false` | Enforce tenant isolation between accounts (see the multi-tenancy plan). Off: everything runs in the implicit `default` tenant |
 | `HGAI_TELEMETRY_ENABLED` | `false` | Master switch for OTEL-shaped usage/error telemetry (off by default) |
 | `HGAI_TELEMETRY_ENDPOINT` | *(none)* | URL telemetry batches are POSTed to, e.g. `https://telemetry.hypergra.ai/report`; optional even when enabled |
 | `HGAI_TELEMETRY_PROTOCOL` | `hgai-envelope` | Wire format for the endpoint above (`otlp-http-json` not yet implemented) |
@@ -648,6 +650,25 @@ DELETE /api/v1/meshes/{id}              # Delete mesh
 GET    /api/v1/meshes/{id}/ping         # Health-check all servers in mesh
 POST   /api/v1/meshes/{id}/sync         # Refresh graph lists from live remotes
 POST   /api/v1/meshes/{id}/query        # Execute federated SHQL across all mesh servers
+```
+
+### Tenants
+Enforced only when `HGAI_MULTITENANCY_ENABLED=true`. A tenant admin sees and manages only its own tenant; another tenant's resources are reported as `404`.
+```
+GET    /api/v1/tenants                  # System admin or auditor: all tenants. Tenant admin: own tenant only
+GET    /api/v1/tenants/{id}/usage       # Usage against the tenant's quotas
+POST   /api/v1/tenants                  # Create tenant (system admin)
+GET    /api/v1/tenants/{id}             # Get tenant (system admin, or an account of that tenant)
+PUT    /api/v1/tenants/{id}             # Update label/description/status/settings (system admin)
+DELETE /api/v1/tenants/{id}             # Delete an empty tenant (system admin; `default` cannot be deleted)
+```
+`/accounts` is open to tenant admins for their own tenant (they cannot grant `admin`/`system_role` or assign another tenant). `/spaces`, `/graphs`, notes, media and saved queries are filtered to the caller's tenant; system admins may pass `?tenant_id=` to `/accounts`, `/spaces` and `/graphs`.
+
+### API Keys (system admin, tenant admin; needs `HGAI_MULTITENANCY_ENABLED`)
+```
+GET    /api/v1/api-keys                 # List keys (never the secret); a tenant admin sees its own tenant's
+POST   /api/v1/api-keys                 # Issue a key for a tenant; the secret is returned once
+DELETE /api/v1/api-keys/{id}            # Revoke a key
 ```
 
 ### Telemetry (admin only)
@@ -1283,6 +1304,8 @@ The web UI is served at `http://localhost:8357/ui/` (local dev) or `http://local
 - **Hyperedges** — full CRUD with member management
 - **Query** — interactive SHQL query editor with results visualization
 - **Help** — searchable documentation with tag-based virtual folders, landing on `docs/help/notes/home.md`; built from markdown files with front matter under `docs/help/notes/` and from any Note tagged `system:help`. The AI Chat agent reads the same topics to answer questions about HypergraphAI. See [docs/help](docs/help/notes/home.md) and the *Adding your own help topics* topic.
+- **API Keys** — issue and revoke tenant-scoped API keys (system admin, tenant admin, when tenancy is on); the secret is shown once, with a copy button
+- **Tenants** — create, suspend and delete tenants, and set their quotas (system admin, when tenancy is on); a top-bar tenant picker scopes lists to one tenant, and other users see their tenant's name in the sidebar. Tenant admins get the Spaces and Accounts screens for their own tenant only; see [Multi-Tenancy](#multi-tenancy)
 - **Telemetry** — usage/error telemetry status (enabled/destination/queue depth/export counts) and a shortcut to browse locally-stored telemetry in Query (SHQL); see [Telemetry](#telemetry) below (admin role only)
 - **Admin** — account management, server info (admin role only)
 
@@ -2054,7 +2077,8 @@ Modules are mounted conditionally in `hgai/main.py` — a missing or broken modu
 
 Space membership is the **sole gate** for space-scoped graphs. `permissions.graphs` wildcards (e.g. `["*"]`) do **not** grant access to graphs in a space the account is not a member of. Access is resolved in this exact order:
 
-1. **Global admin** — accounts with `"admin"` in `roles` bypass all checks.
+1. **System admin** — accounts with `"admin"` in `roles` (read as the `system_admin` system role) bypass all checks.
+1a. **Tenant boundary** — only when `HGAI_MULTITENANCY_ENABLED=true`: a graph or space in another tenant is refused (REST returns `404`, not `403`) before any role, membership or `permissions.graphs` wildcard is considered, and a `tenant_admin` has full rights inside its own tenant. A suspended tenant locks out all of its accounts.
 2. **Space membership** — when the graph belongs to a space, the account must be a member of that space. Non-members are rejected regardless of `permissions.graphs`.
 3. **`permissions.graphs`** — applies only to unowned (non-space) graphs.
 
@@ -2168,6 +2192,27 @@ docker-compose exec mongo mongorestore \
   --authenticationDatabase admin \
   --db hgai /backup/hgai
 ```
+
+### Multi-Tenancy
+
+A **tenant** is the top-level isolation boundary. With `HGAI_MULTITENANCY_ENABLED=true` every account belongs to one tenant and reaches only that tenant's spaces, graphs, notes, media and saved queries; **system admins** (the legacy `admin` role) span all tenants. It is off by default, and everything then runs in an implicit `default` tenant. See the *Tenants* Help topic and `docs/architecture/hypergraph-ai-multi-tenancy-*.md` for the design.
+
+| Level | Role | Scope |
+|---|---|---|
+| System | `system_admin` | Everything; manages tenants, meshes, agent vendors, telemetry |
+| System | `system_auditor` | Read-only across every tenant (graphs, spaces, accounts, tenants, queries); cannot change anything or reach users' notes, media, saved queries or chats |
+| Tenant | `tenant_admin` | Its own tenant's accounts, spaces and graphs |
+| Tenant | `user`, `agent`, `readonly` | As before, inside its own tenant |
+| Space | `owner`, `admin`, `member`, `viewer` | As before, inside one space |
+
+- **Boundary first.** The tenant check runs before roles, space membership and `permissions.graphs` wildcards, on REST, SHQL, MCP and the AI chat agent. Another tenant's resource is `404`, never `403`.
+- **Startup migration.** On every start the default tenant is created and existing records are stamped with a tenant; old `admin` accounts become system admins. Safe to repeat.
+- **Shared namespaces.** Usernames, space ids and graph ids are unique server-wide, so creating one that exists in another tenant returns `409`. Use a tenant prefix.
+- **System level.** Meshes and federation, AI agent vendors and models, and the `__local-telemetry` graph are system-admin only.
+- **Logical isolation.** Tenants share one database. Run a server per tenant, joined by a mesh, where physical separation is required.
+- **Quotas.** A tenant's settings can cap `max_accounts`, `max_spaces`, `max_graphs`, `max_nodes` and `max_edges`; creating past a cap returns `409`. Soft limits, enforced only while tenancy is on. `GET /api/v1/tenants/{id}/usage` shows usage against them.
+- **Tenant API keys.** `POST /api/v1/api-keys` issues a key bound to one tenant (an `agent` account limited to the operations it was issued with, optional expiry); the secret is shown once and only its hash is stored. Use it as a Bearer token on REST and MCP. The two configured `HGAI_*_API_KEY` values stay full system admin.
+- **Tools.** Tenants screen and top-bar tenant picker (Web UI); `ls/create/update/delete tenant` and `use tenant <id>|all` (`hgsh`, or `hgsh --tenant <id>`); `GET /api/v1/auth/me` reports `multitenancy_enabled`, `tenant_id` and `system_role`. Telemetry events carry a hashed `tenant`.
 
 ### Telemetry
 

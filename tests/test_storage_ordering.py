@@ -8,7 +8,7 @@ import pytest
 
 from hgai_module_storage.aggregate import AggregateSpecError
 from hgai_module_storage.ordering import normalise_order, search_ordered_via_search
-from tests.storage_fixtures import NODES, _MemNodes, ef, mongod, nf, stores  # noqa: F401
+from tests.storage_fixtures import NODES, _MemNodes, ef, nf, stores  # noqa: F401
 
 
 def ids(docs):

@@ -12,7 +12,7 @@ from fastapi.responses import RedirectResponse
 from hgai.config import get_settings
 from hgai.db.storage import init_storage, close_storage
 from hgai.core.auth import bootstrap_admin
-from hgai.api.routers import auth, hypergraphs, hypernodes, hyperedges, accounts, spaces, media, inference, notes, parameterized_queries, help_topics
+from hgai.api.routers import auth, hypergraphs, hypernodes, hyperedges, accounts, spaces, media, inference, notes, parameterized_queries, help_topics, tenants, api_keys
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,14 @@ async def lifespan(app: FastAPI):
     )
     if created:
         logger.info(f"Admin account '{settings.admin_username}' created (first run bootstrap)")
+
+    # Multi-tenancy: ensure the default tenant exists and stamp pre-existing records.
+    # Idempotent; runs whether or not enforcement is enabled, so flipping
+    # HGAI_MULTITENANCY_ENABLED on later finds every record already stamped.
+    from hgai.core.tenant_engine import run_tenancy_migration
+    migrated = {k: v for k, v in (await run_tenancy_migration()).items() if v}
+    if migrated:
+        logger.info(f"Tenancy migration: {migrated}")
 
     # Start mesh background sync scheduler
     try:
@@ -171,6 +179,14 @@ def create_app() -> FastAPI:
     except BaseException as e:
         logger.warning(f"Telemetry middleware not available (continuing without it): {type(e).__name__}: {e}")
 
+    # A tenant over a quota is a conflict with its configured limits, not a server error.
+    from fastapi.responses import JSONResponse
+    from hgai.core.tenant_engine import QuotaExceededError
+
+    @app.exception_handler(QuotaExceededError)
+    async def _quota_exceeded_handler(request, exc):
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
     # Telemetry error reporting (plan §7) — observes every REST-layer
     # exception and reports it, but returns *exactly* the same response
     # FastAPI's own default handling would have produced; it does not
@@ -206,6 +222,8 @@ def create_app() -> FastAPI:
     app.include_router(hypernodes.router, prefix=prefix)
     app.include_router(hyperedges.router, prefix=prefix)
     app.include_router(accounts.router, prefix=prefix)
+    app.include_router(tenants.router, prefix=prefix)
+    app.include_router(api_keys.router, prefix=prefix)
     app.include_router(spaces.router, prefix=prefix)
     app.include_router(media.router, prefix=prefix)
     app.include_router(inference.router, prefix=prefix)

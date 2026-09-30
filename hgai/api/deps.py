@@ -6,6 +6,7 @@ from fastapi import Depends, HTTPException, status
 
 from hgai.core.auth import (
     PermissionDeniedError,
+    TenantBoundaryError,
     check_graph_permission,
     check_space_role,
     get_current_account,
@@ -55,6 +56,9 @@ def require_graph_access(operation: str = "read"):
     ) -> AccountInDB:
         try:
             await check_graph_permission(account, graph_id, operation, space_id=space_id)
+        except TenantBoundaryError as e:
+            # Another tenant's resource: 404, so ids in other tenants cannot be probed.
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
         except PermissionDeniedError as e:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
         return account
@@ -68,6 +72,9 @@ def require_space_role(minimum_role: SpaceRole = SpaceRole.viewer):
     ) -> AccountInDB:
         try:
             await check_space_role(account, space_id, minimum_role.value)
+        except TenantBoundaryError as e:
+            # Another tenant's resource: 404, so ids in other tenants cannot be probed.
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
         except PermissionDeniedError as e:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
         return account

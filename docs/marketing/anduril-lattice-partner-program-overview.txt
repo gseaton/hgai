@@ -1,0 +1,134 @@
+https://www.anduril.com/lattice/lattice-partner-program
+
+Anduril
+LATTICE
+Partner Program
+Software-defined
+DEFENSE ECOSYSTEM
+
+The Lattice Partner Program™ cultivates a defense ecosystem built for the tactical edge by enabling partners to create, integrate and deploy meaningful capabilities via Lattice.
+
+Lattice Partner Program provides credibility and differentiation of partner capabilities to customer and the market by highlighting proven integrations with third-party systems.
+
+Lattice Partner Benefits
+Developer Resources
+Partners receive access to developer resources, such as documentation, Lattice sandbox environments, representative data, testing and validation, and reference applications to build, integrate, and deploy capabilities for the tactical edge.
+
+Dedicated Support
+Partners receive access to dedicated Anduril support teams to assist with troubleshooting and support third-party application development.
+
+Credibility
+Lattice Partner Program helps provide credibility to customer and the market by highlighting proven integrations with Lattice
+
+Marketing
+Partners receive Lattice Partner Badging for use on marketing collateral, as well as opportunities for joint-marketing efforts.
+
+Lattice
+Defense
+Ecosystem
+
+Lattice Partners
+
+Apex
+“The U.S. government's need for rapidly deployable satellite platforms has never been more clear as adversaries threaten the bespoke and exquisite assets on orbit today. Apex offers a productized approach that enables the military and intelligence community to rapidly launch proliferated, attritable systems into orbit. Apex is proud to offer Lattice as a C2 option for our customers.”
+
+— Ian Cinnamon, CEO and Co-Founder, Apex Space
+
+
+Forterra
+"Integration of Forterra’s AutoDrive equipped self driving vehicles into Anduril’s Lattice platform is driving optimization of human-machine teaming, while reducing cognitive loads across the ground domain."
+
+— Patrick Acox, Vice President - Defense Business Development, Forterra
+
+
+Impulse Space
+"Partnering with Anduril enhances the tactical capabilities of Mira; onboarding into the Lattice system creates new opportunities for mission operations, including allowing a single operator to control, task, and maneuver multiple spacecraft simultaneously. Together, Mira and Lattice can provide new capabilities for Space Domain Awareness and Rendezvous and Proximity Operations."
+
+— Eric Romo, Impulse Space President and COO
+
+Get Started Building with Lattice
+Join
+Lattice Developer Experience
+Request to join the Lattice Developer Experience in order to get hands-on with Lattice Mesh services and to take your first steps towards developing applications and integrations.
+
+https://dashboard.developer.anduril.com/
+
+Integration summary:
+Describe the applications, systems, or data services you are planning on integrating with Lattic.
+
+Lattice SDK
+The Lattice SDK™ lets you quickly build decentralized apps, data services, and hardware integrations into Lattice. The Lattice SDK provides you with developer documentation, API references, sample apps, and other tools, empowering you to build rapidly, and deploy reliably. Get ready to deliver your capabilities to even the most austere, contested, and distant operations at the tactical edge.
+Open data models
+Lattice's open data models allow any developer to create, enrich, and reference entity data, craft and interpret C2 tasking messages, and integrate C2 applications, robots, and tactical data link assets.
+Industry-standard interfaces
+The Lattice SDK supports both gRPC and REST APIs in several language-specific bindings, including Go, Java, JavaScript, and Python. You can set up quickly using one of the REST SDKs, or generate your own gRPC artifacts using Buf and a plugin of your choice.
+Developer experience
+Join the Lattice Developer Program and start developing apps and integrations on Lattice Sandboxes, with support from Anduril experts.
+Application Process
+01
+Submit application
+02
+Account verification (1-2 business days)
+03
+Access granted to SDK resources
+
+Join the Lattice Developer Experience
+1: Account
+2: Company
+First name
+Your first name
+Last name
+Your last name
+Country
+Email address
+name@email.com
+Job title
+e.g. Software Engineer
+Integration summary
+Describe the applications, systems, or data services you are planning on integrating with Lattice
+I agree to Anduril's Terms of Use, Privacy Policy and Lattice SDK License
+Subscribe to the Developer Newsletter
+
+
+
+Oracle
+"Oracle is excited to partner with Anduril, and the Lattice Partner Program further accelerates innovation of autonomous effects at the tactical edge. Oracle Cloud Infrastructure (OCI) from core to edge brings key, hyperscale capabilities to the Anduril partner ecosystem, enabling Lattice-based solutions to deploy and operate in disrupted, disconnected, intermittent and low-bandwidth (DDIL) environments."
+
+— Kim Lynch, EVP, Oracle Government Defense and Intelligence
+
+
+Saronic
+"Our Autonomous Surface Vessels (ASVs) are designed to be highly interoperable, allowing them to easily integrate with a variety of sensors, payloads, and proven software platforms like Lattice. By combining Saronic's cutting-edge ASVs with Anduril's advanced command and control (C2) technology, we are enhancing real-time situational awareness, decision-making, and mission execution for maritime and naval forces"
+
+— Dino Mavrookas, Co-founder & CEO, Saronic Technologies
+
+
+Scale
+"Combining Scale's Donovan and Anduril's Lattice creates a groundbreaking end-to-end solution that delivers a decision advantage through software and AI-enabled joint staff planning. Donovan is powered by Large Language Models that are fine-tuned to excel at defense tasks. Lattice adds orchestration, planning and simulation capabilities, extending Donovan’s AI capabilities to enable machine-speed command and control at the tactical, operational and strategic levels."
+
+— Shaliya Dehipawala, Director of Public Sector Deployment Strategy, Scale AI
+
+
+Spire
+"Spire Global is excited to bring our resilient space-based data solutions to the forefront of innovation. By integrating our capabilities into the Lattice ecosystem, we empower partners with critical insights and enhanced situational awareness, even in the most challenging environments."
+
+— Iain Goodridge, Senior Director of Radio Frequency Geolocation (RFGL) Products, Spire Global
+
+
+Striveworks
+"The old aphorism is that amateurs talk strategy and professionals talk logistics. Tomorrow's battlefield is more data-centric than ever, but the logistics of moving that data are exponentially more challenging and highly dynamic. Lattice abstracts complexity away, enabling Striveworks to deliver the right model and the right inference at the right time to our users."
+
+— Jim Rebesco, CEO Striveworks
+
+
+Textron Systems
+"Textron Systems has teamed with Anduril on two DoD exercises demonstrating multi-aircraft and sensor control leveraging their Lattice software suite. In both cases the integration of the Lattice mission software on our Aerosonde UAS was simple and effective."
+
+— Jim Ryan, Senior Director GMSS Air Domain Textron Systems
+
+
+Valinor
+
+“We are excited to partner with Anduril to provide our Builders best-in-class software resources through the Lattice Partnership Program because it will help accelerate product delivery to our end-users. Valinor combines a supercharged go-to-market engine with a unique corporate model to rapidly capitalize and deploy technology for the U.S. Government and our allies. We are proud to be a strategic partner to Anduril in addition to the exciting new Lattice Partner Program.”
+
+— Julie Bush, Co-Founder & CEO, Valinor Enterprises

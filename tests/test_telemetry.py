@@ -105,11 +105,11 @@ def test_build_event_has_the_documented_shape():
         kind="usage", surface="rest", feature="GET /api/v1/graphs", duration_ms=12.3456, outcome="ok",
         account=None, attributes={"http.status_code": 200},
     )
-    assert set(e) == {"kind", "surface", "feature", "timestamp", "duration_ms", "outcome", "actor", "account", "attributes", "error"}
-    assert e["actor"] == "__system"
+    assert set(e) == {"kind", "surface", "feature", "timestamp", "duration_ms", "outcome", "actor", "tenant", "account", "attributes", "error"}
+    assert e["actor"] == "__system" and e["tenant"] == "__system"
     a = build_event(kind="usage", surface="rest", feature="f", duration_ms=1, outcome="ok",
-                    account={"id_hash": "abc", "roles": [], "is_agent": False})
-    assert a["actor"] == "abc"
+                    account={"id_hash": "abc", "tenant": "t1", "roles": [], "is_agent": False})
+    assert a["actor"] == "abc" and a["tenant"] == "t1"
     assert e["timestamp"].endswith("Z")
     assert e["duration_ms"] == 12.346  # rounded, not truncated
     assert e["error"] is None

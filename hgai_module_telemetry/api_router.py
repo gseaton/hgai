@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from hgai.api.deps import get_current_active_account
 from hgai.config import get_settings
-from hgai.core.auth import require_admin
+from hgai.core.auth import require_system_admin
 from hgai.models.account import AccountInDB
 
 from . import engine
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/telemetry", tags=["telemetry"])
 
 
 @router.get("/status")
-async def telemetry_status(_: AccountInDB = Depends(require_admin)) -> Dict[str, Any]:
+async def telemetry_status(_: AccountInDB = Depends(require_system_admin)) -> Dict[str, Any]:
     """Whether telemetry is enabled, where it's going (host only — never the
     full URL, which may embed a bearer token), queue depth, drop/export
     counts, and the last export's outcome. Admin-only, so "is this thing

@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from hgai.core.tenant_engine import enforce_quota, tenant_for_new_record
 from hgai.db.storage import get_storage
 from hgai.models.common import now_utc
 from hgai.models.hypergraph import HypergraphInDB
@@ -25,6 +26,8 @@ async def create_space(data: SpaceCreate, created_by: str) -> SpaceInDB:
                 m["role"] = SpaceRole.owner
 
     doc["members"] = members
+    doc["tenant_id"] = await tenant_for_new_record(created_by, data.tenant_id)
+    await enforce_quota(doc["tenant_id"], "spaces")
     doc.update(
         system_created=now,
         system_updated=now,
@@ -42,9 +45,11 @@ async def list_spaces(
     username: Optional[str] = None,
     skip: int = 0,
     limit: int = 50,
+    tenant_id: Optional[str] = None,
 ) -> Tuple[int, List[SpaceInDB]]:
-    """List spaces. If username given, scoped to spaces where user is a member."""
-    filters = SpaceFilters(username=username)
+    """List spaces. If username given, scoped to spaces where user is a member;
+    if tenant_id given, to that tenant's spaces."""
+    filters = SpaceFilters(username=username, tenant_id=tenant_id)
     return await get_storage().spaces.list(filters, skip=skip, limit=limit)
 
 

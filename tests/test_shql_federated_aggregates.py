@@ -17,7 +17,7 @@ from hgai.models.account import AccountInDB
 from hgai_module_mesh import engine as mesh_engine
 from hgai_module_shql import engine as shql_engine
 from hgai_module_shql.aggregate_merge import merge_aggregate_meta, partial_aggregate
-from tests.storage_fixtures import NODES, _MemEdges, _MemNodes, _node, mongod, stores  # noqa: F401
+from tests.storage_fixtures import NODES, _MemEdges, _MemNodes, _node, stores  # noqa: F401
 
 ADMIN = AccountInDB(username="root", email=None, roles=["admin"], password_hash="", status="active")
 

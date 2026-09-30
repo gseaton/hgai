@@ -10,6 +10,8 @@ from hgai.api.deps import get_current_active_account, parse_sort_param, require_
 from hgai.api.routers.hyperedges import EDGE_SORT_FIELDS
 from hgai.api.routers.hypernodes import NODE_SORT_FIELDS
 from hgai.core import engine, space_engine
+from hgai.core.auth import is_system_admin, sees_all_tenants, space_visibility, tenant_scope
+from hgai.core.tenant_engine import TenancyError, check_member_tenant
 from hgai.core.rdf_import import SUPPORTED_FORMATS
 from hgai.models.account import AccountInDB
 from hgai.models.common import PaginatedResponse
@@ -28,14 +30,40 @@ from hgai.models.space import (
 router = APIRouter(prefix="/spaces", tags=["spaces"])
 
 
+async def _check_composition(account: AccountInDB, composition) -> None:
+    from hgai.core.auth import TenantBoundaryError, check_composition_tenancy
+    try:
+        await check_composition_tenancy(account, composition)
+    except TenantBoundaryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+async def _check_member_tenant(space_id: str, username: str) -> None:
+    """While tenancy is enforced, only accounts of the space's own tenant may be members."""
+    from hgai.core.auth import multitenancy_on
+    if not multitenancy_on():
+        return
+    space = await space_engine.get_space(space_id)
+    if not space:
+        return  # the route's own 404 follows
+    try:
+        await check_member_tenant(space.tenant_id, username)
+    except TenancyError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("", response_model=PaginatedResponse)
 async def list_spaces(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=500),
+    tenant_id: Optional[str] = Query(default=None, description="System admin only: list one tenant's spaces"),
     account: AccountInDB = Depends(get_current_active_account),
 ):
-    username = None if "admin" in account.roles else account.username
-    total, spaces = await space_engine.list_spaces(username=username, skip=skip, limit=limit)
+    username, scope = space_visibility(account)
+    total, spaces = await space_engine.list_spaces(
+        username=username, skip=skip, limit=limit,
+        tenant_id=scope if scope is not None else (tenant_id if sees_all_tenants(account) else None),
+    )
     return PaginatedResponse(
         total=total, skip=skip, limit=limit,
         items=[s.model_dump() for s in spaces]
@@ -107,6 +135,7 @@ async def add_member(
     body: AddMemberRequest,
     account: AccountInDB = Depends(require_space_role(SpaceRole.admin)),
 ):
+    await _check_member_tenant(space_id, body.username)
     space = await space_engine.add_member(space_id, body.username, body.role)
     if not space:
         raise HTTPException(status_code=404, detail=f"Space '{space_id}' not found")
@@ -120,6 +149,7 @@ async def update_member_role(
     body: UpdateMemberRoleRequest,
     account: AccountInDB = Depends(require_space_role(SpaceRole.admin)),
 ):
+    await _check_member_tenant(space_id, username)
     space = await space_engine.add_member(space_id, username, body.role)
     if not space:
         raise HTTPException(status_code=404, detail=f"Space '{space_id}' not found")
@@ -165,6 +195,7 @@ async def create_space_graph(
     existing = await engine.get_hypergraph(data.id, space_id=space_id)
     if existing:
         raise HTTPException(status_code=409, detail=f"Graph '{data.id}' already exists in space '{space_id}'")
+    await _check_composition(account, data.composition)
     # Force space_id onto the document
     data_dict = data.model_dump()
     data_dict["space_id"] = space_id
@@ -191,6 +222,7 @@ async def update_space_graph(
     data: HypergraphUpdate,
     account: AccountInDB = Depends(require_graph_access("write")),
 ):
+    await _check_composition(account, data.composition)
     graph = await engine.update_hypergraph(graph_id, data, updated_by=account.username, space_id=space_id)
     if not graph:
         raise HTTPException(status_code=404, detail=f"Graph '{graph_id}' not found in space '{space_id}'")
@@ -246,6 +278,7 @@ async def import_new_space_graph(
     if not await space_engine.get_space(space_id):
         raise HTTPException(status_code=404, detail=f"Space '{space_id}' not found")
     doc = await read_export_body(request)
+    await _check_composition(account, (doc.get("graph") or {}).get("composition"))
     return await run_import(doc, account.username, graph_id, space_id, mode, strip_attribute_prefixes=strip_attribute_prefixes)
 
 

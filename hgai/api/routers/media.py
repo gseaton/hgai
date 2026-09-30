@@ -15,8 +15,9 @@ from starlette.background import BackgroundTask
 
 from hgai.api.deps import get_current_active_account, parse_sort_param
 from hgai.config import get_settings
-from hgai.core.auth import require_admin
-from hgai.core.media import backfill_media_durations, delete_media_checked, parse_media_id, sweep_orphaned_media
+from hgai.core.auth import TenantBoundaryError, require_system_admin, tenant_scope
+from hgai.core.tenant_engine import tenant_of_owner
+from hgai.core.media import backfill_media_durations, check_media_tenant, delete_media_checked, parse_media_id, sweep_orphaned_media
 from hgai.db.storage import get_storage
 from hgai.models.account import AccountInDB
 from hgai.models.common import PaginatedResponse
@@ -30,6 +31,13 @@ MEDIA_SORT_FIELDS = {
     "duration_seconds", "ref_count", "uploaded_by", "status",
     "system_created", "system_updated",
 }
+
+
+async def _guard_media(account: AccountInDB, media_id: str) -> None:
+    try:
+        await check_media_tenant(account, media_id)
+    except TenantBoundaryError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 @router.get("", response_model=PaginatedResponse)
@@ -47,6 +55,7 @@ async def list_media(
     filters = MediaFilters(
         id=id, search=search, content_type=content_type, status=status, tags=tags,
         sort=parse_sort_param(sort, MEDIA_SORT_FIELDS),
+        tenant_id=tenant_scope(account),
     )
     total, items = await get_storage().media.list(filters, skip=skip, limit=limit)
     return PaginatedResponse(
@@ -75,6 +84,7 @@ async def upload_media(
         content_type=file.content_type or "application/octet-stream",
         filename=file.filename,
         uploaded_by=account.username,
+        tenant_id=await tenant_of_owner(account.username),
     )
     return MediaResponse(**media.model_dump())
 
@@ -84,6 +94,7 @@ async def download_media(
     media_id: str,
     account: AccountInDB = Depends(get_current_active_account),
 ):
+    await _guard_media(account, media_id)
     server_id, local_id = parse_media_id(media_id)
     if server_id is not None:
         return await _proxy_download(server_id, local_id, media_id)
@@ -162,6 +173,7 @@ async def update_media(
     data: MediaUpdate,
     account: AccountInDB = Depends(get_current_active_account),
 ):
+    await _guard_media(account, media_id)
     server_id, local_id = parse_media_id(media_id)
     if server_id is not None:
         raise HTTPException(
@@ -196,6 +208,7 @@ async def delete_media(
     media_id: str,
     account: AccountInDB = Depends(get_current_active_account),
 ):
+    await _guard_media(account, media_id)
     deleted, reason, message = await delete_media_checked(media_id)
     if not deleted:
         raise HTTPException(status_code=_DELETE_STATUS_BY_REASON[reason], detail=message)
@@ -204,7 +217,7 @@ async def delete_media(
 @router.post("/sweep-orphaned")
 async def sweep_orphaned(
     older_than_hours: int = 24,
-    _admin: AccountInDB = Depends(require_admin),
+    _admin: AccountInDB = Depends(require_system_admin),
 ):
     """GC safety net: permanently delete media with ref_count == 0 older than
     `older_than_hours` (default 24h grace period). Admin-only."""
@@ -214,7 +227,7 @@ async def sweep_orphaned(
 @router.post("/backfill-duration")
 async def backfill_duration(
     limit: int = 1000,
-    _admin: AccountInDB = Depends(require_admin),
+    _admin: AccountInDB = Depends(require_system_admin),
 ):
     """One-time enrichment: compute duration_seconds for audio/video media
     uploaded before duration extraction existed. Admin-only."""

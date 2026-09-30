@@ -11,6 +11,8 @@ status: active
 
 A **space** groups hypergraphs for multi-tenant deployments. Because graph ids are unique *per space*, teams `team-a` and `team-b` can each have a graph named `my-graph` without conflict.
 
+With [tenants](help:help-tenants) enabled, every space belongs to one tenant (set when it is created, never changed). Only accounts of that tenant can be members, and other tenants cannot see the space at all. A tenant admin sees every space of its tenant; other accounts see the spaces they belong to.
+
 ## Referencing space graphs
 
 | Where | Form |

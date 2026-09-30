@@ -22,6 +22,7 @@ class Media(TimestampedModel):
     """Metadata for one uploaded binary file. Stored in the `media` collection."""
 
     id: str = Field(..., description="Media identifier (never contains '/')")
+    tenant_id: Optional[str] = Field(default=None, description="Owning tenant (None: system-level, or pre-migration and read as the default tenant)")
     content_type: str = Field(..., description="MIME type of the uploaded content")
     filename: Optional[str] = Field(default=None, description="Original filename, if provided")
     name: Optional[str] = Field(default=None, description="Short internal/searchable name for this media file")

@@ -27,6 +27,7 @@ status: active
 | **Inferred edge** | A synthesized edge tagged `_inferred: true`; computed live |
 | **Projection** | Persisting inferred edges into a graph ([more](help:help-project-inference)) |
 | **Space** | A multi-tenant namespace for graphs, with member roles ([more](help:help-spaces)) |
+| **Tenant** | The top-level isolation boundary: an account reaches only its own tenant's spaces and data; system admins span all ([more](help:help-tenants)) |
 | **Mesh** | A registry of servers queried together ([more](help:help-meshes)) |
 | **Dot-notation** | `mesh.server.space.graph` references to remote graphs |
 | **MCP** | Model Context Protocol — how AI agents call hgai tools ([more](help:help-mcp-server)) |

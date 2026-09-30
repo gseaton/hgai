@@ -27,6 +27,11 @@ class HypergraphBase(TimestampedModel):
     id: str = Field(..., description="Unique hypergraph identifier")
     label: str = Field(..., description="Display label")
     space_id: Optional[str] = Field(default=None, description="Owning space ID")
+    tenant_id: Optional[str] = Field(
+        default=None,
+        description="Owning tenant. For a space graph it equals the space's tenant. None marks a "
+                    "system-level graph (or, before migration, reads as the default tenant).",
+    )
 
     @field_validator("id")
     @classmethod

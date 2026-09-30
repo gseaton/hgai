@@ -36,6 +36,7 @@ Because every hyperedge is timestamped and versioned, you can also ask questions
 - [Hypernodes](help:help-hypernodes), [Hyperedges](help:help-hyperedges) and [Hypergraphs](help:help-hypergraphs)
 - [Edge flavors](help:help-edge-flavors) (hub vs. symmetric) and [Point-in-time queries](help:help-point-in-time)
 - [Spaces](help:help-spaces) — multi-tenant namespaces
+- [Tenants](help:help-tenants) — isolate groups of accounts from each other
 
 **Use the Web UI**
 - [Web UI tour](help:help-web-ui) — every screen in one page

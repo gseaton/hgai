@@ -37,6 +37,11 @@ async def ensure_indexes() -> None:
         ),
         IndexModel([("status", ASCENDING)], name="status"),
         IndexModel([("space_id", ASCENDING)], name="space_id", sparse=True),
+        # Tenant lookups. Deliberately NOT unique yet: unowned-graph lookups are
+        # not tenant-aware until multi-tenancy Phase 3, so `id_unowned_unique`
+        # above stays globally unique until then (then swapped for a unique
+        # (tenant_id, id)).
+        IndexModel([("tenant_id", ASCENDING), ("id", ASCENDING)], name="tenant_id_id"),
     ])
 
     # ── hypernodes ────────────────────────────────────────────────────────────
@@ -93,6 +98,20 @@ async def ensure_indexes() -> None:
         IndexModel([("id", ASCENDING)], unique=True, name="id_unique"),
         IndexModel([("members.username", ASCENDING)], name="members_username"),
         IndexModel([("status", ASCENDING)], name="status"),
+        IndexModel([("tenant_id", ASCENDING)], name="tenant_id"),
+    ])
+
+    # ── api_keys ──────────────────────────────────────────────────────────────
+    await db["api_keys"].create_indexes([
+        IndexModel([("id", ASCENDING)], unique=True, name="id_unique"),
+        IndexModel([("key_hash", ASCENDING)], unique=True, name="key_hash_unique"),
+        IndexModel([("tenant_id", ASCENDING)], name="tenant_id"),
+    ])
+
+    # ── tenants ───────────────────────────────────────────────────────────────
+    await db["tenants"].create_indexes([
+        IndexModel([("id", ASCENDING)], unique=True, name="id_unique"),
+        IndexModel([("status", ASCENDING)], name="status"),
     ])
 
     # ── meshes ────────────────────────────────────────────────────────────────
@@ -103,6 +122,7 @@ async def ensure_indexes() -> None:
     # ── accounts ──────────────────────────────────────────────────────────────
     await db["accounts"].create_indexes([
         IndexModel([("username", ASCENDING)], unique=True, name="username_unique"),
+        IndexModel([("tenant_id", ASCENDING)], name="tenant_id"),
     ])
 
     # ── query_cache ───────────────────────────────────────────────────────────
@@ -120,6 +140,7 @@ async def ensure_indexes() -> None:
 
     # ── media ─────────────────────────────────────────────────────────────────
     await db["media"].create_indexes([
+        IndexModel([("tenant_id", ASCENDING)], name="tenant_id"),
         IndexModel([("id", ASCENDING)], unique=True, name="id_unique"),
         IndexModel([("checksum", ASCENDING)], name="checksum"),
     ])
@@ -135,6 +156,7 @@ async def ensure_indexes() -> None:
         IndexModel([("owner_username", ASCENDING)], name="owner_username"),
         IndexModel([("acl.username", ASCENDING)], name="acl_username"),
         IndexModel([("scope", ASCENDING)], name="scope"),
+        IndexModel([("tenant_id", ASCENDING)], name="tenant_id"),
         IndexModel([("tags", ASCENDING)], name="tags"),
     ])
 
@@ -143,6 +165,7 @@ async def ensure_indexes() -> None:
         IndexModel([("id", ASCENDING)], unique=True, name="id_unique"),
         IndexModel([("tags", ASCENDING)], name="tags"),
         IndexModel([("name", ASCENDING)], name="name"),
+        IndexModel([("tenant_id", ASCENDING)], name="tenant_id"),
     ])
 
     # ── shql_query_history ───────────────────────────────────────────────────

@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from hgai.db.storage import get_storage
 from hgai.core.cache import invalidate_cache
 from hgai.core.media import adjust_media_refs, apply_media_diff, validate_default_media_id
+from hgai.core.tenant_engine import enforce_quota, enforce_quota_for_graph, tenant_for_new_record
 from hgai.core.mutations import append_mutation as _append_mutation
 from hgai.core.mutations import create_delta as _create_delta
 from hgai.core.mutations import update_delta as _update_delta
@@ -132,6 +133,13 @@ async def find_hypergraph_by_id(graph_id: str) -> Optional[HypergraphInDB]:
 async def create_hypergraph(data: HypergraphCreate, created_by: str) -> HypergraphInDB:
     now = now_utc()
     doc = data.model_dump()
+    if data.space_id:
+        # A space graph always belongs to its space's tenant.
+        space = await get_storage().spaces.get(data.space_id)
+        doc["tenant_id"] = space.tenant_id if space else data.tenant_id
+    else:
+        doc["tenant_id"] = await tenant_for_new_record(created_by, data.tenant_id)
+    await enforce_quota(doc["tenant_id"], "graphs")
     doc.update(
         system_created=now,
         system_updated=now,
@@ -156,6 +164,8 @@ async def list_hypergraphs(
     limit: int = 50,
     sort: Optional[List[Tuple[str, int]]] = None,
     include_system: bool = False,
+    tenant_id: Optional[str] = None,
+    access=None,
 ) -> Tuple[int, List[HypergraphInDB]]:
     """`include_system=False` (the default) hides platform-internal graphs
     (id prefix `__`, e.g. `__local-telemetry` — telemetry plan §3a) from the
@@ -164,7 +174,7 @@ async def list_hypergraphs(
     """
     filters = HypergraphFilters(
         status=status, tags=tags, space_id=space_id, search=search, sort=sort,
-        exclude_system=not include_system,
+        exclude_system=not include_system, tenant_id=tenant_id, access=access,
     )
     return await get_storage().hypergraphs.list(filters, skip=skip, limit=limit)
 
@@ -209,6 +219,7 @@ async def get_hypergraph_stats(graph_id: str, space_id: Optional[str] = None) ->
 async def create_hypernode(
     graph_id: str, data: HypernodeCreate, created_by: str, space_id: Optional[str] = None
 ) -> HypernodeInDB:
+    await enforce_quota_for_graph(graph_id, space_id, "nodes")
     now = now_utc()
     doc = data.model_dump()
     doc["default_media_id"] = validate_default_media_id(doc.get("default_media_id"), doc.get("media"))
@@ -322,6 +333,7 @@ async def delete_hypernode(graph_id: str, node_id: str, space_id: Optional[str] 
 async def create_hyperedge(
     graph_id: str, data: HyperedgeCreate, created_by: str, space_id: Optional[str] = None
 ) -> HyperedgeInDB:
+    await enforce_quota_for_graph(graph_id, space_id, "edges")
     now = now_utc()
     doc = data.model_dump()
     doc["default_media_id"] = validate_default_media_id(doc.get("default_media_id"), doc.get("media"))

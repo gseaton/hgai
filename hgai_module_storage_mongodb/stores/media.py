@@ -34,6 +34,7 @@ class MongoMediaStore(MediaStore):
         content_type: str,
         filename: Optional[str],
         uploaded_by: str,
+        tenant_id: Optional[str] = None,
     ) -> Media:
         bucket = _bucket()
         hasher = hashlib.sha256()
@@ -76,7 +77,7 @@ class MongoMediaStore(MediaStore):
         # duplicate. Best-effort under concurrency (no unique-index race
         # guard); a rare simultaneous duplicate upload may still keep both
         # blobs, which is safe, just not maximally deduplicated.
-        existing_raw = await _col().find_one({"checksum": checksum})
+        existing_raw = await _col().find_one({"checksum": checksum, "tenant_id": tenant_id})
         if existing_raw:
             try:
                 await bucket.delete(media_id)
@@ -94,6 +95,7 @@ class MongoMediaStore(MediaStore):
             "duration_seconds": duration_seconds,
             "checksum": checksum,
             "uploaded_by": uploaded_by,
+            "tenant_id": tenant_id,
             "ref_count": 0,
             "system_created": now,
             "system_updated": now,
@@ -153,6 +155,8 @@ class MongoMediaStore(MediaStore):
         query: Dict[str, Any] = {}
         if filters.id:
             query["id"] = filters.id
+        if filters.tenant_id is not None:
+            query["tenant_id"] = filters.tenant_id
         if filters.status:
             query["status"] = filters.status
         if filters.content_type:

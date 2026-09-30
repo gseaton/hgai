@@ -22,7 +22,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from hgai.api.deps import get_current_active_account
-from hgai.core.auth import require_admin
+from hgai.core.auth import is_system_admin, require_system_admin
+from hgai.core.tenant_engine import effective_tenant_id
 from hgai.models.account import AccountInDB
 from hgai.models.common import PaginatedResponse
 from hgai.models.note import NoteResponse
@@ -56,19 +57,19 @@ async def list_vendors_route(
     search: Optional[str] = Query(default=None, description="Substring match against name, label, or base_url"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
-    _admin: AccountInDB = Depends(require_admin),
+    _admin: AccountInDB = Depends(require_system_admin),
 ):
     total, items = await store.list_vendors(tags=tags, search=search, skip=skip, limit=limit)
     return PaginatedResponse(total=total, skip=skip, limit=limit, items=[v.model_dump() for v in items])
 
 
 @router.post("/vendors", response_model=AgentVendorResponse, status_code=status.HTTP_201_CREATED)
-async def create_vendor_route(data: AgentVendorCreate, admin: AccountInDB = Depends(require_admin)):
+async def create_vendor_route(data: AgentVendorCreate, admin: AccountInDB = Depends(require_system_admin)):
     return await store.create_vendor(data, admin.username)
 
 
 @router.get("/vendors/{vendor_id}", response_model=AgentVendorResponse)
-async def get_vendor_route(vendor_id: str, _admin: AccountInDB = Depends(require_admin)):
+async def get_vendor_route(vendor_id: str, _admin: AccountInDB = Depends(require_system_admin)):
     vendor = await store.get_vendor(vendor_id)
     if not vendor:
         raise HTTPException(status_code=404, detail=f"Agent vendor '{vendor_id}' not found")
@@ -76,7 +77,7 @@ async def get_vendor_route(vendor_id: str, _admin: AccountInDB = Depends(require
 
 
 @router.put("/vendors/{vendor_id}", response_model=AgentVendorResponse)
-async def update_vendor_route(vendor_id: str, data: AgentVendorUpdate, admin: AccountInDB = Depends(require_admin)):
+async def update_vendor_route(vendor_id: str, data: AgentVendorUpdate, admin: AccountInDB = Depends(require_system_admin)):
     result = await store.update_vendor(vendor_id, data, admin.username)
     if not result:
         raise HTTPException(status_code=404, detail=f"Agent vendor '{vendor_id}' not found")
@@ -84,7 +85,7 @@ async def update_vendor_route(vendor_id: str, data: AgentVendorUpdate, admin: Ac
 
 
 @router.delete("/vendors/{vendor_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_vendor_route(vendor_id: str, _admin: AccountInDB = Depends(require_admin)):
+async def delete_vendor_route(vendor_id: str, _admin: AccountInDB = Depends(require_system_admin)):
     deleted = await store.delete_vendor(vendor_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Agent vendor '{vendor_id}' not found")
@@ -109,7 +110,7 @@ async def list_models_route(
 
 
 @router.post("/models", response_model=AgentModelResponse, status_code=status.HTTP_201_CREATED)
-async def create_model_route(data: AgentModelCreate, admin: AccountInDB = Depends(require_admin)):
+async def create_model_route(data: AgentModelCreate, admin: AccountInDB = Depends(require_system_admin)):
     vendor = await store.get_vendor(data.vendor_id)
     if not vendor:
         raise HTTPException(status_code=400, detail=f"Agent vendor '{data.vendor_id}' not found")
@@ -125,7 +126,7 @@ async def get_model_route(model_id: str, _account: AccountInDB = Depends(get_cur
 
 
 @router.put("/models/{model_id}", response_model=AgentModelResponse)
-async def update_model_route(model_id: str, data: AgentModelUpdate, admin: AccountInDB = Depends(require_admin)):
+async def update_model_route(model_id: str, data: AgentModelUpdate, admin: AccountInDB = Depends(require_system_admin)):
     result = await store.update_model(model_id, data, admin.username)
     if not result:
         raise HTTPException(status_code=404, detail=f"Agent model '{model_id}' not found")
@@ -133,7 +134,7 @@ async def update_model_route(model_id: str, data: AgentModelUpdate, admin: Accou
 
 
 @router.delete("/models/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_model_route(model_id: str, _admin: AccountInDB = Depends(require_admin)):
+async def delete_model_route(model_id: str, _admin: AccountInDB = Depends(require_system_admin)):
     deleted = await store.delete_model(model_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Agent model '{model_id}' not found")
@@ -145,7 +146,7 @@ async def _get_owned_session(session_id: str, account: AccountInDB) -> AgentChat
     session = await store.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"Chat session '{session_id}' not found")
-    if session.owner_username != account.username and "admin" not in account.roles:
+    if session.owner_username != account.username and not is_system_admin(account):
         raise HTTPException(status_code=403, detail="Not permitted to access this chat session")
     return session
 
@@ -175,7 +176,7 @@ async def create_session_route(data: AgentChatSessionCreate, account: AccountInD
     model = await store.get_model(data.model_id)
     if not model:
         raise HTTPException(status_code=400, detail=f"Agent model '{data.model_id}' not found")
-    return await store.create_session(data, account.username)
+    return await store.create_session(data, account.username, tenant_id=effective_tenant_id(account))
 
 
 @router.get("/sessions/{session_id}", response_model=AgentChatSessionResponse)

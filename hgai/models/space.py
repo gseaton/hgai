@@ -37,6 +37,9 @@ class SpaceBase(TimestampedModel):
     id: str = Field(..., description="Unique space identifier")
     label: str = Field(..., description="Display label")
     description: Optional[str] = Field(default=None)
+    tenant_id: Optional[str] = Field(
+        default=None, description="Owning tenant. Immutable once set; None reads as the default tenant."
+    )
     members: List[SpaceMember] = Field(default_factory=list)
 
     @field_validator("id")

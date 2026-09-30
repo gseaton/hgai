@@ -119,6 +119,7 @@ class NoteInDB(NoteBase):
 
     id: str = Field(..., description="Note identifier (UUID4)")
     owner_username: str = Field(..., description="Account that created this note; always has full access")
+    tenant_id: Optional[str] = Field(default=None, description="Owning tenant (None: system-level, or pre-migration and read as the default tenant)")
     acl: List[NoteGrant] = Field(default_factory=list, description="Other accounts granted view/edit access")
     mutations: List[MutationRecord] = Field(default_factory=list, description="Audit trail of create/mutate/share events")
 
