@@ -442,3 +442,26 @@ def test_ui_has_an_api_keys_screen():
     assert "'api-keys': loadApiKeys" in js
     for fn in ("listApiKeys", "createApiKey", "revokeApiKey", "getTenantUsage"):
         assert fn in api, fn
+
+
+async def test_graph_list_sorts_by_tenant(http):
+    call, _ = http
+    asc = (await call("root", "GET", "/graphs?limit=500&sort=tenant_id,id")).json()["items"]
+    desc = (await call("root", "GET", "/graphs?limit=500&sort=-tenant_id,id")).json()["items"]
+    tenants = [g["tenant_id"] for g in asc]
+    assert tenants == sorted(tenants, key=lambda t: (t is not None, t or ""))      # null (system) sorts first
+    assert [g["tenant_id"] for g in desc] == tenants[::-1]
+    assert len(set(tenants)) > 1 and asc[0]["id"] != desc[0]["id"]
+    assert (await call("alice", "GET", "/graphs?sort=tenant_id")).status_code == 200   # allowed for anyone
+
+
+def test_ui_graph_tenant_column_is_conditional():
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    html, js = (root / "ui/index.html").read_text(), (root / "ui/js/app.js").read_text()
+    assert 'id="th-graphs-tenant"' in html and 'data-sort-field="tenant_id"' in html
+    assert "async function graphTenantColumnVisible" in js
+    body = js[js.index("async function graphTenantColumnVisible"):js.index("async function loadGraphs")]
+    # shown only to a system admin, with tenancy on, unscoped, and with more than one tenant
+    for clause in ("tenancyEnabled()", "isAdmin()", "getTenantScope()", "State.tenantCount > 1"):
+        assert clause in body, clause

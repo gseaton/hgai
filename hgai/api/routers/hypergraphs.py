@@ -19,7 +19,7 @@ from hgai.models.hypergraph import (
 
 router = APIRouter(prefix="/graphs", tags=["hypergraphs"])
 
-GRAPH_SORT_FIELDS = {"id", "label", "type", "space_id", "node_count", "edge_count", "status", "system_created", "system_updated"}
+GRAPH_SORT_FIELDS = {"id", "label", "type", "space_id", "tenant_id", "node_count", "edge_count", "status", "system_created", "system_updated"}
 
 
 async def _check_composition(account: AccountInDB, composition) -> None:

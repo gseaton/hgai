@@ -50,7 +50,7 @@ System admins use the **Tenants** screen, `hgsh`, or the API. See [Web UI tour](
 | `PUT /tenants/{id}` | Change label, description, status, settings |
 | `DELETE /tenants/{id}` | Delete an **empty** tenant. `default` cannot be deleted or suspended. |
 
-In the Web UI a system admin also gets a tenant picker in the top bar to scope lists to one tenant. The shell has `use tenant <id>` and `use tenant all`, plus `ls tenants`, `create tenant`, `update tenant` and `delete tenant`. `GET /accounts`, `/spaces` and `/graphs` accept `?tenant_id=` for system admins.
+In the Web UI a system admin also gets a tenant picker in the top bar to scope lists to one tenant. With tenancy on and more than one tenant, the **Hypergraphs** list shows a sortable **Tenant** column for system admins. It is hidden when the picker is scoped to one tenant, when the server has only one tenant, and for every other account, which is locked to its own tenant anyway. `GET /graphs` accepts `sort=tenant_id`. The shell has `use tenant <id>` and `use tenant all`, plus `ls tenants`, `create tenant`, `update tenant` and `delete tenant`. `GET /accounts`, `/spaces` and `/graphs` accept `?tenant_id=` for system admins.
 
 A new account goes into the tenant its creator names (system admin) or the creator's own tenant (tenant admin). Moving an account to another tenant removes its space memberships; the notes, media and saved queries it owns stay in the old tenant.
 

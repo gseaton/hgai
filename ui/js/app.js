@@ -515,6 +515,7 @@ async function populateTenantScopePicker() {
   const picker = document.getElementById('tenant-scope-select');
   try {
     const resp = await HGAI_API.listTenants({ limit: 500 });
+    State.tenantCount = (resp.items || []).length;
     const current = HGAI_API.getTenantScope();
     picker.innerHTML = '<option value="">All tenants</option>';
     (resp.items || []).forEach(t => {
@@ -604,9 +605,26 @@ async function loadDashboard() {
 }
 
 // ── Hypergraphs ────────────────────────────────────────────────────────────
+// The Tenant column tells a system admin which tenant owns each graph. It is pointless, so
+// hidden, when everything on screen is one tenant: a scoped system admin (top-bar picker),
+// a server with a single tenant, or any account locked to its own tenant (never shown to them).
+async function graphTenantColumnVisible() {
+  if (!HGAI_API.tenancyEnabled() || !HGAI_API.isAdmin() || HGAI_API.getTenantScope()) return false;
+  if (State.tenantCount === undefined) {
+    try { State.tenantCount = (await HGAI_API.listTenants({ limit: 500 })).items.length; }
+    catch { State.tenantCount = 0; }
+  }
+  return State.tenantCount > 1;
+}
+
 async function loadGraphs() {
   const tbody = document.getElementById('tbody-graphs');
-  tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>';
+  const showTenant = await graphTenantColumnVisible();
+  const colspan = showTenant ? 10 : 9;
+  document.getElementById('th-graphs-tenant').classList.toggle('d-none', !showTenant);
+  // A hidden column cannot stay the active sort.
+  if (!showTenant) State.graphsSort = (State.graphsSort || []).filter(s => s.field !== 'tenant_id');
+  tbody.innerHTML = `<tr><td colspan="${colspan}" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm"></div></td></tr>`;
   const tagFilter = document.getElementById('graphs-tags-filter').value.trim();
   const params = {
     status: '',
@@ -626,7 +644,7 @@ async function loadGraphs() {
     // graphSpaceId()) depend on State.graphsCache holding every graph the
     // app has seen, not just whatever's currently visible in this table.
     if (!resp.items || !resp.items.length) {
-      tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">No hypergraphs found</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="${colspan}" class="text-center text-muted py-4">No hypergraphs found</td></tr>`;
     } else {
       resp.items.forEach(g => {
         State.graphsCache[g.id] = g;
@@ -640,6 +658,7 @@ async function loadGraphs() {
           <td>${g.label}</td>
           <td><span class="badge bg-light text-dark">${g.type}</span></td>
           <td>${spaceLabel}</td>
+          ${showTenant ? `<td>${g.tenant_id ? escapeHtml(g.tenant_id) : '<em class="text-muted">system</em>'}</td>` : ''}
           <td>${g.node_count||0}</td>
           <td>${g.edge_count||0}</td>
           <td>${statusBadge(g.status)}</td>
@@ -655,7 +674,7 @@ async function loadGraphs() {
     }
     renderPagination('graphs', resp.total, State.graphsPage, State.graphsPageSize);
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="9" class="text-danger text-center">${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${colspan}" class="text-danger text-center">${err.message}</td></tr>`;
   }
 }
 
