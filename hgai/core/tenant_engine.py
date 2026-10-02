@@ -6,7 +6,7 @@ See docs/architecture/hypergraph-ai-multi-tenancy-*.md.
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 from hgai.db.storage import get_storage
 from hgai.models.account import AccountInDB, SystemRole
